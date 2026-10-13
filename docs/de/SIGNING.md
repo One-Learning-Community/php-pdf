@@ -24,6 +24,7 @@ Signieren des Dokuments aus dem Zertifikat befüllt wird.
 - [Verschlüsselte PDFs](#verschlüsselte-pdfs)
 - [Signaturen validieren](#signaturen-validieren)
 - [Eine Signatur prüfen](#eine-signatur-prüfen)
+- [Abgetrennte Signaturen](#abgetrennte-signaturen)
 - [Signaturfelder](#signaturfelder)
 - [Der Stempel](#der-stempel)
 - [Vorgefertigte Stempel](#vorgefertigte-stempel)
@@ -377,6 +378,32 @@ Signierern und Zertifizierung. Die Langzeitvalidierung wird mit den
 PAdES-LT-/LTA-Profilen von pyHanko offline geprüft: Der Validator erhält nur
 den aktuellen Status der TSA, die Sperrdaten des Signierers müssen also aus
 dem DSS stammen (`scripts/conformance/pades-ltv-check.py`).
+
+## Abgetrennte Signaturen
+
+Eine `.p7s` neben einer Datei — das PDF bleibt unverändert, die Signatur ist
+ein eigenes CMS über seine Bytes (beliebige Bytes, nicht nur PDF):
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\Cms\DetachedSignature;
+
+$p7s = DetachedSignature::sign($pdf, $signer, timestampAuthority: $tsa);   // DER
+$report = DetachedSignature::verify($pdf, $p7s, TrustStore::fromPem('root.crt'));
+$report->isValid(); $report->signer; $report->timestampTime;
+
+$p7s = DetachedSignature::addTimestamp($cmsFromCryptoPro, $tsa);  // CAdES-BES → CAdES-T
+```
+
+`sign()` schreibt CAdES-BES: `content-type`, `message-digest`,
+`signing-time` und `signing-certificate-v2`, Zertifikat und Kette des
+Unterzeichners eingebettet; mit einem Zeitstempeldienst ist es CAdES-T.
+`verify()` liefert denselben `SignatureReport` wie der PDF-Validator: Digest
+und Signaturwert, die Zertifikatsbindung, den Zeitstempel, die Kette (zum
+Zeitpunkt des Zeitstempels beurteilt) und, mit einer `RevocationSource`, den
+Sperrstatus. Akzeptiert werden DER, BER, Base64 und PEM; eine angehängte
+Signatur muss genau den übergebenen Inhalt tragen; eine Signatur ohne
+signierte Attribute (`openssl cms -noattr`) wird geprüft, mit der Warnung,
+dass weder Zeit noch Zertifikat an sie gebunden sind.
 
 ## Signaturfelder
 

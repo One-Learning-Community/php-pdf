@@ -25,7 +25,7 @@ final class SignedDataReader
 
     private readonly Asn1Node $signerInfo;
 
-    private function __construct(Asn1Node $contentInfo)
+    private function __construct(Asn1Node $contentInfo, bool $requireSignedAttributes)
     {
         $contentInfo->expect(Der::TAG_SEQUENCE);
         if ($contentInfo->child(0)->oid() !== Oid::SIGNED_DATA) {
@@ -39,17 +39,21 @@ final class SignedDataReader
             throw new CmsException(sprintf('Expected one SignerInfo, found %d', count($signerInfos->children)));
         }
         $this->signerInfo = $signerInfos->child(0)->expect(Der::TAG_SEQUENCE);
-        if ($this->signerInfo->contextChild(0) === null) {
+        if ($requireSignedAttributes && $this->signerInfo->contextChild(0) === null) {
             throw new CmsException('The CMS has no signed attributes');
         }
     }
 
-    public static function parse(string $der): self
+    /**
+     * @param  bool  $requireSignedAttributes  False accepts a SignerInfo that signs the content
+     *                                         directly (`openssl cms -noattr`) — for verifying only.
+     */
+    public static function parse(string $der, bool $requireSignedAttributes = true): self
     {
         try {
             // Tools write BER (CryptoPro: indefinite lengths); work on the
             // definite-length re-encoding, which is what gets embedded.
-            return new self(DerReader::parse(DerReader::parseBer($der)->toDer()));
+            return new self(DerReader::parse(DerReader::parseBer($der)->toDer()), $requireSignedAttributes);
         } catch (Asn1Exception $e) {
             throw new CmsException('Unreadable CMS: '.$e->getMessage(), previous: $e);
         }
@@ -76,6 +80,11 @@ final class SignedDataReader
     public function digestAlgorithm(): DigestAlgorithm
     {
         return DigestAlgorithm::fromOid($this->signerInfo->child(2)->child(0)->oid());
+    }
+
+    public function hasSignedAttributes(): bool
+    {
+        return $this->signerInfo->contextChild(0) !== null;
     }
 
     /** The signed attributes as signed — re-tagged as a universal SET. */
@@ -165,10 +174,11 @@ final class SignedDataReader
      * Checks the signature over the signed attributes with the
      * certificate's public key.
      */
-    public function verifySignature(Certificate $certificate): bool
+    public function verifySignature(Certificate $certificate, ?string $content = null): bool
     {
         return openssl_verify(
-            $this->signedAttributes(),
+            // Without signed attributes the signature covers the content itself.
+            $this->hasSignedAttributes() ? $this->signedAttributes() : ($content ?? throw new CmsException('The CMS has no signed attributes')),
             $this->signatureValue(),
             $certificate->publicKey(),
             $this->digestAlgorithm()->opensslName(),

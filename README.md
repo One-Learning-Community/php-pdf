@@ -75,7 +75,8 @@ PDF stack:
   service) — with a visible **signature stamp** filled from the certificate;
   **sign existing PDFs** incrementally (several signers, certification, field
   locks) and **long-term validation** (B-LT DSS, B-LTA document timestamps);
-  **signature validation** against the known PDF signature attacks.
+  **signature validation** against the known PDF signature attacks;
+  **detached CAdES signatures** (`.p7s`) of any bytes, signed and verified.
 - **PDF/A-1a / 1b / 2u and PDF/X-1a / 3 / 4** conformance with embedded
   sRGB ICC profile and XMP metadata.
 - **Tagged PDF / PDF/UA-ready** structure tree with H1–H6, Table/TR/TD,
@@ -236,7 +237,8 @@ A complete usage walkthrough is in [docs/en/USAGE.md](docs/en/USAGE.md).
   barcodes, forms, encryption, signing, PDF/A.
 - ✍️ [Digital signatures](docs/en/SIGNING.md) — PAdES and GOST signing,
   stamps, signing outside the server (CryptoPro, HSM), existing PDFs and
-  several signers, certification, long-term validation, signature validation.
+  several signers, certification, long-term validation, signature validation,
+  detached `.p7s` signatures.
 - 🔗 [Reading & merging PDFs](docs/en/MERGE.md) — read existing files,
   append/reorder pages, stamp overlays, handle encrypted input.
 - ⚖️ [Comparison vs mpdf / tcpdf / dompdf / FPDF](docs/en/COMPARISON.md) —

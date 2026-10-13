@@ -21,6 +21,7 @@ PAdES B-T 级别。签名字段可以显示**签章**：一个包含文字、图
 - [加密的 PDF](#加密的-pdf)
 - [验证签名](#验证签名)
 - [检查签名](#检查签名)
+- [分离式签名](#分离式签名)
 - [签名字段](#签名字段)
 - [签章](#签章)
 - [现成签章](#现成签章)
@@ -312,6 +313,29 @@ $original = SignatureValidator::fromBytes($pdf)->signedRevision('approver');
 包括多个签名者和认证签名的情形。长期验证使用 pyHanko 的 PAdES-LT / LTA 配置离线检查：
 验证器只获得 TSA 的当前状态，因此签名者的吊销数据必须来自 DSS
 （`scripts/conformance/pades-ltv-check.py`）。
+
+## 分离式签名
+
+文件旁的 `.p7s`：PDF 保持原样，签名是覆盖其字节的独立 CMS（任意字节，
+不限于 PDF）：
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\Cms\DetachedSignature;
+
+$p7s = DetachedSignature::sign($pdf, $signer, timestampAuthority: $tsa);   // DER
+$report = DetachedSignature::verify($pdf, $p7s, TrustStore::fromPem('root.crt'));
+$report->isValid(); $report->signer; $report->timestampTime;
+
+$p7s = DetachedSignature::addTimestamp($cmsFromCryptoPro, $tsa);  // CAdES-BES → CAdES-T
+```
+
+`sign()` 生成 CAdES-BES：`content-type`、`message-digest`、`signing-time`
+和 `signing-certificate-v2`，并嵌入签名者证书及证书链；配合时间戳服务即为
+CAdES-T。`verify()` 返回与 PDF 验证相同的 `SignatureReport`：摘要与签名值、
+证书绑定、时间戳、证书链（按时间戳时刻判断），以及在提供
+`RevocationSource` 时的吊销状态。接受 DER、BER、base64 和 PEM；附加式签名
+必须恰好携带所给内容；没有签名属性的签名（`openssl cms -noattr`）也可验证，
+但会警告时间和证书均未与其绑定。
 
 ## 签名字段
 

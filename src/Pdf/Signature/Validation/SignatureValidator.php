@@ -139,17 +139,17 @@ final class SignatureValidator
 
             return $report;
         }
-        $pool = [...$cms->certificates(), ...$dssCerts];
+        $checks = new CmsChecks($trust, [...$cms->certificates(), ...$dssCerts], $now, $dssOcsps, $dssCrls);
         if ($kind === 'timestamp') {
-            $this->checkTimestampToken($report, $cms, $signedBytes, $trust, $pool, $now, isDocument: true);
+            $checks->timestampToken($report, $cms, $signedBytes, isDocument: true);
             $report->claimedSigningTime = $report->timestampTime;
         } else {
-            $this->checkSignature($report, $cms, $signedBytes, $dict, $trust, $pool, $now);
+            $this->checkSignature($report, $cms, $signedBytes, $dict, $checks);
         }
 
         // 3. Revocation of the signer's chain.
         if ($report->trusted && $report->chain !== []) {
-            $this->checkRevocation($report, $revocation, $dssOcsps, $dssCrls, $pool);
+            $checks->revocation($report, $revocation);
         }
 
         // 4. What came after.
@@ -215,178 +215,12 @@ final class SignatureValidator
         return [substr($this->pdf, $a, $b).substr($this->pdf, $c, $d), $der];
     }
 
-    /**
-     * @param  list<Certificate>  $pool
-     */
-    private function checkSignature(SignatureReport $report, SignedDataReader $cms, string $signedBytes, PdfDictionary $dict, TrustStore $trust, array $pool, \DateTimeImmutable $now): void
+    private function checkSignature(SignatureReport $report, SignedDataReader $cms, string $signedBytes, PdfDictionary $dict, CmsChecks $checks): void
     {
-        $signer = $cms->signerCertificate();
-        if ($signer === null) {
-            $report->error('The signer certificate is not in the signature');
-
-            return;
-        }
-        $report->signer = $signer;
-        try {
-            $digest = $cms->digestAlgorithm();
-            $digestOk = $cms->messageDigest() === $digest->digest($signedBytes);
-            $signatureOk = $digestOk && $cms->verifySignature($signer);
-        } catch (\Throwable $e) {
-            $report->error('The signature cannot be checked here: '.$e->getMessage());
-
-            return;
-        }
-        if (! $digestOk) {
-            $report->error('The document was changed: its digest does not match the signed one');
-
-            return;
-        }
-        if (! $signatureOk) {
-            $report->error('The signature value does not verify against the signer certificate');
-
-            return;
-        }
-        $this->checkEss($report, $cms, $signer, $digest);
-        $report->cryptographicallyValid = true;
-
+        // The claimed time is /M; read it first so revocation can use it.
         $m = $dict->get('M');
         $report->claimedSigningTime = $m instanceof PdfString ? self::pdfDate($m->bytes) : null;
-
-        // A signature timestamp: the time is vouched for by the TSA.
-        $tokens = $cms->unsignedAttributeValues(Oid::SIGNATURE_TIMESTAMP_TOKEN);
-        if ($tokens !== []) {
-            try {
-                $this->checkTimestampToken($report, SignedDataReader::parse($tokens[0]), $cms->signatureValue(), $trust, $pool, $now, isDocument: false);
-            } catch (\Throwable $e) {
-                $report->warn('The signature timestamp is unreadable: '.$e->getMessage());
-            }
-        }
-
-        $at = $report->timestampTime ?? $now;
-        $chain = (new ChainBuilder($trust))->build($signer, $pool, $at);
-        $report->chain = $chain['chain'];
-        $report->trusted = $chain['trusted'];
-        foreach ($chain['problems'] as $problem) {
-            $report->error($problem);
-        }
-    }
-
-    /**
-     * A timestamp token: its TSTInfo imprint covers `$data`, its own
-     * signature verifies, its TSA chains to a trusted root.
-     *
-     * @param  list<Certificate>  $pool
-     */
-    private function checkTimestampToken(SignatureReport $report, SignedDataReader $token, string $data, TrustStore $trust, array $pool, \DateTimeImmutable $now, bool $isDocument): void
-    {
-        $fail = static function (string $message) use ($report, $isDocument): void {
-            $isDocument ? $report->error($message) : $report->warn($message.' — the signing time is not vouched for');
-        };
-        try {
-            $tstDer = $token->encapsulatedContent();
-            if ($tstDer === null) {
-                $fail('The timestamp token carries no TSTInfo');
-
-                return;
-            }
-            $tst = DerReader::parse($tstDer);
-            $imprint = $tst->child(2);
-            $alg = DigestAlgorithm::fromOid($imprint->child(0)->child(0)->oid());
-            if ($imprint->child(1)->content !== $alg->digest($data)) {
-                $fail($isDocument ? 'The document was changed: the timestamp covers other bytes' : 'The signature timestamp covers another signature');
-
-                return;
-            }
-            $tsa = $token->signerCertificate($pool);
-            if ($tsa === null || $token->messageDigest() !== $token->digestAlgorithm()->digest($tstDer) || ! $token->verifySignature($tsa)) {
-                $fail('The timestamp token signature does not verify');
-
-                return;
-            }
-            $genTime = $tst->child(4)->time();
-        } catch (\Throwable $e) {
-            $fail('The timestamp token cannot be checked: '.$e->getMessage());
-
-            return;
-        }
-
-        $chain = (new ChainBuilder($trust))->build($tsa, [...$pool, ...$token->certificates()], $genTime);
-        if ($isDocument) {
-            $report->signer = $tsa;
-            $report->chain = $chain['chain'];
-            $report->trusted = $chain['trusted'];
-            $report->cryptographicallyValid = true;
-            foreach ($chain['problems'] as $problem) {
-                $report->error($problem);
-            }
-        } elseif (! $chain['trusted']) {
-            $report->warn('The timestamp authority is not trusted: '.implode('; ', $chain['problems']));
-
-            return;
-        }
-        $report->timestampTime = $genTime;
-    }
-
-    private function checkEss(SignatureReport $report, SignedDataReader $cms, Certificate $signer, DigestAlgorithm $digest): void
-    {
-        $attributes = DerReader::parse($cms->signedAttributes());
-        foreach ($attributes->children as $attr) {
-            if ($attr->child(0)->oid() !== Oid::SIGNING_CERTIFICATE_V2) {
-                continue;
-            }
-            $certId = $attr->child(1)->child(0)->child(0)->child(0);
-            $first = $certId->child(0);
-            $hashAlg = $first->tag === Der::TAG_SEQUENCE ? DigestAlgorithm::fromOid($first->child(0)->oid()) : DigestAlgorithm::Sha256;
-            $hash = $first->tag === Der::TAG_SEQUENCE ? $certId->child(1)->content : $first->content;
-            if ($hash !== $hashAlg->digest($signer->der)) {
-                $report->error('The signature names a different signing certificate (signing-certificate-v2)');
-            }
-
-            return;
-        }
-        if ($report->subFilter === 'ETSI.CAdES.detached') {
-            $report->warn('PAdES signature without signing-certificate-v2');
-        }
-    }
-
-    /**
-     * @param  list<string>  $ocsps
-     * @param  list<string>  $crls
-     * @param  list<Certificate>  $pool
-     */
-    private function checkRevocation(SignatureReport $report, ?RevocationSource $source, array $ocsps, array $crls, array $pool): void
-    {
-        $signingTime = $report->timestampTime ?? $report->claimedSigningTime ?? new \DateTimeImmutable;
-        $worst = RevocationStatus::Good;
-        $fetched = false;
-        $chain = $report->chain;
-        for ($i = 0; $i < count($chain) - 1; $i++) {
-            [$cert, $issuer] = [$chain[$i], $chain[$i + 1]];
-            $checker = new RevocationChecker($ocsps, $crls);
-            $result = $checker->status($cert, $issuer, $signingTime);
-            if ($result['status'] === RevocationStatus::Unknown && $source !== null) {
-                try {
-                    $data = $source->revocationData($cert, $issuer);
-                    $result = (new RevocationChecker($data->ocspResponses, $data->crls))->status($cert, $issuer, $signingTime);
-                    $fetched = $fetched || $result['status'] !== RevocationStatus::Unknown;
-                } catch (LtvException $e) {
-                    $report->warn($e->getMessage());
-                }
-            }
-            $name = $cert->subjectCommonName();
-            match ($result['status']) {
-                RevocationStatus::Revoked => $report->error(sprintf('"%s" was revoked at %s, before signing', $name, $result['revokedAt']?->format('c') ?? '?')),
-                RevocationStatus::RevokedAfterSigning => $report->warn(sprintf('"%s" was revoked at %s, after signing', $name, $result['revokedAt']?->format('c') ?? '?')),
-                RevocationStatus::Unknown => $report->warn(sprintf('No revocation data for "%s"', $name)),
-                RevocationStatus::Good => null,
-            };
-            $rank = [RevocationStatus::Good->name => 0, RevocationStatus::Unknown->name => 1, RevocationStatus::RevokedAfterSigning->name => 2, RevocationStatus::Revoked->name => 3];
-            if ($rank[$result['status']->name] > $rank[$worst->name]) {
-                $worst = $result['status'];
-            }
-        }
-        $report->revocation = $worst;
-        $report->revocationSource = $worst === RevocationStatus::Unknown ? null : ($fetched ? 'fetched' : 'dss');
+        $checks->signature($report, $cms, $signedBytes, essExpected: $report->subFilter === 'ETSI.CAdES.detached');
     }
 
     private function checkModifications(SignatureReport $report, PdfDictionary $dict, int $sigNum): void
