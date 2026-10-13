@@ -13,6 +13,7 @@ PAdES B-T 级别。签名字段可以显示**签章**：一个包含文字、图
 - [时间戳](#时间戳)
 - [GOST R 34.10-2012](#gost-r-3410-2012)
 - [签名大小](#签名大小)
+- [在服务器之外签名](#在服务器之外签名)
 - [检查签名](#检查签名)
 - [签名字段](#签名字段)
 - [签章](#签章)
@@ -121,6 +122,57 @@ OpenSSL 和 CryptoPro 所用的标识符。PHP 必须加载 OpenSSL 的
 `/Contents` 中的签名空间在签名生成之前就已预留。库根据证书、密钥大小以及是否请求
 时间戳来估算所需空间。如果签署人嵌入的内容超出预期，签名会失败，并给出所需大小的提示；
 可设置 `contentsReserveBytes` 来覆盖估算值。
+
+## 在服务器之外签名
+
+当密钥无法到达服务器时——例如令牌上或用户机器上 CryptoPro 中的合格证书、按请求签名的 HSM、云签名服务——分两步签名：
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\External\{ExternalMode, ExternalSigner, PreparedSignature};
+
+// 1. Emit the document with an empty signature.
+$prepared = $doc->prepareSignature(new SignatureConfig(
+    // The certificate, when known, goes on the stamp; it may be left out.
+    signer: new ExternalSigner(certificatePem: $userCertificatePem),
+    reason: 'Approval',
+));
+$state = $prepared->toJson();        // keep it — session, cache, database
+$hash = $prepared->documentDigestHex(); // send to the signer
+
+// 2. Later, with what the signer returned (base64 CMS here).
+$pdf = PreparedSignature::fromJson($state)->completeBase64($cmsBase64);
+```
+
+| 模式 | 签署人获得 | 返回 |
+|---|---|---|
+| `ExternalMode::Cms`（默认） | `documentDigest()` —— 或 `signedContent()`，即字节本身，用于对文件签名的工具 | 分离的 CMS（CAdES-BES） |
+| `ExternalMode::RawSignature` | `dataToSign()` —— 库构建的已签名属性 —— 或 `hashToSign()`，用于对哈希签名的设备 | 原始签名值 |
+
+`complete()` 在嵌入之前会检查返回的内容：CMS 恰好覆盖这份文档（其消息摘要）；它是用传给 `prepareSignature()` 的证书（如果传了）制作的；其签名验证通过；并且能放入预留空间。CMS 缺少的证书会从准备阶段补入；传给 `complete()` 的时间戳机构会为签名加盖时间戳。CryptoAPI 小端序的 GOST 原始值会被识别并翻转。
+
+请把状态保存在签署人无法修改的地方：它携带已准备好的文档，而其校验和只能发现损坏，无法发现篡改。准备之后，不得重新生成文档——签名覆盖的正是这些字节。
+
+### CryptoPro Browser plug-in
+
+在浏览器中，插件用用户的证书对哈希签名并返回 CMS——以下是基于 CryptoPro `cadesplugin` API 的示意：
+
+```js
+// hashHex — documentDigestHex() from the server; cert — the user's
+// certificate, picked from the store (CAdESCOM.Store).
+const hashed = await cadesplugin.CreateObjectAsync("CAdESCOM.HashedData");
+await hashed.propset_Algorithm(cadesplugin.CADESCOM_HASH_ALGORITHM_CP_GOST_3411_2012_256);
+await hashed.SetHashValue(hashHex);
+
+const signer = await cadesplugin.CreateObjectAsync("CAdESCOM.CPSigner");
+await signer.propset_Certificate(cert);
+await signer.propset_Options(cadesplugin.CAPICOM_CERTIFICATE_INCLUDE_WHOLE_CHAIN);
+
+const signedData = await cadesplugin.CreateObjectAsync("CAdESCOM.CadesSignedData");
+const cmsBase64 = await signedData.SignHash(hashed, signer, cadesplugin.CADESCOM_CADES_BES);
+// POST cmsBase64 back → completeBase64()
+```
+
+请使用与密钥匹配的哈希算法：256 位 GOST 密钥用 `..._GOST_3411_2012_256`，512 位用 `..._GOST_3411_2012_512`。把证书传给 `ExternalSigner`（用 `cert.Export(CADESCOM_ENCODE_BASE64)` 从插件导出），这样摘要会随密钥而定，签章也会显示持有人；计算 Streebog 摘要时，服务器上同样需要 gost engine。以这种方式生成的 CMS 带有 `signing-time` 属性；验证器接受它，但严格的 PAdES 配置要求时间仅出现在 `/M` 中。
 
 ## 检查签名
 

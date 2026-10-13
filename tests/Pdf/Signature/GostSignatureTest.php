@@ -8,6 +8,8 @@ use Dskripchenko\PhpPdf\Pdf\Document;
 use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\SignatureAppearance;
 use Dskripchenko\PhpPdf\Pdf\Signature\Asn1\DerReader;
 use Dskripchenko\PhpPdf\Pdf\Signature\Asn1\Oid;
+use Dskripchenko\PhpPdf\Pdf\Signature\External\ExternalMode;
+use Dskripchenko\PhpPdf\Pdf\Signature\External\ExternalSigner;
 use Dskripchenko\PhpPdf\Pdf\Signature\Signer\DigestAlgorithm;
 use Dskripchenko\PhpPdf\Pdf\Signature\Signer\KeyType;
 use Dskripchenko\PhpPdf\Pdf\Signature\Signer\OpenSslSigner;
@@ -128,5 +130,59 @@ final class GostSignatureTest extends TestCase
         $doc->sign(new SignatureConfig(signer: self::signer('256')));
 
         self::assertStringContainsString($regular->encodeText('Владелец: ГОСТ подписант 256'), $doc->toBytes());
+    }
+
+    #[Test]
+    public function an_outside_gost_cms_completes_the_document(): void
+    {
+        $doc = Document::new(compressStreams: false);
+        $doc->addPage()->addSignatureField('sig', 72, 600, 250, 60);
+        $prepared = $doc->prepareSignature(new SignatureConfig(
+            signer: new ExternalSigner((string) file_get_contents(self::$dir.'/cert256.pem')),
+        ));
+        self::assertSame(DigestAlgorithm::Gost256, $prepared->digest);
+
+        $dir = self::$dir;
+        file_put_contents("$dir/content", $prepared->signedContent());
+        exec(sprintf(
+            'openssl cms -sign -binary -md md_gost12_256 -in %s -signer %s -inkey %s -outform DER -out %s 2>&1',
+            escapeshellarg("$dir/content"), escapeshellarg("$dir/cert256.pem"),
+            escapeshellarg("$dir/key256.pem"), escapeshellarg("$dir/ext.cms"),
+        ), $out, $code);
+        self::assertSame(0, $code, implode("\n", $out));
+
+        $pdf = $prepared->complete((string) file_get_contents("$dir/ext.cms"));
+        [$der, $content] = Pki::extract($pdf);
+        file_put_contents("$dir/sig.der", $der);
+        file_put_contents("$dir/data", $content);
+        exec(sprintf(
+            'openssl cms -verify -binary -inform DER -in %s -content %s -CAfile %s -out /dev/null 2>&1',
+            escapeshellarg("$dir/sig.der"), escapeshellarg("$dir/data"), escapeshellarg("$dir/cert256.pem"),
+        ), $out, $code);
+        self::assertSame(0, $code, implode("\n", $out));
+    }
+
+    #[Test]
+    public function a_little_endian_gost_raw_signature_is_accepted(): void
+    {
+        $key = self::signer('256');
+        $doc = Document::new(compressStreams: false);
+        $doc->addPage()->addSignatureField('sig', 72, 600, 250, 60);
+        $prepared = $doc->prepareSignature(
+            new SignatureConfig(signer: new ExternalSigner((string) file_get_contents(self::$dir.'/cert256.pem'))),
+            ExternalMode::RawSignature,
+        );
+
+        // CryptoAPI hands GOST values back byte-reversed.
+        $pdf = $prepared->complete(strrev($key->sign($prepared->dataToSign())));
+        [$der, $content] = Pki::extract($pdf);
+        $dir = self::$dir;
+        file_put_contents("$dir/sig.der", $der);
+        file_put_contents("$dir/data", $content);
+        exec(sprintf(
+            'openssl cms -verify -binary -inform DER -in %s -content %s -CAfile %s -out /dev/null 2>&1',
+            escapeshellarg("$dir/sig.der"), escapeshellarg("$dir/data"), escapeshellarg("$dir/cert256.pem"),
+        ), $out, $code);
+        self::assertSame(0, $code, implode("\n", $out));
     }
 }

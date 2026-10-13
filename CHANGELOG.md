@@ -4,6 +4,34 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Signing outside the server (two-phase).** `Pdf\Document::prepareSignature()`
+  (and `Document::prepareSignature()` for laid-out documents) emits the
+  document with an empty signature and returns a `PreparedSignature`; the
+  signer — CryptoPro in the browser, a token, an HSM, a signing service —
+  works elsewhere, and `PreparedSignature::complete()` embeds the result.
+  - `ExternalMode::Cms`: the signer gets the document digest
+    (`documentDigest()` / `documentDigestHex()`) or the signed bytes
+    (`signedContent()`) and returns a detached CMS.
+  - `ExternalMode::RawSignature`: the library builds the signed attributes
+    (`dataToSign()` / `hashToSign()`), the signer returns the raw value.
+  - `complete()` checks the result first — the CMS covers this document, was
+    made with the prepared certificate, verifies, fits the reserved space —
+    adds missing certificates, and can add an RFC 3161 timestamp.
+    `completeBase64()` takes base64 or PEM. GOST raw values in CryptoAPI's
+    little-endian order are recognised.
+  - `toJson()` / `fromJson()` keep the state between requests.
+  - `ExternalSigner` stands in for the absent key, with or without the
+    certificate (the stamp shows it when given).
+- Signing guide: signing outside the server, with a CryptoPro Browser
+  plug-in sketch.
+
+### Changed
+- Signature placeholders are handled by one internal class shared by
+  in-process and two-phase signing.
+
 ## [1.12.0] — 2026-10-13
 
 ### Added
