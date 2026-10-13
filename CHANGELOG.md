@@ -4,7 +4,7 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.13.0] — 2026-10-13
 
 ### Added
 - **Signing outside the server (two-phase).** `Pdf\Document::prepareSignature()`
