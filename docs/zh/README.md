@@ -57,7 +57,7 @@
   包括罕见的 Pharmacode、MSI Plessey、ITF-14、EAN-2/5 附加码。
 - **生产级加密** —— RC4-128、AES-128、AES-256（V5 R5 和 R6，
   遵循 ISO 32000-2 / PDF 2.0）。
-- **PKCS#7 分离签名**，自动对占位 /ByteRange 进行原位修补。
+- **PKCS#7 分离签名**，自动对占位 /ByteRange 进行原位修补，并可显示填入证书信息的**签章**。
 - **PDF/A-1a / 1b / 2u 与 PDF/X-1a / 3 / 4** 一致性支持，
   内嵌 sRGB ICC 配置文件与 XMP 元数据。
 - **Tagged PDF / PDF/UA 就绪** 的结构树，支持 H1–H6、Table/TR/TD、
@@ -190,7 +190,8 @@ file_put_contents('hello.pdf', $doc->toBytes());
 
 ### 安全与一致性
 - 加密：RC4-128、AES-128、AES-256（V5 R5 + R6 / PDF 2.0）。
-- PKCS#7 分离签名，支持时间戳、原因、位置、签署人名称。
+- PKCS#7 分离签名，支持时间戳、原因、位置、签署人名称；签章（文本、图片、QR）
+  支持证书占位符，可有多个签名字段，支持不可见签名。
 - PDF/A-1a、PDF/A-1b、PDF/A-2u，内嵌 sRGB ICC。
 - PDF/X-1a、PDF/X-3、PDF/X-4，配 /OutputIntent /S /GTS_PDFX。
 - Tagged PDF / PDF/UA 就绪的结构树。
@@ -211,6 +212,8 @@ file_put_contents('hello.pdf', $doc->toBytes());
 
 - 📖 [使用指南](USAGE.md) —— 段落、表格、图表、
   条形码、表单、加密、签名、PDF/A。
+- ✍️ [数字签名](SIGNING.md) —— 签名、签名字段、签章设计、占位符、
+  多个签署人。
 - 🔗 [读取与合并 PDF](MERGE.md) —— 读取现有文件、追加/重排页面、
   盖印叠加、FPDI 风格导入。
 - ⚖️ [与 mpdf / tcpdf / dompdf / FPDF 的对比](COMPARISON.md) ——

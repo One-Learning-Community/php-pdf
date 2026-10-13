@@ -247,18 +247,6 @@ parameters:
 			path: src/Pdf/Document.php
 
 		-
-			message: '#^Method Dskripchenko\\PhpPdf\\Pdf\\Document\:\:buildSignatureDictBody\(\) is unused\.$#'
-			identifier: method.unused
-			count: 1
-			path: src/Pdf/Document.php
-
-		-
-			message: '#^Negated boolean expression is always true\.$#'
-			identifier: booleanNot.alwaysTrue
-			count: 1
-			path: src/Pdf/Document.php
-
-		-
 			message: '#^Offset ''color'' does not exist on array\{level\: int, title\: string, page\: Dskripchenko\\PhpPdf\\Pdf\\Page, x\: float, y\: float\}\.$#'
 			identifier: offsetAccess.notFound
 			count: 1
@@ -271,20 +259,8 @@ parameters:
 			path: src/Pdf/Document.php
 
 		-
-			message: '#^Right side of && is always false\.$#'
-			identifier: booleanAnd.rightAlwaysFalse
-			count: 1
-			path: src/Pdf/Document.php
-
-		-
 			message: '#^Strict comparison using \=\=\= between ''push'' and ''push'' will always evaluate to true\.$#'
 			identifier: identical.alwaysTrue
-			count: 1
-			path: src/Pdf/Document.php
-
-		-
-			message: '#^Unreachable statement \- code above always terminates\.$#'
-			identifier: deadCode.unreachable
 			count: 1
 			path: src/Pdf/Document.php
 

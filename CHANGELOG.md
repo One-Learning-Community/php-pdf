@@ -4,6 +4,53 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Signature stamps** — a signature field can show a stamp drawn from
+  `SignatureAppearance`: a frame (border, rounded corners, background,
+  padding) holding `TextBlock`, `ImageBlock` and `QrBlock` layers placed by
+  fractional `Box`es. Text wraps and shrinks to fit; images keep their
+  proportions and transparency; QR codes sit on a white ground with a
+  quiet zone.
+  - Placeholders filled when the document is signed: certificate subject
+    (`{cn}`, `{org}`, `{email}`), `{serial}`, `{validFrom}`, `{validTo}`,
+    `{issuer}`, the Russian qualified-certificate identifiers (`{inn}`,
+    `{innle}`, `{ogrn}`, `{ogrnip}`, `{snils}`), `{signer}`, `{signedAt}`,
+    `{reason}`, `{location}`, `{contact}`, and custom `variables`. A line
+    whose placeholders all come out empty is dropped.
+  - Presets: `electronicSignatureStamp()` (the customary electronic-signature
+    mark, Russian or English captions, optional emblem), `simple()`,
+    `imageOnly()`.
+  - `CertificateInfo` reads what the stamp shows from an X.509 certificate.
+- `Element\SignatureField` — a signature field in the layout flow, aligned
+  like an image; its stamp text falls back to the document's default and bold
+  fonts.
+- `Page::addSignatureField()` — a signature field with an appearance; a
+  zero-size field is an invisible signature.
+- `repeatOnOtherPages` draws the stamp, as non-interactive artifact content,
+  at the same position on every other page.
+- `SignatureConfig::$fieldName` picks the field to sign among several; the
+  others stay empty for later signers.
+- Docs: signing guide (`docs/*/SIGNING.md`).
+- Conformance: a signed PDF/A-2b document with a stamp is validated with
+  veraPDF, and a signature-stamp page joins the visual regression set.
+
+### Changed
+- The signature widget carries `/F 4` (Print), so the stamp is printed.
+- `NeedAppearances` is no longer written for signed or PDF/A documents —
+  every widget has its own appearance stream, PDF/A forbids the flag, and a
+  viewer redrawing appearances would disturb a signed file.
+- The signing time is fixed once per write, so `/M` and the stamp agree.
+
+### Fixed
+- `toFile()` of a signed document failed with "/ByteRange placeholder not
+  found": the file was opened write-only while signing reads the emitted
+  bytes back. Files are opened read-write, and write-only streams take the
+  buffered signing path.
+- The signing example in the usage guide used a constructor argument and a
+  form-field call that do not exist.
+
 ## [1.10.0] — 2026-10-01
 
 ### Added

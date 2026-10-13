@@ -62,7 +62,7 @@ gängigen PHP-PDF-Stack:
 - **Produktionsreife Kryptografie** — RC4-128, AES-128, AES-256 (V5 R5
   und R6 gemäß ISO 32000-2 / PDF 2.0).
 - **PKCS#7 Detached Signing** mit automatischem Patchen des Platzhalter-
-  /ByteRange.
+  /ByteRange und sichtbarem **Signaturstempel** aus den Zertifikatsdaten.
 - **PDF/A-1a / 1b / 2u und PDF/X-1a / 3 / 4** Konformität mit
   eingebettetem sRGB-ICC-Profil und XMP-Metadaten.
 - **Tagged PDF / PDF/UA-tauglicher** Strukturbaum mit H1–H6, Table/TR/TD,
@@ -197,7 +197,9 @@ file_put_contents('hello.pdf', $doc->toBytes());
 
 ### Sicherheit und Konformität
 - Verschlüsselung: RC4-128, AES-128, AES-256 (V5 R5 + R6 / PDF 2.0).
-- PKCS#7 Detached Signing mit Zeitstempel, Begründung, Ort, Unterzeichner.
+- PKCS#7 Detached Signing mit Zeitstempel, Begründung, Ort, Unterzeichner;
+  Signaturstempel (Text, Bilder, QR) mit Zertifikats-Platzhaltern, mehrere
+  Signaturfelder, unsichtbare Signaturen.
 - PDF/A-1a, PDF/A-1b, PDF/A-2u mit eingebettetem sRGB-ICC.
 - PDF/X-1a, PDF/X-3, PDF/X-4 mit /OutputIntent /S /GTS_PDFX.
 - Tagged PDF / PDF/UA-tauglicher Strukturbaum.
@@ -221,6 +223,8 @@ Eine vollständige Anleitung findet sich in [docs/en/USAGE.md](USAGE.md).
 
 - 📖 [Anwendungsleitfaden](USAGE.md) — Absätze, Tabellen, Diagramme,
   Barcodes, Formulare, Verschlüsselung, Signing, PDF/A.
+- ✍️ [Digitale Signaturen](SIGNING.md) — Signieren, Signaturfelder,
+  Stempelgestaltung, Platzhalter, mehrere Unterzeichner.
 - 🔗 [PDFs lesen & zusammenführen](MERGE.md) — bestehende Dateien lesen,
   Seiten anhängen/umordnen, Overlays stempeln, FPDI-Stil-Import.
 - ⚖️ [Vergleich mit mpdf / tcpdf / dompdf / FPDF](COMPARISON.md) —

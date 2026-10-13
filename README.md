@@ -69,7 +69,8 @@ PDF stack:
   Pharmacode, MSI Plessey, ITF-14, EAN-2/5 add-ons.
 - **Production cryptography** — RC4-128, AES-128, AES-256 (V5 R5 and R6
   per ISO 32000-2 / PDF 2.0).
-- **PKCS#7 detached signing** with placeholder /ByteRange auto-patching.
+- **PKCS#7 detached signing** with placeholder /ByteRange auto-patching and
+  a visible **signature stamp** filled from the certificate.
 - **PDF/A-1a / 1b / 2u and PDF/X-1a / 3 / 4** conformance with embedded
   sRGB ICC profile and XMP metadata.
 - **Tagged PDF / PDF/UA-ready** structure tree with H1–H6, Table/TR/TD,
@@ -202,7 +203,9 @@ file_put_contents('hello.pdf', $doc->toBytes());
 
 ### Security and conformance
 - Encryption: RC4-128, AES-128, AES-256 (V5 R5 + R6 / PDF 2.0).
-- PKCS#7 detached signing with timestamp, reason, location, signer name.
+- PKCS#7 detached signing with timestamp, reason, location, signer name;
+  signature stamps (text, images, QR) with certificate placeholders,
+  several signature fields, invisible signatures.
 - PDF/A-1a, PDF/A-1b, PDF/A-2u with embedded sRGB ICC.
 - PDF/X-1a, PDF/X-3, PDF/X-4 with /OutputIntent /S /GTS_PDFX.
 - Tagged PDF / PDF/UA-ready structure tree.
@@ -225,6 +228,8 @@ A complete usage walkthrough is in [docs/en/USAGE.md](docs/en/USAGE.md).
 
 - 📖 [Usage guide](docs/en/USAGE.md) — paragraphs, tables, charts,
   barcodes, forms, encryption, signing, PDF/A.
+- ✍️ [Digital signatures](docs/en/SIGNING.md) — signing, signature fields,
+  stamp design, placeholders, several signers.
 - 🔗 [Reading & merging PDFs](docs/en/MERGE.md) — read existing files,
   append/reorder pages, stamp overlays, handle encrypted input.
 - ⚖️ [Comparison vs mpdf / tcpdf / dompdf / FPDF](docs/en/COMPARISON.md) —

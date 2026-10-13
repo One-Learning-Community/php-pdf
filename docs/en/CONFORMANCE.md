@@ -12,10 +12,10 @@ summary page.
 
 | Check | Standard | Tool | References |
 |---|---|---|---|
-| PDF/A validation | ISO 19005 | [veraPDF](https://verapdf.org) — the industry-standard open-source validator | PDF/A-1b, 1a, 2b, 2u, 3b |
+| PDF/A validation | ISO 19005 | [veraPDF](https://verapdf.org) — the industry-standard open-source validator | PDF/A-1b, 1a, 2b, 2u, 3b, and a signed PDF/A-2b with a signature stamp |
 | PDF/X structure | ISO 15930 | Ghostscript render (`-dPDFSTOPONERROR`) + byte-level assertions (OutputIntent `/GTS_PDFX`, CMYK profile and RGB-operator ban for X-1a, Info keys, trailer `/ID`, TrimBox/ArtBox per page, no encryption) | PDF/X-1a, X-3, X-4 |
-| Visual regression | — | poppler `pdftoppm` render diffed against committed golden PNGs (ImageMagick, 5% fuzz, ≤0.5% differing pixels) | reference pages |
-| PKCS#7 signatures | — | OpenSSL CLI: `openssl cms -verify` over the exact `/ByteRange` bytes; tampering must break verification | test suite (`SignatureOpenSslTest`) |
+| Visual regression | — | poppler `pdftoppm` render diffed against committed golden PNGs (ImageMagick, 5% fuzz, ≤0.5% differing pixels) | reference pages, form fill, signature stamps |
+| PKCS#7 signatures | — | OpenSSL CLI: `openssl cms -verify` over the exact `/ByteRange` bytes; tampering must break verification | test suite (`SignatureOpenSslTest`, `SignatureStampTest`) |
 | Torture set | — | 11 worst-case documents (tables, Arabic/CJK, barcodes, charts, SVG, forms, signature, PDF/A, merge) rendered by poppler **and** Ghostscript; manual cross-viewer checklist in [VIEWER-MATRIX.md](VIEWER-MATRIX.md) | `examples/torture/` |
 
 The reference documents are not toy files: they embed subsetted TrueType
