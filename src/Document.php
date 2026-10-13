@@ -69,7 +69,7 @@ final readonly class Document
          */
         public ?EncryptionParams $encryption = null,
         /**
-         * Declarative PKCS#7 detached signing. Requires an AcroForm with a
+         * Declarative digital signing (PAdES by default). Requires an AcroForm with a
          * signature placeholder field. Null = no signing.
          */
         public ?\Dskripchenko\PhpPdf\Pdf\SignatureConfig $signature = null,

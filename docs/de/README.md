@@ -61,8 +61,9 @@ gängigen PHP-PDF-Stack:
   seltener Pharmacode, MSI Plessey, ITF-14, EAN-2/5-Add-ons.
 - **Produktionsreife Kryptografie** — RC4-128, AES-128, AES-256 (V5 R5
   und R6 gemäß ISO 32000-2 / PDF 2.0).
-- **PKCS#7 Detached Signing** mit automatischem Patchen des Platzhalter-
-  /ByteRange und sichtbarem **Signaturstempel** aus den Zertifikatsdaten.
+- **PAdES-Signaturen** (B-B, B-T mit RFC-3161-Zeitstempel) — RSA, ECDSA und
+  GOST R 34.10-2012, Schlüssel als PEM / PKCS#12 / eigener `Signer` (Token,
+  HSM) — mit sichtbarem **Signaturstempel** aus den Zertifikatsdaten.
 - **PDF/A-1a / 1b / 2u und PDF/X-1a / 3 / 4** Konformität mit
   eingebettetem sRGB-ICC-Profil und XMP-Metadaten.
 - **Tagged PDF / PDF/UA-tauglicher** Strukturbaum mit H1–H6, Table/TR/TD,
@@ -197,7 +198,8 @@ file_put_contents('hello.pdf', $doc->toBytes());
 
 ### Sicherheit und Konformität
 - Verschlüsselung: RC4-128, AES-128, AES-256 (V5 R5 + R6 / PDF 2.0).
-- PKCS#7 Detached Signing mit Zeitstempel, Begründung, Ort, Unterzeichner;
+- PAdES- (`ETSI.CAdES.detached`) oder PKCS#7-Detached-Signatur mit Begründung,
+  Ort, Unterzeichner, Zertifikatskette und RFC-3161-Zeitstempeln;
   Signaturstempel (Text, Bilder, QR) mit Zertifikats-Platzhaltern, mehrere
   Signaturfelder, unsichtbare Signaturen.
 - PDF/A-1a, PDF/A-1b, PDF/A-2u mit eingebettetem sRGB-ICC.

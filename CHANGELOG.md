@@ -4,6 +4,50 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **PAdES signatures.** The CMS signature is now built by the library
+  itself instead of `openssl_pkcs7_sign`: a detached `SignedData` with the
+  `signing-certificate-v2` attribute binding the certificate, the signer's
+  certificate chain embedded, and `/SubFilter /ETSI.CAdES.detached`
+  (PAdES B-B). The pre-PAdES format stays available as
+  `subFilter: SubFilter::Pkcs7Detached`.
+- **Timestamps (PAdES B-T)** — `SignatureConfig::$timestampAuthority` takes
+  a `Tsa\TsaClient`: an RFC 3161 client that timestamps the signature value
+  and checks the answer (status, imprint, nonce). Basic auth, extra headers,
+  policy OID, timeout; HTTP through `Transport\HttpTransport`, with a
+  dependency-free `StreamHttpTransport` by default.
+- **Keys** — `Signer` interface for keys held anywhere (token, HSM, signing
+  service): the library hands it the signed attributes and takes back the
+  signature value. `OpenSslSigner` signs with a PEM key or a PKCS#12
+  container (`fromPkcs12()`), with its chain.
+- **Algorithms** — RSA (PKCS#1 v1.5), ECDSA (P-256/384/521), and GOST
+  R 34.10-2012 256/512 with Streebog when OpenSSL's gost engine is loaded;
+  the digest follows the key. `docker/gost/` builds a PHP image with the
+  engine; CI runs the GOST tests in it.
+- `SignatureConfig::$certificateChainPem` — intermediate certificates for a
+  PEM key.
+- `SignatureConfig::$contentsReserveBytes` — the space for the signature is
+  now estimated from the certificates, key and TSA, and can be overridden; an
+  overflow error says how much is needed.
+- Internal DER encoder/parser (`Signature\Asn1`) — no new dependencies.
+- Tests: a committed test PKI (root → intermediate → RSA and ECDSA signers,
+  TSA, PKCS#12; `tests/fixtures/pki/generate.sh`), a test TSA on
+  `openssl ts -reply`, verification with `openssl cms -verify` up to the
+  root and `openssl ts -verify`, and pyHanko in CI.
+
+### Changed
+- **The default signature format is PAdES (`ETSI.CAdES.detached`)** instead
+  of `adbe.pkcs7.detached`.
+- `SignatureConfig` takes the key as `signer:` or as PEM strings; `certPem`
+  and `privateKeyPem` became optional (positional use is unchanged). The key
+  is now read — and checked against the certificate — when the config is
+  built, not when the document is written.
+- The signing time in the CMS (`adbe.pkcs7.detached`) equals `signedAt`;
+  before, `openssl_pkcs7_sign` wrote the time of writing, so a validator
+  could show a different time than `/M` and the stamp.
+
 ## [1.11.0] — 2026-10-13
 
 ### Added

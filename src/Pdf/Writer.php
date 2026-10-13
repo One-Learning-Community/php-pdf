@@ -58,7 +58,7 @@ final class Writer
 
     private ?int $encryptId = null;
 
-    /** PKCS#7 signing config (null = no signature). */
+    /** Signing config (null = no signature). */
     private ?SignatureConfig $signature = null;
 
     private ?int $signatureDictId = null;
@@ -123,7 +123,7 @@ final class Writer
     }
 
     /**
-     * Enable PKCS#7 detached signing — patches /ByteRange and
+     * Enable signing — patches /ByteRange and
      * /Contents placeholders in the signature dictionary post-emission.
      */
     public function setSignature(SignatureConfig $sig, int $sigDictId): void
@@ -230,7 +230,7 @@ final class Writer
             }
         }
 
-        // PKCS#7 signing requires post-emit byte patching (locate
+        // Signing requires post-emit byte patching (locate
         // /ByteRange + /Contents placeholders, sign hash, splice in
         // signature).
         //
@@ -243,7 +243,7 @@ final class Writer
                 return $this->toSeekableStreamWithSignature($stream);
             }
             $bytes = $this->buildBytes();
-            $bytes = $this->applyPkcs7Signature($bytes);
+            $bytes = $this->applySignature($bytes);
 
             return self::writeAll($stream, $bytes);
         }
@@ -523,7 +523,7 @@ final class Writer
     }
 
     /**
-     * Streaming PKCS#7 signing for seekable streams.
+     * Streaming signing for seekable streams.
      * Emits objects incrementally, then after the full emit seeks back and
      * patches /ByteRange + /Contents placeholders with actual signature.
      *
@@ -590,7 +590,7 @@ final class Writer
             }
             $content .= $chunk;
         }
-        $signed = $this->applyPkcs7Signature($content);
+        $signed = $this->applySignature($content);
         // Rewrite signed content.
         fseek($stream, $startOffset);
         $writtenFinal = self::writeAll($stream, $signed);
@@ -622,7 +622,7 @@ final class Writer
      * Locate placeholders in assembled bytes, compute byte range, sign
      * data outside /Contents, patch dictionary in-place.
      */
-    private function applyPkcs7Signature(string $bytes): string
+    private function applySignature(string $bytes): string
     {
         // Locate /ByteRange [<digits> <digits> <digits> <digits>] placeholder.
         // The placeholder values are all zeros, padded with trailing spaces to
@@ -670,42 +670,15 @@ final class Writer
         // Build hashable data: bytes[0..b] + bytes[c..].
         $signedData = substr($bytes, 0, $b) . substr($bytes, $c);
 
-        // Sign through openssl_pkcs7_sign — requires input file.
-        $infile = tempnam(sys_get_temp_dir(), 'phppdf-sig-in-');
-        $outfile = tempnam(sys_get_temp_dir(), 'phppdf-sig-out-');
-        if ($infile === false || $outfile === false) {
-            throw new \RuntimeException('Failed to create temp files for signing');
-        }
-        file_put_contents($infile, $signedData);
-
-        $signKey = $this->signature->privateKeyPassphrase !== null
-            ? [$this->signature->privateKeyPem, $this->signature->privateKeyPassphrase]
-            : $this->signature->privateKeyPem;
-
-        $ok = openssl_pkcs7_sign(
-            $infile,
-            $outfile,
-            $this->signature->certPem,
-            $signKey,
-            [],
-            PKCS7_BINARY | PKCS7_DETACHED,
-        );
-        $smime = $ok ? (string) file_get_contents($outfile) : '';
-        @unlink($infile);
-        @unlink($outfile);
-        if (! $ok) {
-            throw new \RuntimeException('openssl_pkcs7_sign failed: ' . openssl_error_string());
-        }
-
-        // Extract DER PKCS#7 bytes from S/MIME envelope.
-        $der = self::extractPkcs7FromSmime($smime);
+        // Detached CMS over the bytes outside /Contents.
+        $der = $this->signature->signBytes($signedData);
         $sigHex = strtoupper(bin2hex($der));
 
         $placeholderHexLen = $cLen - strlen('/Contents <') - 1; // minus '>'
         if (strlen($sigHex) > $placeholderHexLen) {
             throw new \RuntimeException(sprintf(
-                'PKCS#7 signature %d hex chars exceeds placeholder %d',
-                strlen($sigHex), $placeholderHexLen,
+                'The signature takes %d bytes but %d were reserved — set SignatureConfig::$contentsReserveBytes to at least %d',
+                intdiv(strlen($sigHex), 2), intdiv($placeholderHexLen, 2), intdiv(strlen($sigHex), 2) + 1024,
             ));
         }
         $sigHex = str_pad($sigHex, $placeholderHexLen, '0', STR_PAD_RIGHT);
@@ -714,39 +687,6 @@ final class Writer
         $hexStart = $cStart + strlen('/Contents <');
 
         return substr_replace($bytes, $sigHex, $hexStart, $placeholderHexLen);
-    }
-
-    /**
-     * Parse openssl_pkcs7_sign output (S/MIME multipart/signed) → raw DER.
-     *
-     * Structure (simplified):
-     *   MIME headers...
-     *   --boundary
-     *   <signed message body>
-     *   --boundary
-     *   Content-Type: application/x-pkcs7-signature; ...
-     *   Content-Transfer-Encoding: base64
-     *   Content-Disposition: attachment; filename="smime.p7s"
-     *   <empty>
-     *   <base64-encoded PKCS#7>
-     *   --boundary--
-     */
-    private static function extractPkcs7FromSmime(string $smime): string
-    {
-        if (! preg_match(
-            '@Content-Disposition:[^\r\n]+(?:\r?\n[^\r\n]*)*?\r?\n\r?\n([A-Za-z0-9+/=\s]+?)\r?\n--@s',
-            $smime,
-            $m,
-        )) {
-            throw new \RuntimeException('PKCS#7 base64 portion not found in S/MIME');
-        }
-        $b64 = (string) preg_replace('@\s+@', '', $m[1]);
-        $der = base64_decode($b64, true);
-        if ($der === false || $der === '') {
-            throw new \RuntimeException('base64_decode failed for PKCS#7 envelope');
-        }
-
-        return $der;
     }
 
     /**

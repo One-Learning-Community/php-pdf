@@ -55,8 +55,49 @@ jobs:
       - name: Fetch fonts
         run: bash scripts/fetch-fonts.sh
 
+      # pyHanko validates the signed PDFs independently (PadesSignatureTest);
+      # once is enough.
+      - name: Install pyHanko
+        if: matrix.php == '8.4'
+        run: pipx install pyhanko-cli
+
       - name: Run tests
         run: vendor/bin/phpunit
+
+  gost:
+    runs-on: ubuntu-latest
+    name: GOST R 34.10-2012 signing (OpenSSL gost engine)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build the PHP + gost engine image
+        uses: docker/build-push-action@v6
+        with:
+          context: docker/gost
+          tags: php-pdf-gost
+          load: true
+          cache-from: type=gha,scope=php-pdf-gost
+          cache-to: type=gha,scope=php-pdf-gost,mode=max
+
+      - name: Cache fonts
+        uses: actions/cache@v4
+        with:
+          path: .cache/fonts
+          key: fonts-liberation-2.1.5-amiri-droid
+
+      - name: Fetch fonts
+        run: bash scripts/fetch-fonts.sh
+
+      - name: Run the signing tests with the engine loaded
+        run: |
+          docker run --rm -v "$PWD:/app" -w /app php-pdf-gost sh -c '
+            composer install --prefer-dist --no-interaction --no-progress &&
+            vendor/bin/phpunit tests/Pdf/Signature --display-skipped'
 
   static-analysis:
     runs-on: ubuntu-latest

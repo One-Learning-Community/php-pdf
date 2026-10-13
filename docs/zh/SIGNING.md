@@ -1,11 +1,19 @@
 # 数字签名
 
-php-pdf 在写出文档的同时完成签名：通过 `openssl` 扩展生成 PKCS#7 分离签名
-（`adbe.pkcs7.detached`），文件组装完成后再回填 `/ByteRange` 与 `/Contents`
-占位符。签名字段可以显示**签章**：一个包含文字、图片和二维码的边框，
+php-pdf 在写出文档的同时完成签名：生成 **PAdES** 格式的分离 CMS 签名
+（`ETSI.CAdES.detached`，ETSI EN 319 142），由库自身构建，并通过 `openssl`
+扩展完成签名，文件组装完成后再回填 `/ByteRange` 与 `/Contents` 占位符。
+支持 RSA、ECDSA 和 GOST R 34.10-2012 密钥；配合时间戳服务（TSA），签名可达到
+PAdES B-T 级别。签名字段可以显示**签章**：一个包含文字、图片和二维码的边框，
 在文档签名时根据证书内容自动填充。
 
 - [签名](#签名)
+- [密钥和证书](#密钥和证书)
+- [签名格式](#签名格式)
+- [时间戳](#时间戳)
+- [GOST R 34.10-2012](#gost-r-3410-2012)
+- [签名大小](#签名大小)
+- [检查签名](#检查签名)
 - [签名字段](#签名字段)
 - [签章](#签章)
 - [现成签章](#现成签章)
@@ -41,6 +49,85 @@ $doc->toFile('signed.pdf');
 
 `signedAt` 用于指定签名时间，默认为写出文档的时间。同一时刻会同时写入签名字典
 （`/M`）和签章。
+
+## 密钥和证书
+
+提供密钥的三种方式：
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\Signer\OpenSslSigner;
+
+// 1. PEM strings, with the intermediate certificates so a validator can
+//    build the path to a trusted root.
+new SignatureConfig(
+    certPem: $cert, privateKeyPem: $key, privateKeyPassphrase: 'secret',
+    certificateChainPem: file_get_contents('intermediate.crt'),
+);
+
+// 2. A PKCS#12 container (.p12 / .pfx) — key, certificate and chain.
+new SignatureConfig(signer: OpenSslSigner::fromPkcs12(file_get_contents('signer.p12'), 'password'));
+
+// 3. Your own Signer — a PKCS#11 token, an HSM, a signing service.
+new SignatureConfig(signer: $mySigner);
+```
+
+`Signer` 是一个小接口：`certificate()`、`chain()`、`digestAlgorithm()` 和
+`sign(string $data): string`。库会把签名属性的 DER 交给 `sign()`，并期望返回原始签名值，
+因此密钥无需存在于 PHP 中。
+
+摘要算法随密钥而定：RSA 和 P-256 使用 SHA-256，P-384 使用 SHA-384，P-521 使用
+SHA-512，GOST 使用 Streebog。向 `OpenSslSigner` 传入 `digest:` 可选择其他算法。
+
+## 签名格式
+
+| `subFilter` | 说明 |
+|---|---|
+| `SubFilter::CadesDetached`（默认） | PAdES：CAdES 分离 CMS，通过 `signing-certificate-v2` 绑定证书；签名时间为 `/M`，而不是 CMS 属性。PAdES B-B，带时间戳时为 B-T |
+| `SubFilter::Pkcs7Detached` | 较旧的 `adbe.pkcs7.detached`；CMS 中带有 `signing-time`，与 `/M` 设置为同一时刻 |
+
+两者都是分离的 CMS `SignedData`，内嵌签署人证书和证书链。除非接收方的软件早于 PAdES，
+否则请保持默认值。
+
+## 时间戳
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\Tsa\TsaClient;
+
+new SignatureConfig(
+    signer: $signer,
+    timestampAuthority: new TsaClient('https://freetsa.org/tsr'),
+);
+```
+
+签名值会发送给 RFC 3161 时间戳服务（TSA），令牌作为 `signature-time-stamp`
+属性写入签名：此时签名时间由 TSA 担保，而不是依赖签署人的时钟（PAdES B-T）。
+`TsaClient` 接受摘要算法、HTTP 基本认证凭据、额外请求头（API 密钥）、策略 OID
+和超时时间。它会检查应答 —— 已授予状态、摘要值（imprint）以及所发送的 nonce ——
+否则抛出 `TsaException`。
+
+请求通过 PHP 的流包装器发出，并启用 TLS 验证。若要使用自己的 HTTP 客户端、代理或
+重试策略，请实现 `Transport\HttpTransport` 并通过 `transport:` 传入。
+
+## GOST R 34.10-2012
+
+GOST 密钥（2012，256 位和 512 位）的签名方式与 RSA 相同，使用 Streebog 摘要以及
+OpenSSL 和 CryptoPro 所用的标识符。PHP 必须加载 OpenSSL 的
+[gost engine](https://github.com/gost-engine/engine) —— 它没有为 OpenSSL 3 打包，
+需要从源码构建，并在 `openssl.cnf` 中启用。本仓库的 `docker/gost/` 是一份可用的
+配方（CI 在其中运行 GOST 测试）。没有该引擎时无法读取 GOST 密钥，错误信息会说明这一点。
+
+## 签名大小
+
+`/Contents` 中的签名空间在签名生成之前就已预留。库根据证书、密钥大小以及是否请求
+时间戳来估算所需空间。如果签署人嵌入的内容超出预期，签名会失败，并给出所需大小的提示；
+可设置 `contentsReserveBytes` 来覆盖估算值。
+
+## 检查签名
+
+测试套件使用独立于本库的工具检查每个签名：`openssl cms -verify`（验证至测试根 CA）、
+用于时间戳的 `openssl ts -verify`，以及针对整个 PDF 的
+[pyHanko](https://github.com/MatthiasValvekens/pyHanko)
+（`pyhanko sign validate --trust root.crt file.pdf`）。
 
 ## 签名字段
 

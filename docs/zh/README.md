@@ -57,7 +57,8 @@
   包括罕见的 Pharmacode、MSI Plessey、ITF-14、EAN-2/5 附加码。
 - **生产级加密** —— RC4-128、AES-128、AES-256（V5 R5 和 R6，
   遵循 ISO 32000-2 / PDF 2.0）。
-- **PKCS#7 分离签名**，自动对占位 /ByteRange 进行原位修补，并可显示填入证书信息的**签章**。
+- **PAdES 签名**（B-B；配合 RFC 3161 时间戳为 B-T）——支持 RSA、ECDSA 与
+  GOST R 34.10-2012，密钥可为 PEM / PKCS#12 / 自定义 `Signer`（令牌、HSM），并可显示填入证书信息的**签章**。
 - **PDF/A-1a / 1b / 2u 与 PDF/X-1a / 3 / 4** 一致性支持，
   内嵌 sRGB ICC 配置文件与 XMP 元数据。
 - **Tagged PDF / PDF/UA 就绪** 的结构树，支持 H1–H6、Table/TR/TD、
@@ -190,7 +191,7 @@ file_put_contents('hello.pdf', $doc->toBytes());
 
 ### 安全与一致性
 - 加密：RC4-128、AES-128、AES-256（V5 R5 + R6 / PDF 2.0）。
-- PKCS#7 分离签名，支持时间戳、原因、位置、签署人名称；签章（文本、图片、QR）
+- PAdES（`ETSI.CAdES.detached`）或 PKCS#7 分离签名，支持原因、位置、签署人名称、证书链与 RFC 3161 时间戳；签章（文本、图片、QR）
   支持证书占位符，可有多个签名字段，支持不可见签名。
 - PDF/A-1a、PDF/A-1b、PDF/A-2u，内嵌 sRGB ICC。
 - PDF/X-1a、PDF/X-3、PDF/X-4，配 /OutputIntent /S /GTS_PDFX。
