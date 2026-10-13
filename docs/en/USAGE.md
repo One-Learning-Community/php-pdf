@@ -674,7 +674,7 @@ $doc->toFile('signed.pdf');
 ```
 
 The PDF is emitted with placeholder `/ByteRange` and `/Contents`, then
-patched in place after PKCS#7 detached signing. Signature fields in the
+patched in place with the detached CMS signature (PAdES by default). Signature fields in the
 layout flow, stamp design, placeholders, fonts and several signers are
 covered in the [signing guide](SIGNING.md).
 

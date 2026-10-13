@@ -29,7 +29,7 @@ pdf.js 6.1.200 / Quartz on macOS 15 (Darwin 25.5).
 | t07-svg | gradients, paths, rounded rects | ✅ | ✅ | ✅ | ✅ | ☐ | ☐ |
 | t08-forms | text, checkbox, multiline fields | ✅ | ✅ | ✅ | ✅ | ☐ | ☐ |
 | t09-pdfa-2u | archival profile with real content | ✅ | ✅ | ✅ | ✅ | ☐ | ☐ |
-| t10-signed | PKCS#7 detached signature | ✅ | ✅ | ✅ | ✅ | ☐ | ☐ |
+| t10-signed | PAdES detached signature | ✅ | ✅ | ✅ | ✅ | ☐ | ☐ |
 | t11-merged | append + stamp via reader/merger | ✅ | ✅ | ✅ | ✅ | ☐ | ☐ |
 
 ## Machine decodability (beyond rendering)
@@ -42,7 +42,7 @@ not just by looking at them:
 | QR | zbar **and** ZXing | ✅ round-trips (incl. UTF-8 payloads) |
 | DataMatrix (rectangular 12×26) | libdmtx (`dmtxread`) | ✅ round-trips |
 | EAN-13, Code 128 | zbar | ✅ round-trips |
-| PKCS#7 signature | OpenSSL CLI (`cms -verify`) | ✅ (test suite) |
+| Signatures (PAdES, timestamps, LTV) | OpenSSL CLI (`cms`/`ts -verify`), pyHanko, Acrobat Reader | ✅ (test suite, CI; Acrobat by hand) |
 
 The QR decodability check exists because the 2026-07-17 pass caught the
 format-information bits being written in reverse — every viewer rendered

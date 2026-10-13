@@ -59,7 +59,13 @@ PDF stack:
   Pharmacode, MSI Plessey, ITF-14, EAN-2/5 add-ons.
 - **Production cryptography** — RC4-128, AES-128, AES-256 (V5 R5 and R6
   per ISO 32000-2 / PDF 2.0).
-- **PKCS#7 detached signing** with placeholder /ByteRange auto-patching.
+- **PAdES signing** (B-B, B-T with an RFC 3161 timestamp) — RSA, ECDSA and
+  GOST R 34.10-2012, PEM / PKCS#12 / your own `Signer` (token, HSM), or
+  **two-phase signing outside the server** (CryptoPro plug-in, HSM, signing
+  service) — with a visible **signature stamp** filled from the certificate;
+  **sign existing PDFs** incrementally (several signers, certification, field
+  locks) and **long-term validation** (B-LT DSS, B-LTA document timestamps);
+  **signature validation** against the known PDF signature attacks.
 - **PDF/A-1a / 1b / 2u and PDF/X-1a / 3 / 4** conformance with embedded
   sRGB ICC profile and XMP metadata.
 - **Tagged PDF / PDF/UA-ready** structure tree with H1–H6, Table/TR/TD,
@@ -76,7 +82,7 @@ composer require dskripchenko/php-pdf
 ```
 
 PHP 8.2 or later. Required extensions: `mbstring`, `zlib`, `dom`. Add
-`openssl` for AES encryption or PKCS#7 signing.
+`openssl` for AES encryption or digital signatures.
 
 ---
 
@@ -192,7 +198,10 @@ file_put_contents('hello.pdf', $doc->toBytes());
 
 ### Security and conformance
 - Encryption: RC4-128, AES-128, AES-256 (V5 R5 + R6 / PDF 2.0).
-- PKCS#7 detached signing with timestamp, reason, location, signer name.
+- PAdES (`ETSI.CAdES.detached`) or PKCS#7 detached signing with reason,
+  location, signer name, certificate chain and RFC 3161 timestamps;
+  signature stamps (text, images, QR) with certificate placeholders,
+  several signature fields, invisible signatures.
 - PDF/A-1a, PDF/A-1b, PDF/A-2u with embedded sRGB ICC.
 - PDF/X-1a, PDF/X-3, PDF/X-4 with /OutputIntent /S /GTS_PDFX.
 - Tagged PDF / PDF/UA-ready structure tree.
@@ -214,6 +223,9 @@ A complete usage walkthrough is in [USAGE.md](USAGE.md).
 
 - 📖 [Usage guide](USAGE.md) — paragraphs, tables, charts, barcodes,
   forms, encryption, signing, PDF/A.
+- ✍️ [Digital signatures](SIGNING.md) — PAdES and GOST signing,
+  stamps, signing outside the server (CryptoPro, HSM), existing PDFs and
+  several signers, certification, long-term validation, signature validation.
 - 🔗 [Reading & merging PDFs](MERGE.md) — read existing files,
   append/reorder pages, stamp overlays, FPDI-style import.
 - ⚖️ [Comparison vs mpdf / tcpdf / dompdf / FPDF](COMPARISON.md) —
@@ -253,7 +265,7 @@ barcodes, forms, encryption, signing.
 
 - PHP **8.2** or later.
 - Required: `ext-mbstring`, `ext-zlib`, `ext-dom`.
-- Optional: `ext-openssl` (AES encryption and PKCS#7 signing).
+- Optional: `ext-openssl` (AES encryption and digital signatures).
 - No external binaries — pure PHP.
 
 ---

@@ -66,7 +66,7 @@ $mpdf = new Mpdf([], $engine);
 | 自定义 TTF（`fontdata` 配置） | `new Engine(defaultFont: new PdfFont(TtfFile::fromFile($path)), boldFont: ..., fontProvider: ...)` 传给 `toBytes()/toFile()` |
 | `SetProtection([...], $user, $owner)` | `new Document($section, encryption: new EncryptionParams($user, $owner, ...))` |
 | 配置里的 `PDFA` 标志 | `new Document($section, pdfA: new PdfAConfig($iccPath, ...))` —— [CI 中经 veraPDF 验证](../en/CONFORMANCE.md) |
-| 数字签名（借助外部工具） | 内置：`new Document($section, signature: new SignatureConfig($certPem, $keyPem))` |
+| 数字签名（借助外部工具） | 内置：`new Document($section, signature: new SignatureConfig($certPem, $keyPem))` — 参见[签名指南](SIGNING.md) |
 | `<barcode code="..." type="QR">` | `new Barcode('...', BarcodeFormat::Qr)` 元素（12 种一维 + 4 种二维格式） |
 
 ## 查找/替换速查表

@@ -211,4 +211,4 @@ Annotationen und Gliederungen (Lesezeichen) mit internen/benannten Zielen **werd
 
 Dies ist dokumentiert, damit „unterstützt Merge" nicht mit „bewahrt alles"
 verwechselt wird. Der vollständige Umfang und die Roadmap stehen in
-`docs/design/pdf-merge.md`.
+`docs/internal/design/pdf-merge.md`.

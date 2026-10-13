@@ -92,7 +92,7 @@ composer require dskripchenko/php-pdf
 ```
 
 PHP 8.2 or later. Required extensions: `mbstring`, `zlib`, `dom`. Add
-`openssl` for AES encryption or PKCS#7 signing.
+`openssl` for AES encryption or digital signatures.
 
 ---
 
@@ -234,8 +234,9 @@ A complete usage walkthrough is in [docs/en/USAGE.md](docs/en/USAGE.md).
 
 - 📖 [Usage guide](docs/en/USAGE.md) — paragraphs, tables, charts,
   barcodes, forms, encryption, signing, PDF/A.
-- ✍️ [Digital signatures](docs/en/SIGNING.md) — signing, signature fields,
-  stamp design, placeholders, several signers.
+- ✍️ [Digital signatures](docs/en/SIGNING.md) — PAdES and GOST signing,
+  stamps, signing outside the server (CryptoPro, HSM), existing PDFs and
+  several signers, certification, long-term validation, signature validation.
 - 🔗 [Reading & merging PDFs](docs/en/MERGE.md) — read existing files,
   append/reorder pages, stamp overlays, handle encrypted input.
 - ⚖️ [Comparison vs mpdf / tcpdf / dompdf / FPDF](docs/en/COMPARISON.md) —
@@ -244,7 +245,7 @@ A complete usage walkthrough is in [docs/en/USAGE.md](docs/en/USAGE.md).
   and output-size measurements.
 - ✅ [Conformance](docs/en/CONFORMANCE.md) — PDF/A validated with veraPDF,
   PDF/X checked with Ghostscript, renders diffed against goldens, and
-  signatures verified with OpenSSL — on every push.
+  signatures verified with OpenSSL and pyHanko — on every push.
 - 🔀 [Migrating from mpdf](docs/en/MIGRATION-FROM-MPDF.md) — compat
   facade (`WriteHTML`/`Output` keep working) + full mapping table.
 - 🔀 [Migrating from FPDI](docs/en/MIGRATION-FROM-FPDI.md) —
@@ -263,7 +264,7 @@ Runnable scripts in [`examples/`](examples/), outputs committed to
 | `php examples/03-barcodes.php` | [PDF](samples/03-barcodes.pdf) | QR, Code 128, EAN-13, DataMatrix |
 | `php examples/04-charts.php` | [PDF](samples/04-charts.pdf) | vector pie/bar/line charts |
 | `php examples/05-forms.php` | [PDF](samples/05-forms.pdf) | fillable AcroForm fields |
-| `php examples/06-signature.php` | [PDF](samples/06-signature.pdf) | PKCS#7 digital signature |
+| `php examples/06-signature.php` | [PDF](samples/06-signature.pdf) | PAdES digital signature with a visible stamp |
 | `php examples/07-pdfa.php` | [PDF](samples/07-pdfa.pdf) | PDF/A-2u (veraPDF-clean); needs `scripts/fetch-fonts.sh` |
 | `php examples/08-merge.php` | [PDF](samples/08-merge.pdf) | append + reorder existing PDFs |
 | `php examples/09-stamp.php` | [PDF](samples/09-stamp.pdf) | watermark/letterhead stamping |
@@ -297,7 +298,7 @@ barcodes, forms, encryption, signing.
 
 - PHP **8.2** or later.
 - Required: `ext-mbstring`, `ext-zlib`, `ext-dom`.
-- Optional: `ext-openssl` (AES encryption and PKCS#7 signing).
+- Optional: `ext-openssl` (AES encryption and digital signatures).
 - No external binaries — pure PHP.
 
 ---

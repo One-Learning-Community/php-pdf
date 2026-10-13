@@ -352,7 +352,7 @@ $wifi = QrEncoder::wifi(ssid: 'guest', password: 'welcome', hidden: false);
 $mailto = QrEncoder::mailto('hello@example.com', subject: 'Hi');
 ```
 
-支持的全部 16 种格式列表请参阅 [COMPARISON.md](COMPARISON.md#条形码-1)。
+支持的全部 16 种格式列表请参阅 [COMPARISON.md](COMPARISON.md#条形码)。
 
 ---
 
@@ -635,8 +635,7 @@ $doc->sign(new SignatureConfig(
 $doc->toFile('signed.pdf');
 ```
 
-PDF 先以占位的 `/ByteRange` 与 `/Contents` 发射，然后在 PKCS#7
-分离签名完成后就地修补。版式流中的签名字段、签章设计、占位符、字体以及多个签署人，详见[签名指南](SIGNING.md)。
+PDF 先以占位的 `/ByteRange` 与 `/Contents` 发射，然后就地写入分离的 CMS 签名（默认 PAdES）。版式流中的签名字段、签章设计、占位符、字体以及多个签署人，详见[签名指南](SIGNING.md)。
 
 ---
 

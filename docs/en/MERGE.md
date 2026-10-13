@@ -202,4 +202,4 @@ Annotations and outlines (bookmarks) with internal/named destinations *are*
 carried and remapped — see [Annotations and bookmarks](#annotations-and-bookmarks).
 
 These are documented so "supports merge" is not mistaken for "preserves
-everything". See `docs/design/pdf-merge.md` for the full scope and roadmap.
+everything". See `docs/internal/design/pdf-merge.md` for the full scope and roadmap.

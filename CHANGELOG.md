@@ -4,6 +4,21 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Documentation
+- Package description and keywords cover the signing features (PAdES, GOST,
+  stamps, timestamps, LTV, validation).
+- `docs/en/README.md` brought in line with the root README (signing
+  features, signing guide link).
+- Comparison tables (all languages): the single "PKCS#7 signing" row split
+  into PKCS#7, PAdES, timestamps, visible stamps, certification, signing
+  existing PDFs, signing outside the server, long-term validation and
+  signature validation.
+- Usage guides, viewer matrix, mpdf migration guide: signing wording and
+  links updated; broken links fixed (merge design document path, two
+  anchors in the German and Chinese usage guides).
+
 ## [1.15.0] — 2026-10-13
 
 ### Added
