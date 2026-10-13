@@ -17,6 +17,9 @@ PAdES B-T 级别。签名字段可以显示**签章**：一个包含文字、图
 - [签署已有 PDF](#签署已有-pdf)
 - [认证签名与锁定字段](#认证签名与锁定字段)
 - [长期验证](#长期验证)
+- [填写已签名的表单](#填写已签名的表单)
+- [加密的 PDF](#加密的-pdf)
+- [验证签名](#验证签名)
 - [检查签名](#检查签名)
 - [签名字段](#签名字段)
 - [签章](#签章)
@@ -209,8 +212,8 @@ $twice = PdfSigner::fromBytes($signed)
 use Dskripchenko\PhpPdf\Pdf\Signature\{DocMdpPermission, FieldLock};
 
 new SignatureConfig(signer: $signer,
-    certification: DocMdpPermission::FormFilling,   // None
-    lockFields: FieldLock::only(['amount', 'date']), // // what may change afterwards
+    certification: DocMdpPermission::FormFilling,   // what may change afterwards
+    lockFields: FieldLock::only(['amount', 'date']), // fields frozen by this signature
 );
 ```
 
@@ -231,9 +234,9 @@ new SignatureConfig(signer: $signer,
 会随 CA 一同消失。PAdES 把它们保存在文档里：
 
 ```php
-$bt   = $doc->toBytes();                       // // fields frozen by this signature
-$blt  = PdfSigner::fromBytes($bt)->addValidationData();   // // B-T: signed with a timestamp
-$blta = PdfSigner::fromBytes($blt)->timestamp($tsa);      // // B-LT: + DSS
+$bt   = $doc->toBytes();                       // B-T: signed with a timestamp
+$blt  = PdfSigner::fromBytes($bt)->addValidationData();   // B-LT: + DSS
+$blta = PdfSigner::fromBytes($blt)->timestamp($tsa);      // B-LTA: + document timestamp
 ```
 
 `addValidationData()` 收集文档签名及其时间戳令牌的所有证书，下载缺失的颁发者证书
@@ -244,6 +247,61 @@ $blta = PdfSigner::fromBytes($blt)->timestamp($tsa);      // // B-LT: + DSS
 
 `timestamp()` 对整个文件（包括 DSS）添加文档时间戳（`ETSI.RFC3161`）。在最后一个
 时间戳的证书到期之前，重复执行 `addValidationData()` + `timestamp()` 即可延长归档。
+
+## 填写已签名的表单
+
+`ExistingFormFiller::toBytes(incremental: true)` 把填写的值以增量更新的方式写入，
+而不是重写整个文件，因此签名依然有效——为表单填写而认证的文档也依然保持认证状态：
+
+```php
+$filled = ExistingFormFiller::fromBytes($signedPdf)
+    ->setValue('amount', '100')
+    ->toBytes(incremental: true);
+```
+
+以 `NoChanges` 认证的文档会拒绝这种操作；在任何认证下，`flatten()` 和图片签章
+（页面改动）也都会被拒绝。不带 `incremental: true` 时，填充器仍会重写整个文件，
+这会使签名失效。
+
+## 加密的 PDF
+
+传入能打开该文件的密码：`PdfSigner::fromBytes($pdf,
+$password)`、`ExistingFormFiller::fromBytes($pdf, $password)`、
+`SignatureValidator::fromBytes($pdf, $password)`。更新内容使用文件自身的密钥加密
+（RC4、AES-128、AES-256），签名值本身按格式要求保持明文，`/Encrypt` 和文档 ID
+均予保留。只设置了所有者密码的文件用空密码即可打开。
+
+## 验证签名
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\Validation\{SignatureValidator, TrustStore};
+
+$report = SignatureValidator::fromBytes($pdf)
+    ->validate(TrustStore::fromPem('root.crt'));   // or TrustStore::system()
+
+$report->allValid();
+foreach ($report->signatures as $s) {
+    $s->fieldName; $s->isValid(); $s->errors; $s->warnings;
+    $s->signer; $s->chain; $s->timestampTime; $s->revocation; $s->modifications;
+}
+$original = SignatureValidator::fromBytes($pdf)->signedRevision('approver');
+```
+
+对每个签名和文档时间戳：
+
+| 检查 | 能发现什么 |
+|---|---|
+| `/ByteRange` 从 0 开始、不超出文件、其间隙恰好是 `<hex>` 签名值，被签名的字节止于某个修订版的 `%%EOF`，且该修订版的签名字典带有相同的值 | 签名包装（signature wrapping）、通用签名伪造（universal signature forgery）、被替换的 `/Contents` |
+| 消息摘要与被签名字节一致；签名可用签名者的密钥验证；`signing-certificate-v2` 指向该证书 | 篡改、被替换的证书 |
+| 签名时间戳覆盖此签名值、验证通过，且其 TSA 链至受信任的根——随后按该时间点评判证书链 | 倒填日期或被盗用的时间戳 |
+| 签名者链至信任锚，每一环都用其颁发者的密钥验证，并在相应时间点有效 | 不受信任或已过期的签名者 |
+| 来自 DSS 的 OCSP 响应和 CRL（其自身签名也会验证），或通过 `RevocationSource` 获取 | 已吊销的签名者——签名之前吊销为错误，带时间戳的签名之后吊销为警告 |
+| 签名之后追加的一切内容，逐对象检查：签名（签名、时间戳、DSS）、表单填写、批注或其他任何内容——“其他任何内容”永不允许 | 增量保存攻击（incremental-saving attacks）、影子攻击（shadow attacks：被替换的页面内容、覆盖层） |
+| 认证的 DocMDP 级别和签名的 FieldMDP 锁定与这些改动的对照 | 认证或锁定所禁止的改动 |
+
+`modifications` 报告所达到的级别（`ModificationLevel::None`、`Signing`、
+`FormFilling`、`Annotations`、`Other`）。批准签名之后跟有批注时仍然有效，但会
+提示这一点；而在“表单填写”认证下，同样的批注会使其失效。
 
 ## 检查签名
 

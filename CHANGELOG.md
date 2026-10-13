@@ -4,6 +4,36 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Signature validation** — `Signature\Validation\SignatureValidator`
+  checks every signature and document timestamp: the byte range and its gap
+  (against signature wrapping and universal forgery), the digest, the CMS
+  signature and `signing-certificate-v2`, the signature timestamp, the chain
+  to a `TrustStore` (each link verified, judged at the timestamped time),
+  revocation from the DSS's OCSP responses and CRLs (their signatures
+  verified) or a `RevocationSource`, and every change appended after it
+  (against incremental-saving and shadow attacks), with DocMDP and FieldMDP
+  enforced. `ValidationReport` / `SignatureReport` give the verdict and the
+  reasons; `signedRevision()` returns the document as signed.
+- **Filling signed forms** — `ExistingFormFiller::toBytes(incremental: true)`
+  appends the changes instead of rewriting the file: signatures stay valid,
+  a form-filling certification stays intact; refused under "no changes" and,
+  for page changes, under any certification.
+- **Signing and filling encrypted PDFs** — `PdfSigner`,
+  `ExistingFormFiller` (incremental) and `SignatureValidator` take the
+  password; the update is encrypted with the file's own key (RC4, AES-128,
+  AES-256), the signature value left plain as the format requires.
+
+### Fixed
+- **Encrypted documents with embedded fonts were corrupt** — string
+  encryption scanned the stream data too and replaced bytes of compressed
+  fonts and images; non-ASCII text strings (hex: Cyrillic titles, bookmarks,
+  field names) were not encrypted at all and read back as garbage.
+- The reader no longer "decrypts" a signature dictionary's /Contents, which
+  is never encrypted.
+
 ## [1.14.0] — 2026-10-13
 
 ### Added

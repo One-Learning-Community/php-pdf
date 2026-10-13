@@ -20,6 +20,9 @@ Signieren des Dokuments aus dem Zertifikat befüllt wird.
 - [Bestehende PDF signieren](#bestehende-pdf-signieren)
 - [Zertifizierung und gesperrte Felder](#zertifizierung-und-gesperrte-felder)
 - [Langzeitvalidierung](#langzeitvalidierung)
+- [Signiertes Formular ausfüllen](#signiertes-formular-ausfüllen)
+- [Verschlüsselte PDFs](#verschlüsselte-pdfs)
+- [Signaturen validieren](#signaturen-validieren)
 - [Eine Signatur prüfen](#eine-signatur-prüfen)
 - [Signaturfelder](#signaturfelder)
 - [Der Stempel](#der-stempel)
@@ -254,8 +257,8 @@ abgelehnt.
 use Dskripchenko\PhpPdf\Pdf\Signature\{DocMdpPermission, FieldLock};
 
 new SignatureConfig(signer: $signer,
-    certification: DocMdpPermission::FormFilling,   // None
-    lockFields: FieldLock::only(['amount', 'date']), // // was danach geändert werden darf
+    certification: DocMdpPermission::FormFilling,   // was danach geändert werden darf
+    lockFields: FieldLock::only(['amount', 'date']), // durch diese Signatur eingefrorene Felder
 );
 ```
 
@@ -283,9 +286,9 @@ Zertifikate und ihren Sperrstatus noch findet — OCSP-Responder und CRLs
 verschwinden mit der CA. PAdES legt sie im Dokument ab:
 
 ```php
-$bt   = $doc->toBytes();                       // // durch diese Signatur eingefrorene Felder
-$blt  = PdfSigner::fromBytes($bt)->addValidationData();   // // B-T: mit Zeitstempel signiert
-$blta = PdfSigner::fromBytes($blt)->timestamp($tsa);      // // B-LT: + DSS
+$bt   = $doc->toBytes();                       // B-T: mit Zeitstempel signiert
+$blt  = PdfSigner::fromBytes($bt)->addValidationData();   // B-LT: + DSS
+$blta = PdfSigner::fromBytes($blt)->timestamp($tsa);      // B-LTA: + Dokumentzeitstempel
 ```
 
 `addValidationData()` sammelt alle Zertifikate der Signaturen des Dokuments
@@ -301,6 +304,67 @@ Aufruf erweitert den DSS.
 gesamte Datei hinzu, einschließlich des DSS. Wiederholen Sie
 `addValidationData()` + `timestamp()`, bevor das Zertifikat des letzten
 Zeitstempels abläuft, um das Archiv zu verlängern.
+
+## Signiertes Formular ausfüllen
+
+`ExistingFormFiller::toBytes(incremental: true)` schreibt die ausgefüllten Werte
+als inkrementelles Update, statt die Datei neu zu schreiben, sodass Signaturen
+gültig bleiben — und ein für das Ausfüllen von Formularen zertifiziertes
+Dokument zertifiziert bleibt:
+
+```php
+$filled = ExistingFormFiller::fromBytes($signedPdf)
+    ->setValue('amount', '100')
+    ->toBytes(incremental: true);
+```
+
+Ein mit `NoChanges` zertifiziertes Dokument lehnt das ab, und unter jeder
+Zertifizierung werden `flatten()` und Bildstempel (Seitenänderungen)
+abgelehnt. Ohne `incremental: true` schreibt der Filler weiterhin die gesamte
+Datei neu, wodurch Signaturen ungültig werden.
+
+## Verschlüsselte PDFs
+
+Übergeben Sie das Passwort, das die Datei öffnet: `PdfSigner::fromBytes($pdf,
+$password)`, `ExistingFormFiller::fromBytes($pdf, $password)`,
+`SignatureValidator::fromBytes($pdf, $password)`. Das Update wird mit dem
+eigenen Schlüssel der Datei verschlüsselt (RC4, AES-128, AES-256), der
+Signaturwert selbst bleibt, wie das Format es verlangt, im Klartext, und
+`/Encrypt` sowie die Dokument-ID bleiben erhalten. Eine Datei mit nur einem
+Owner-Passwort lässt sich mit einem leeren Passwort öffnen.
+
+## Signaturen validieren
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\Validation\{SignatureValidator, TrustStore};
+
+$report = SignatureValidator::fromBytes($pdf)
+    ->validate(TrustStore::fromPem('root.crt'));   // oder TrustStore::system()
+
+$report->allValid();
+foreach ($report->signatures as $s) {
+    $s->fieldName; $s->isValid(); $s->errors; $s->warnings;
+    $s->signer; $s->chain; $s->timestampTime; $s->revocation; $s->modifications;
+}
+$original = SignatureValidator::fromBytes($pdf)->signedRevision('approver');
+```
+
+Für jede Signatur und jeden Dokumentzeitstempel:
+
+| Prüfung | Was sie erkennt |
+|---|---|
+| `/ByteRange` beginnt bei 0, bleibt innerhalb der Datei, seine Lücke ist genau der `<hex>`-Signaturwert, die signierten Bytes enden am `%%EOF` einer Revision, und das Signaturwörterbuch dieser Revision trägt denselben Wert | Signature Wrapping, Universal Signature Forgery, ein ausgetauschtes `/Contents` |
+| der Message Digest stimmt mit den signierten Bytes überein; die Signatur verifiziert mit dem Schlüssel des Unterzeichners; `signing-certificate-v2` nennt dieses Zertifikat | Manipulation, ein untergeschobenes Zertifikat |
+| ein Signatur-Zeitstempel deckt diesen Signaturwert ab, verifiziert, und seine TSA führt zu einem vertrauenswürdigen Root — die Kette wird dann zu diesem Zeitpunkt beurteilt | rückdatierte oder gestohlene Zeitstempel |
+| der Unterzeichner führt zu einem Vertrauensanker, jedes Glied mit dem Schlüssel seines Ausstellers verifiziert und zum jeweiligen Zeitpunkt gültig | nicht vertrauenswürdige oder abgelaufene Unterzeichner |
+| OCSP-Antworten und CRLs aus dem DSS (ihre eigenen Signaturen werden verifiziert) oder über eine `RevocationSource` abgerufen | gesperrte Unterzeichner — Sperrung vor dem Signieren ist ein Fehler, nach einer zeitgestempelten Signatur eine Warnung |
+| alles, was nach der Signatur angehängt wurde, Objekt für Objekt: Signieren (Signaturen, Zeitstempel, DSS), Formularausfüllung, Annotationen oder alles andere — „alles andere“ ist nie erlaubt | Incremental-Saving-Angriffe, Shadow-Angriffe (ersetzter Seiteninhalt, Overlays) |
+| die DocMDP-Stufe einer Zertifizierung und die FieldMDP-Sperre einer Signatur gegenüber diesen Änderungen | Änderungen, die die Zertifizierung oder Sperre verbietet |
+
+`modifications` meldet die erreichte Stufe (`ModificationLevel::None`,
+`Signing`, `FormFilling`, `Annotations`, `Other`). Eine Freigabesignatur, auf
+die Annotationen folgen, bleibt gültig, weist aber darauf hin; unter einer
+Zertifizierung „Formularausfüllung“ machen dieselben Annotationen sie ungültig.
 
 ## Eine Signatur prüfen
 

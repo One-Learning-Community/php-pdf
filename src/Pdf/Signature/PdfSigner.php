@@ -62,11 +62,18 @@ final class PdfSigner
     /** @var array<int, list<PdfReference>> page object → widgets added in this update */
     private array $pageWidgets = [];
 
-    private function __construct(private readonly string $pdf) {}
+    private function __construct(
+        private readonly string $pdf,
+        #[\SensitiveParameter] private readonly string $password = '',
+    ) {}
 
-    public static function fromBytes(string $pdf): self
+    /**
+     * @param  string  $password  For an encrypted PDF: the password that opens it.
+     *                            The signature is written encrypted with the file's key.
+     */
+    public static function fromBytes(string $pdf, #[\SensitiveParameter] string $password = ''): self
     {
-        return new self($pdf);
+        return new self($pdf, $password);
     }
 
     /**
@@ -76,7 +83,7 @@ final class PdfSigner
      */
     public function signatureFields(): array
     {
-        $doc = ReaderDocument::fromBytes($this->pdf);
+        $doc = ReaderDocument::fromBytes($this->pdf, $this->password);
         $pageOf = $this->widgetPages($doc);
         $out = [];
         foreach ((new FieldTree)->build($doc) as $name => $node) {
@@ -208,7 +215,7 @@ final class PdfSigner
     private function build(SignatureConfig $config): array
     {
         $this->pageWidgets = [];
-        $update = IncrementalUpdate::fromBytes($this->pdf);
+        $update = IncrementalUpdate::fromBytes($this->pdf, $this->password);
         $doc = $update->document();
         $catalog = $doc->catalog();
         $fields = (new FieldTree)->build($doc);
@@ -350,7 +357,7 @@ final class PdfSigner
         bool $fetchRevocation = true,
         ?CertificateFetcher $issuers = null,
     ): string {
-        $update = IncrementalUpdate::fromBytes($this->pdf);
+        $update = IncrementalUpdate::fromBytes($this->pdf, $this->password);
         $doc = $update->document();
 
         $certificates = $this->embeddedCertificates($doc);
@@ -428,7 +435,7 @@ final class PdfSigner
     public function timestamp(TsaClient $tsa, int $contentsReserveBytes = 16384): string
     {
         $this->pageWidgets = [];
-        $update = IncrementalUpdate::fromBytes($this->pdf);
+        $update = IncrementalUpdate::fromBytes($this->pdf, $this->password);
         $doc = $update->document();
         $fields = (new FieldTree)->build($doc);
 

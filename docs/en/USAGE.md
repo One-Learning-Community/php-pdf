@@ -584,6 +584,9 @@ signatures no longer verify, and once anything changes an XFA form
 definition is removed (XFA-aware viewers would otherwise show the XFA layer
 instead of the filled values).
 
+`toBytes(incremental: true)` writes only the changes after the original
+file instead: signatures stay valid (see [filling a signed form](SIGNING.md#filling-a-signed-form)).
+
 ---
 
 ## Annotations

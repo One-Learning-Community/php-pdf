@@ -313,12 +313,6 @@ parameters:
 			path: src/Pdf/Encryption.php
 
 		-
-			message: '#^Comparison operation "\>" between int\<1, max\> and 0 is always true\.$#'
-			identifier: greater.alwaysTrue
-			count: 1
-			path: src/Pdf/Writer.php
-
-		-
 			message: '#^Method Dskripchenko\\PhpPdf\\Pdf\\Writer\:\:writeAll\(\) has parameter \$stream with no type specified\.$#'
 			identifier: missingType.parameter
 			count: 1

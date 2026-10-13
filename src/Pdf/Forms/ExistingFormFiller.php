@@ -9,12 +9,14 @@ use Dskripchenko\PhpPdf\Font\Ttf\TtfFile;
 use Dskripchenko\PhpPdf\Image\PdfImage;
 use Dskripchenko\PhpPdf\Pdf\Forms\Appearance\AppearanceBuilder;
 use Dskripchenko\PhpPdf\Pdf\Forms\Appearance\FontResolver;
+use Dskripchenko\PhpPdf\Pdf\Incremental\IncrementalUpdate;
 use Dskripchenko\PhpPdf\Pdf\Merge\MergeSerializer;
 use Dskripchenko\PhpPdf\Pdf\Merge\ObjectImporter;
 use Dskripchenko\PhpPdf\Pdf\Merge\PdfSource;
 use Dskripchenko\PhpPdf\Pdf\Reader\PdfDictionary;
 use Dskripchenko\PhpPdf\Pdf\Reader\PdfReference;
 use Dskripchenko\PhpPdf\Pdf\Reader\PdfString;
+use Dskripchenko\PhpPdf\Pdf\Reader\PdfValueSerializer;
 use Dskripchenko\PhpPdf\Pdf\Reader\ReaderDocument;
 use Dskripchenko\PhpPdf\Pdf\Reader\ReaderPage;
 
@@ -35,9 +37,12 @@ use Dskripchenko\PhpPdf\Pdf\Reader\ReaderPage;
  * or install `dskripchenko/php-pdf-fonts-liberation` to have Liberation used
  * automatically.
  *
- * The output is a full rewrite, unencrypted: existing digital signatures no
- * longer verify, and an XFA form definition is dropped once anything is
- * changed (viewers would otherwise show the XFA layer instead of the values).
+ * By default the output is a full rewrite, unencrypted: existing digital
+ * signatures no longer verify, and an XFA form definition is dropped once
+ * anything is changed (viewers would otherwise show the XFA layer instead of
+ * the values). `toBytes(incremental: true)` writes only the changes after the
+ * original file instead — signatures stay valid, and a document certified
+ * for form filling stays certified.
  *
  * ```php
  * $bytes = ExistingFormFiller::fromFile('template.pdf')
@@ -68,6 +73,9 @@ final class ExistingFormFiller
     private ?int $acroFormId = null;
 
     private bool $mutated = false;
+
+    /** Page content changed (flattening, stamps) — not allowed under certification. */
+    private bool $pagesChanged = false;
 
     private ?TtfFile $font = null;
 
@@ -231,6 +239,7 @@ final class ExistingFormFiller
             }
         }
         $this->markMutated();
+        $this->pagesChanged = true;
 
         return $this;
     }
@@ -256,12 +265,23 @@ final class ExistingFormFiller
     {
         $page = $this->page($pageIndex);
         (new ImageStamper($this->graph(), $this->pages()))->stamp($page, PdfImage::fromBytes($bytes), $x, $y, $width, $height);
+        $this->pagesChanged = true;
 
         return $this;
     }
 
-    public function toBytes(): string
+    /**
+     * @param  bool  $incremental  Append the changes after the original file
+     *                             (an incremental update) instead of rewriting it:
+     *                             signatures in it stay valid. Refused for a
+     *                             document certified with no changes, and for page
+     *                             changes (flatten, stamps) under any certification.
+     */
+    public function toBytes(bool $incremental = false): string
     {
+        if ($incremental) {
+            return $this->incrementalBytes();
+        }
         $graph = $this->graph();
         $this->fonts()->embed();
 
@@ -279,15 +299,101 @@ final class ExistingFormFiller
         return (new MergeSerializer())->serialize($graph->importer->objects(), $this->catalogId(), $trailer);
     }
 
-    public function toFile(string $path): int
+    public function toFile(string $path, bool $incremental = false): int
     {
-        $bytes = $this->toBytes();
+        $bytes = $this->toBytes($incremental);
         $written = @file_put_contents($path, $bytes);
         if ($written === false) {
             throw new \RuntimeException("Cannot write PDF file: {$path}");
         }
 
         return $written;
+    }
+
+    /** Only the changed and new objects, written after the original bytes. */
+    private function incrementalBytes(): string
+    {
+        $doc = $this->document();
+        $perms = $doc->deref($doc->catalog()->get('Perms'));
+        $docMdp = $perms instanceof PdfDictionary ? $doc->deref($perms->get('DocMDP')) : null;
+        if ($docMdp instanceof PdfDictionary) {
+            $level = \Dskripchenko\PhpPdf\Pdf\Signature\PdfSigner::docMdpLevel($doc, $docMdp);
+            if ($level === 1) {
+                throw new \LogicException('The document is certified with no changes allowed');
+            }
+            if ($this->pagesChanged) {
+                throw new \LogicException('The document is certified: page content (flatten, stamps) cannot change; only form values can');
+            }
+        }
+
+        $graph = $this->graph();
+        $this->fonts()->embed();
+        $importer = $graph->importer;
+        $update = IncrementalUpdate::fromBytes($this->source->bytes(), $this->source->password());
+
+        // Written: every changed object, plus any new object they reach.
+        /** @var array<int, array{int, int}> $numbers newId → [number, generation] */
+        $numbers = [];
+        $pending = $importer->changedIds();
+        $emit = [];
+        while ($pending !== []) {
+            $id = array_shift($pending);
+            if (isset($emit[$id])) {
+                continue;
+            }
+            $emit[$id] = true;
+            $source = $importer->sourceNumber($id, $doc);
+            $numbers[$id] = $source !== null ? [$source, $doc->generationOf($source)] : [$update->allocate(), 0];
+            foreach (self::references($importer->get($id)) as $ref) {
+                if ($importer->sourceNumber($ref, $doc) === null && ! isset($emit[$ref])) {
+                    $pending[] = $ref;
+                }
+            }
+        }
+        $serializer = new PdfValueSerializer(static function (int $id) use (&$numbers, $importer, $doc): array {
+            if (isset($numbers[$id])) {
+                return $numbers[$id];
+            }
+            $source = $importer->sourceNumber($id, $doc) ?? throw new \LogicException("Object $id has no place in the update");
+
+            return [$source, $doc->generationOf($source)];
+        });
+
+        foreach (array_keys($emit) as $id) {
+            [$number] = $numbers[$id];
+            $body = $serializer->encode($importer->get($id));
+            if ($importer->sourceNumber($id, $doc) !== null) {
+                $update->replaceBody($number, $body);
+            } else {
+                $update->writer()->setObject($number, $body);
+            }
+        }
+
+        return $update->toBytes();
+    }
+
+    /**
+     * Object numbers referenced anywhere inside a value.
+     *
+     * @return list<int>
+     */
+    private static function references(mixed $value): array
+    {
+        $out = [];
+        $walk = static function (mixed $v) use (&$walk, &$out): void {
+            if ($v instanceof PdfReference) {
+                $out[] = $v->number;
+            } elseif ($v instanceof \Dskripchenko\PhpPdf\Pdf\Reader\PdfStream) {
+                $walk($v->dict);
+            } elseif ($v instanceof PdfDictionary) {
+                array_map($walk, $v->all());
+            } elseif (is_array($v)) {
+                array_map($walk, $v);
+            }
+        };
+        $walk($value);
+
+        return $out;
     }
 
     /** @return array<string, FieldNode> */

@@ -67,7 +67,8 @@ gängigen PHP-PDF-Stack:
   HSM, Signaturdienst) — mit sichtbarem **Signaturstempel** aus den Zertifikatsdaten;
   **bestehende PDFs signieren** per inkrementeller Aktualisierung (mehrere
   Unterzeichner, Zertifizierung, gesperrte Felder) und **Langzeitvalidierung**
-  (B-LT mit DSS, B-LTA mit Dokumentzeitstempel).
+  (B-LT mit DSS, B-LTA mit Dokumentzeitstempel); **Signaturvalidierung** gegen
+  die bekannten Angriffe auf signierte PDFs.
 - **PDF/A-1a / 1b / 2u und PDF/X-1a / 3 / 4** Konformität mit
   eingebettetem sRGB-ICC-Profil und XMP-Metadaten.
 - **Tagged PDF / PDF/UA-tauglicher** Strukturbaum mit H1–H6, Table/TR/TD,

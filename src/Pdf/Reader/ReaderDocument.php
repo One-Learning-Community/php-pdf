@@ -104,6 +104,20 @@ final class ReaderDocument
         }
     }
 
+    /**
+     * Every object number the cross-reference table knows, in-file and
+     * inside object streams.
+     *
+     * @return list<int>
+     */
+    public function objectNumbers(): array
+    {
+        $numbers = array_unique([...array_keys($this->xref->offsets), ...array_keys($this->xref->compressed)]);
+        sort($numbers);
+
+        return $numbers;
+    }
+
     /** Generation number of an object per the cross-reference table (0 inside object streams). */
     public function generationOf(int $number): int
     {
@@ -164,9 +178,12 @@ final class ReaderDocument
             return new PdfStream($dict instanceof PdfDictionary ? $dict : $value->dict, $raw);
         }
         if ($value instanceof PdfDictionary) {
+            // A signature dictionary's /Contents is never encrypted (§7.6.1).
+            $type = $value->get('Type');
+            $signature = $type instanceof PdfName && ($type->value === 'Sig' || $type->value === 'DocTimeStamp');
             $items = [];
             foreach ($value->all() as $k => $v) {
-                $items[$k] = $this->decryptValue($v, $objNum, $gen);
+                $items[$k] = $signature && $k === 'Contents' ? $v : $this->decryptValue($v, $objNum, $gen);
             }
             return new PdfDictionary($items);
         }
@@ -174,6 +191,17 @@ final class ReaderDocument
             return array_map(fn ($v) => $this->decryptValue($v, $objNum, $gen), $value);
         }
         return $value;
+    }
+
+    /**
+     * The decryptor of an encrypted file (also encrypts, for incremental
+     * updates), or null.
+     *
+     * @internal
+     */
+    public function decryptor(): ?Decryptor
+    {
+        return $this->decryptor;
     }
 
     /**

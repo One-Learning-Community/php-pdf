@@ -208,4 +208,18 @@ final class GostSignatureTest extends TestCase
             self::assertSame(0, $code, "Signature #$i: ".implode("\n", $out));
         }
     }
+
+    #[Test]
+    public function the_validator_checks_gost_signatures(): void
+    {
+        $doc = Document::new();
+        $doc->addPage()->addSignatureField('sig', 72, 700, 200, 50);
+        $doc->sign(new SignatureConfig(signer: self::signer('256')));
+        $report = \Dskripchenko\PhpPdf\Pdf\Signature\Validation\SignatureValidator::fromBytes($doc->toBytes())
+            ->validate(\Dskripchenko\PhpPdf\Pdf\Signature\Validation\TrustStore::fromPem(self::$dir.'/cert256.pem'))
+            ->signature('sig');
+
+        self::assertNotNull($report);
+        self::assertTrue($report->isValid(), implode('; ', $report->errors));
+    }
 }

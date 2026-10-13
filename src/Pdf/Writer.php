@@ -689,98 +689,10 @@ final class Writer
         }
         $enc = $this->encryption;
 
-        // Encrypt literal strings first (before streams, so the regex is
-        // not corrupted by binary content).
-        $body = $this->encryptLiteralStrings($body, $objId);
-
-        // Encrypt stream content: `stream\n<bytes>\nendstream`.
-        $encryptedLength = null;
-        $result = preg_replace_callback(
-            '@stream\n(.*?)\nendstream@s',
-            function (array $m) use ($enc, $objId, &$encryptedLength): string {
-                $encrypted = $enc->encryptObject($m[1], $objId);
-                $encryptedLength = strlen($encrypted);
-
-                return 'stream'."\n".$encrypted."\n".'endstream';
-            },
+        return ObjectEncryptor::encryptBody(
             $body,
-        ) ?? $body;
-
-        // Encryption grows the stream (IV + padding), so the /Length written
-        // for the plaintext no longer describes what is on disk. A reader that
-        // believes /Length — and per §7.3.8.2 it is entitled to — reads a
-        // truncated stream; one that falls back to scanning for `endstream`
-        // has to guess where the preceding EOL ends, and guesses wrong
-        // whenever the last ciphertext byte is CR (~1 file in 256).
-        if ($encryptedLength !== null) {
-            $result = preg_replace(
-                '@/Length \d+@',
-                '/Length '.$encryptedLength,
-                $result,
-                1,
-            ) ?? $result;
-        }
-
-        return $result;
-    }
-
-    /**
-     * Encrypt literal PDF strings (...) -> output as hex form
-     * <ENCRYPTED_HEX>. Walks body manually for correct paren balance
-     * (literal strings allow nested () pairs balanced).
-     */
-    private function encryptLiteralStrings(string $body, int $objId): string
-    {
-        if ($this->encryption === null) {
-            return $body;
-        }
-        $enc = $this->encryption;
-        $out = '';
-        $len = strlen($body);
-        $i = 0;
-        while ($i < $len) {
-            $ch = $body[$i];
-            if ($ch === '(') {
-                // Find matching closing paren respecting nested + escaped.
-                $depth = 1;
-                $j = $i + 1;
-                $strStart = $j;
-                while ($j < $len && $depth > 0) {
-                    $cj = $body[$j];
-                    if ($cj === '\\' && $j + 1 < $len) {
-                        $j += 2;
-
-                        continue;
-                    }
-                    if ($cj === '(') {
-                        $depth++;
-                    } elseif ($cj === ')') {
-                        $depth--;
-                        if ($depth === 0) {
-                            break;
-                        }
-                    }
-                    $j++;
-                }
-                if ($depth !== 0) {
-                    // Malformed — keep as-is.
-                    $out .= substr($body, $i, $j - $i + 1);
-                    $i = $j + 1;
-
-                    continue;
-                }
-                $raw = substr($body, $strStart, $j - $strStart);
-                // Unescape PDF literal string escapes: \\, \(, \).
-                $decoded = strtr($raw, ['\\\\' => '\\', '\\(' => '(', '\\)' => ')']);
-                $encrypted = $enc->encryptObject($decoded, $objId);
-                $out .= '<'.bin2hex($encrypted).'>';
-                $i = $j + 1; // skip closing )
-            } else {
-                $out .= $ch;
-                $i++;
-            }
-        }
-
-        return $out;
+            static fn (string $data, bool $stream): string => $enc->encryptObject($data, $objId),
+            keepContents: $objId === $this->signatureDictId,
+        );
     }
 }

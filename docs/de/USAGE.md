@@ -601,6 +601,9 @@ sobald sich etwas ändert, wird eine XFA-Formulardefinition entfernt
 (XFA-fähige Viewer würden sonst die XFA-Ebene statt der ausgefüllten Werte
 anzeigen).
 
+`toBytes(incremental: true)` hängt stattdessen nur die Änderungen an die
+ursprüngliche Datei an: Signaturen bleiben gültig (siehe [Signiertes Formular ausfüllen](SIGNING.md#signiertes-formular-ausfüllen)).
+
 ---
 
 ## Annotationen
