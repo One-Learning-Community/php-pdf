@@ -15,6 +15,7 @@ code, filled in from the certificate when the document is signed.
 - [Timestamp](#timestamp)
 - [GOST R 34.10-2012](#gost-r-3410-2012)
 - [Signature size](#signature-size)
+- [Signing outside the server](#signing-outside-the-server)
 - [Checking a signature](#checking-a-signature)
 - [Signature fields](#signature-fields)
 - [The stamp](#the-stamp)
@@ -134,6 +135,79 @@ library estimates it from the certificates, the key size and whether a
 timestamp is asked for. If a signer embeds more than expected, signing
 fails with a message giving the size needed; set `contentsReserveBytes`
 to override the estimate.
+
+## Signing outside the server
+
+When the key cannot come to the server — a qualified certificate on a
+token or in CryptoPro on the user's machine, an HSM that signs on request,
+a cloud signing service — sign in two steps:
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\External\{ExternalMode, ExternalSigner, PreparedSignature};
+
+// 1. Emit the document with an empty signature.
+$prepared = $doc->prepareSignature(new SignatureConfig(
+    // The certificate, when known, goes on the stamp; it may be left out.
+    signer: new ExternalSigner(certificatePem: $userCertificatePem),
+    reason: 'Approval',
+));
+$state = $prepared->toJson();        // keep it — session, cache, database
+$hash = $prepared->documentDigestHex(); // send to the signer
+
+// 2. Later, with what the signer returned (base64 CMS here).
+$pdf = PreparedSignature::fromJson($state)->completeBase64($cmsBase64);
+```
+
+| Mode | The signer gets | It returns |
+|---|---|---|
+| `ExternalMode::Cms` (default) | `documentDigest()` — or `signedContent()`, the bytes themselves, for a tool that signs files | a detached CMS (CAdES-BES) |
+| `ExternalMode::RawSignature` | `dataToSign()` — the signed attributes the library built — or `hashToSign()` for a device that signs a hash | the raw signature value |
+
+`complete()` checks what came back before embedding it: the CMS covers
+exactly this document (its message digest), it was made with the
+certificate given to `prepareSignature()` (if one was), its signature
+verifies, and it fits the reserved space. Certificates the CMS lacks are
+added from the preparation; a timestamp authority passed to `complete()`
+timestamps the signature. A GOST raw value in CryptoAPI's little-endian
+order is recognised and turned around. CMS written as BER (CryptoPro
+uses indefinite lengths) is accepted, and an attached signature — the
+default of many tools — is made detached when the content inside is this
+document.
+
+Keep the state where the signer cannot change it: it carries the prepared
+document, and its checksum only catches damage, not tampering. Once
+prepared, the document must not be regenerated — the signature covers
+those exact bytes.
+
+### CryptoPro Browser plug-in
+
+In the browser, the plug-in signs the hash with the user's certificate and
+returns a CMS — a sketch on top of CryptoPro's `cadesplugin` API:
+
+```js
+// hashHex — documentDigestHex() from the server; cert — the user's
+// certificate, picked from the store (CAdESCOM.Store).
+const hashed = await cadesplugin.CreateObjectAsync("CAdESCOM.HashedData");
+await hashed.propset_Algorithm(cadesplugin.CADESCOM_HASH_ALGORITHM_CP_GOST_3411_2012_256);
+await hashed.SetHashValue(hashHex);
+
+const signer = await cadesplugin.CreateObjectAsync("CAdESCOM.CPSigner");
+await signer.propset_Certificate(cert);
+await signer.propset_Options(cadesplugin.CAPICOM_CERTIFICATE_INCLUDE_WHOLE_CHAIN);
+
+const signedData = await cadesplugin.CreateObjectAsync("CAdESCOM.CadesSignedData");
+const cmsBase64 = await signedData.SignHash(hashed, signer, cadesplugin.CADESCOM_CADES_BES);
+// POST cmsBase64 back → completeBase64()
+```
+
+Use the hash algorithm that matches the key: `..._GOST_3411_2012_256` for a
+256-bit GOST key, `..._GOST_3411_2012_512` for 512. Pass the certificate to
+`ExternalSigner` (export it from the plug-in with
+`cert.Export(CADESCOM_ENCODE_BASE64)`) so the digest follows the key and
+the stamp shows the owner; computing the Streebog digest needs the gost
+engine on the server too. The CMS made this way carries a
+`signing-time` attribute; validators accept it, though strict PAdES
+profiles expect the time in `/M` only.
 
 ## Checking a signature
 

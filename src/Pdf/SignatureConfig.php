@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Dskripchenko\PhpPdf\Pdf;
 
 use Dskripchenko\PhpPdf\Pdf\Signature\Cms\CmsBuilder;
+use Dskripchenko\PhpPdf\Pdf\Signature\External\ExternalSigner;
+use Dskripchenko\PhpPdf\Pdf\Signature\Signer\Certificate;
 use Dskripchenko\PhpPdf\Pdf\Signature\Signer\OpenSslSigner;
 use Dskripchenko\PhpPdf\Pdf\Signature\Signer\Signer;
 use Dskripchenko\PhpPdf\Pdf\Signature\SubFilter;
@@ -39,6 +41,15 @@ final readonly class SignatureConfig
 
     /** Room for the CMS structure and attributes beyond certificates and signature. */
     private const CMS_OVERHEAD = 2048;
+
+    /**
+     * An outside signer may embed more than it was told about — its whole
+     * chain, extra attributes — so its CMS gets this much on top.
+     */
+    private const EXTERNAL_SLACK = 8192;
+
+    /** Assumed certificates of an outside signer whose certificate is not known. */
+    private const UNKNOWN_CERTIFICATES = 8192;
 
     /** The key the document is signed with. */
     public Signer $signer;
@@ -121,15 +132,27 @@ final readonly class SignatureConfig
         if ($this->contentsReserveBytes !== null) {
             return $this->contentsReserveBytes;
         }
-        $certificates = strlen($this->signer->certificate()->der);
+        $certificate = $this->certificate();
+        $certificates = $certificate !== null ? strlen($certificate->der) : self::UNKNOWN_CERTIFICATES;
         foreach ($this->signer->chain() as $cert) {
             $certificates += strlen($cert->der);
         }
         // An RSA signature is as long as the modulus; EC and GOST are smaller.
-        $signature = max(256, intdiv($this->signer->certificate()->keyBits(), 8) * 2);
+        $signature = max(512, $certificate !== null ? intdiv($certificate->keyBits(), 8) * 2 : 0);
         $timestamp = $this->timestampAuthority !== null ? self::TIMESTAMP_RESERVE : 0;
+        $slack = $this->signer instanceof ExternalSigner ? self::EXTERNAL_SLACK : 0;
 
-        return $certificates + $signature + $timestamp + self::CMS_OVERHEAD;
+        return $certificates + $signature + $timestamp + self::CMS_OVERHEAD + $slack;
+    }
+
+    /** The signing certificate, when it is known before signing. */
+    public function certificate(): ?Certificate
+    {
+        if ($this->signer instanceof ExternalSigner && ! $this->signer->hasCertificate()) {
+            return null;
+        }
+
+        return $this->signer->certificate();
     }
 
     /**
@@ -141,6 +164,9 @@ final readonly class SignatureConfig
      */
     public function signBytes(string $data): string
     {
+        if ($this->signer instanceof ExternalSigner) {
+            throw new \LogicException('The key is outside this process: use prepareSignature() and PreparedSignature::complete()');
+        }
         $builder = new CmsBuilder(
             $this->signer->certificate(),
             $this->signer->chain(),

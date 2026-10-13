@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Dskripchenko\PhpPdf\Pdf;
 
+use Dskripchenko\PhpPdf\Pdf\Signature\SignaturePlaceholder;
+
 /**
  * Minimal format-level PDF emitter (without layout/font logic).
  *
@@ -624,69 +626,27 @@ final class Writer
      */
     private function applySignature(string $bytes): string
     {
-        // Locate /ByteRange [<digits> <digits> <digits> <digits>] placeholder.
-        // The placeholder values are all zeros, padded with trailing spaces to
-        // 10 digits each, leaving room for actual integers up to ~10 GB files.
-        if (! preg_match(
-            '@/ByteRange \[(\d+ +\d+ +\d+ +\d+) +\]@',
-            $bytes,
-            $brMatch,
-            PREG_OFFSET_CAPTURE,
-        )) {
-            throw new \RuntimeException('/ByteRange placeholder not found in PDF stream');
-        }
-        $brStart = (int) $brMatch[0][1];
-        $brLen = strlen((string) $brMatch[0][0]);
-
-        // Locate /Contents <000...000> placeholder.
-        if (! preg_match(
-            '@/Contents <0+>@',
-            $bytes,
-            $cMatch,
-            PREG_OFFSET_CAPTURE,
-        )) {
-            throw new \RuntimeException('/Contents placeholder not found');
-        }
-        $cStart = (int) $cMatch[0][1];
-        $cLen = strlen((string) $cMatch[0][0]);
-
-        // Byte ranges: [0, gapStart] and [gapEnd, EOF].
-        // gapStart = '<' position; gapEnd = position right after '>'.
-        $gapStart = $cStart + strlen('/Contents ');
-        $gapEnd = $cStart + $cLen;
-        $a = 0;
-        $b = $gapStart;
-        $c = $gapEnd;
-        $d = strlen($bytes) - $gapEnd;
-
-        // Compute ByteRange string padded to original length.
-        $brContent = sprintf('/ByteRange [%d %d %d %d]', $a, $b, $c, $d);
-        if (strlen($brContent) > $brLen) {
-            throw new \RuntimeException('/ByteRange replacement exceeds placeholder');
-        }
-        $brContent = str_pad($brContent, $brLen, ' ', STR_PAD_RIGHT);
-        $bytes = substr_replace($bytes, $brContent, $brStart, $brLen);
-
-        // Build hashable data: bytes[0..b] + bytes[c..].
-        $signedData = substr($bytes, 0, $b) . substr($bytes, $c);
+        [$bytes, $placeholder] = SignaturePlaceholder::locate($bytes);
 
         // Detached CMS over the bytes outside /Contents.
-        $der = $this->signature->signBytes($signedData);
-        $sigHex = strtoupper(bin2hex($der));
+        return $placeholder->embed($bytes, $this->signature->signBytes($placeholder->signedContent($bytes)));
+    }
 
-        $placeholderHexLen = $cLen - strlen('/Contents <') - 1; // minus '>'
-        if (strlen($sigHex) > $placeholderHexLen) {
-            throw new \RuntimeException(sprintf(
-                'The signature takes %d bytes but %d were reserved — set SignatureConfig::$contentsReserveBytes to at least %d',
-                intdiv(strlen($sigHex), 2), intdiv($placeholderHexLen, 2), intdiv(strlen($sigHex), 2) + 1024,
-            ));
+    /**
+     * The emitted document with /ByteRange filled and /Contents left empty,
+     * for signing outside the process.
+     *
+     * @return array{0: string, 1: SignaturePlaceholder}
+     *
+     * @internal Used by Document::prepareSignature().
+     */
+    public function toPreparedBytes(): array
+    {
+        if ($this->signature === null) {
+            throw new \LogicException('No signature configured');
         }
-        $sigHex = str_pad($sigHex, $placeholderHexLen, '0', STR_PAD_RIGHT);
 
-        // Patch /Contents <...>.
-        $hexStart = $cStart + strlen('/Contents <');
-
-        return substr_replace($bytes, $sigHex, $hexStart, $placeholderHexLen);
+        return SignaturePlaceholder::locate($this->buildBytes());
     }
 
     /**

@@ -22,6 +22,19 @@ final class Asn1Node
         public readonly array $children = [],
     ) {}
 
+    /**
+     * DER-style re-encoding: indefinite lengths become definite, recursively.
+     * Contents and element order stay as they are.
+     */
+    public function toDer(): string
+    {
+        if (! $this->isConstructed()) {
+            return $this->der;
+        }
+
+        return Der::tlv($this->tag, implode('', array_map(static fn (self $c): string => $c->toDer(), $this->children)));
+    }
+
     public function isConstructed(): bool
     {
         return ($this->tag & 0x20) !== 0;

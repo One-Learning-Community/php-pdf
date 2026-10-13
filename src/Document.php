@@ -250,6 +250,24 @@ final readonly class Document
     }
 
     /**
+     * Lays out the document and emits it with an empty signature, to be
+     * signed outside the process; see
+     * {@see \Dskripchenko\PhpPdf\Pdf\Document::prepareSignature()}. Uses
+     * the `signature` config, whose key is an `ExternalSigner`.
+     */
+    public function prepareSignature(
+        ?Engine $engine = null,
+        \Dskripchenko\PhpPdf\Pdf\Signature\External\ExternalMode $mode = \Dskripchenko\PhpPdf\Pdf\Signature\External\ExternalMode::Cms,
+    ): \Dskripchenko\PhpPdf\Pdf\Signature\External\PreparedSignature {
+        if ($this->signature === null) {
+            throw new \LogicException('prepareSignature() needs the signature config (with an ExternalSigner)');
+        }
+        $pdf = $this->prepare($engine);
+
+        return $pdf->prepareSignature($this->signature, $mode);
+    }
+
+    /**
      * Run the layout engine and apply post-render flags (metadata, xref
      * stream, object streams, encryption, signing, PDF/A, PDF/X).
      *

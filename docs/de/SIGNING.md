@@ -16,6 +16,7 @@ Signieren des Dokuments aus dem Zertifikat befüllt wird.
 - [Zeitstempel](#zeitstempel)
 - [GOST R 34.10-2012](#gost-r-3410-2012)
 - [Signaturgröße](#signaturgröße)
+- [Signieren außerhalb des Servers](#signieren-außerhalb-des-servers)
 - [Eine Signatur prüfen](#eine-signatur-prüfen)
 - [Signaturfelder](#signaturfelder)
 - [Der Stempel](#der-stempel)
@@ -138,6 +139,80 @@ Schlüsselgröße und danach, ob ein Zeitstempel angefordert wird. Bettet ein
 Signer mehr ein als erwartet, schlägt das Signieren mit einer Meldung fehl,
 die die benötigte Größe nennt; mit `contentsReserveBytes` lässt sich die
 Schätzung überschreiben.
+
+## Signieren außerhalb des Servers
+
+Wenn der Schlüssel nicht zum Server kommen kann — ein qualifiziertes
+Zertifikat auf einem Token oder in CryptoPro auf dem Rechner des Nutzers,
+ein HSM, das auf Anfrage signiert, ein Cloud-Signaturdienst —, wird in zwei
+Schritten signiert:
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\External\{ExternalMode, ExternalSigner, PreparedSignature};
+
+// 1. Das Dokument mit einer leeren Signatur ausgeben.
+$prepared = $doc->prepareSignature(new SignatureConfig(
+    // Das Zertifikat, falls bekannt, kommt auf den Stempel; es darf fehlen.
+    signer: new ExternalSigner(certificatePem: $userCertificatePem),
+    reason: 'Approval',
+));
+$state = $prepared->toJson();        // aufbewahren — Session, Cache, Datenbank
+$hash = $prepared->documentDigestHex(); // an den Signierenden senden
+
+// 2. Später, mit dem, was der Signierende zurückgibt (hier base64-CMS).
+$pdf = PreparedSignature::fromJson($state)->completeBase64($cmsBase64);
+```
+
+| Modus | Der Signierende erhält | Er gibt zurück |
+|---|---|---|
+| `ExternalMode::Cms` (Standard) | `documentDigest()` — oder `signedContent()`, die Bytes selbst, für ein Werkzeug, das Dateien signiert | ein abgesetztes CMS (CAdES-BES) |
+| `ExternalMode::RawSignature` | `dataToSign()` — die von der Bibliothek gebauten signierten Attribute — oder `hashToSign()` für ein Gerät, das einen Hash signiert | den rohen Signaturwert |
+
+`complete()` prüft das Zurückgegebene vor dem Einbetten: Das CMS deckt genau
+dieses Dokument ab (sein Message Digest), es wurde mit dem an
+`prepareSignature()` übergebenen Zertifikat erstellt (falls eines
+übergeben wurde), seine Signatur ist gültig und es passt in den
+reservierten Platz. Zertifikate, die dem CMS fehlen, werden aus der
+Vorbereitung ergänzt; eine an `complete()` übergebene Zeitstempelstelle
+versieht die Signatur mit einem Zeitstempel. Ein roher GOST-Wert in der
+Little-Endian-Reihenfolge von CryptoAPI wird erkannt und umgedreht.
+
+Bewahren Sie den Zustand dort auf, wo der Signierende ihn nicht ändern
+kann: Er enthält das vorbereitete Dokument, und seine Prüfsumme erkennt nur
+Beschädigung, keine Manipulation. Nach der Vorbereitung darf das Dokument
+nicht neu erzeugt werden — die Signatur deckt genau diese Bytes ab.
+
+### CryptoPro Browser plug-in
+
+Im Browser signiert das Plug-in den Hash mit dem Zertifikat des Nutzers und
+gibt ein CMS zurück — eine Skizze auf Basis der `cadesplugin`-API von
+CryptoPro:
+
+```js
+// hashHex — documentDigestHex() vom Server; cert — das Zertifikat des Nutzers,
+// aus dem Speicher gewählt (CAdESCOM.Store).
+const hashed = await cadesplugin.CreateObjectAsync("CAdESCOM.HashedData");
+await hashed.propset_Algorithm(cadesplugin.CADESCOM_HASH_ALGORITHM_CP_GOST_3411_2012_256);
+await hashed.SetHashValue(hashHex);
+
+const signer = await cadesplugin.CreateObjectAsync("CAdESCOM.CPSigner");
+await signer.propset_Certificate(cert);
+await signer.propset_Options(cadesplugin.CAPICOM_CERTIFICATE_INCLUDE_WHOLE_CHAIN);
+
+const signedData = await cadesplugin.CreateObjectAsync("CAdESCOM.CadesSignedData");
+const cmsBase64 = await signedData.SignHash(hashed, signer, cadesplugin.CADESCOM_CADES_BES);
+// cmsBase64 zurück per POST senden → completeBase64()
+```
+
+Verwenden Sie den zum Schlüssel passenden Hash-Algorithmus:
+`..._GOST_3411_2012_256` für einen 256-Bit-GOST-Schlüssel,
+`..._GOST_3411_2012_512` für 512. Übergeben Sie das Zertifikat an
+`ExternalSigner` (exportieren Sie es aus dem Plug-in mit
+`cert.Export(CADESCOM_ENCODE_BASE64)`), damit der Digest dem Schlüssel
+folgt und der Stempel den Inhaber zeigt; zum Berechnen des Streebog-Digests
+wird die Gost-Engine auch auf dem Server benötigt. Das so erzeugte CMS
+enthält ein `signing-time`-Attribut; Validatoren akzeptieren es, auch wenn
+strenge PAdES-Profile die Zeit nur in `/M` erwarten.
 
 ## Eine Signatur prüfen
 

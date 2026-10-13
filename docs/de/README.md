@@ -63,7 +63,8 @@ gängigen PHP-PDF-Stack:
   und R6 gemäß ISO 32000-2 / PDF 2.0).
 - **PAdES-Signaturen** (B-B, B-T mit RFC-3161-Zeitstempel) — RSA, ECDSA und
   GOST R 34.10-2012, Schlüssel als PEM / PKCS#12 / eigener `Signer` (Token,
-  HSM) — mit sichtbarem **Signaturstempel** aus den Zertifikatsdaten.
+  HSM) oder **zweistufiges Signieren außerhalb des Servers** (CryptoPro-Plug-in,
+  HSM, Signaturdienst) — mit sichtbarem **Signaturstempel** aus den Zertifikatsdaten.
 - **PDF/A-1a / 1b / 2u und PDF/X-1a / 3 / 4** Konformität mit
   eingebettetem sRGB-ICC-Profil und XMP-Metadaten.
 - **Tagged PDF / PDF/UA-tauglicher** Strukturbaum mit H1–H6, Table/TR/TD,

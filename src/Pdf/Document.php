@@ -7,6 +7,9 @@ namespace Dskripchenko\PhpPdf\Pdf;
 use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\AppearanceRenderer;
 use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\CertificateInfo;
 use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\SignatureAppearance;
+use Dskripchenko\PhpPdf\Pdf\Signature\External\ExternalMode;
+use Dskripchenko\PhpPdf\Pdf\Signature\External\PreparedSignature;
+use Dskripchenko\PhpPdf\Pdf\Signature\SubFilter;
 use Dskripchenko\PhpPdf\Style\Orientation;
 use Dskripchenko\PhpPdf\Style\PaperSize;
 
@@ -552,6 +555,39 @@ final class Document
         $this->signatureConfig = $config;
 
         return $this;
+    }
+
+    /**
+     * Emits the document with an empty signature, to be signed outside the
+     * process — a CryptoPro plug-in in the browser, an HSM, a signing service.
+     * Sign what the result asks for and pass the answer to
+     * {@see PreparedSignature::complete()}.
+     *
+     * The key in `$config` is an {@see ExternalSigner}: with the certificate
+     * when it is known (the stamp then shows it), or without one for
+     * {@see ExternalMode::Cms}. A timestamp is requested at `complete()`.
+     */
+    public function prepareSignature(SignatureConfig $config, ExternalMode $mode = ExternalMode::Cms): PreparedSignature
+    {
+        $previous = $this->signatureConfig;
+        $this->signatureConfig = $config;
+        try {
+            $writer = $this->buildWriter();
+            [$bytes, $placeholder] = $writer->toPreparedBytes();
+            $active = $this->activeSignature ?? $config;
+        } finally {
+            $this->signatureConfig = $previous;
+        }
+
+        return PreparedSignature::create(
+            $bytes,
+            $placeholder,
+            $mode,
+            $active->signer->digestAlgorithm(),
+            $active->certificate(),
+            $active->signer->chain(),
+            $active->subFilter === SubFilter::Pkcs7Detached ? $active->effectiveSignedAt() : null,
+        );
     }
 
     /**
@@ -2609,7 +2645,8 @@ final class Document
 
             $values = [];
             if ($signature !== null && $field['name'] === $this->signatureTargetName) {
-                $certificate ??= CertificateInfo::fromPem($signature->signer->certificate()->pem());
+                $signingCertificate = $signature->certificate();
+                $certificate ??= $signingCertificate !== null ? CertificateInfo::fromPem($signingCertificate->pem()) : new CertificateInfo;
                 $values = $this->stampValues($signature, $certificate, $appearance);
             }
 

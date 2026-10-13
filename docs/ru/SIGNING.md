@@ -15,6 +15,7 @@ RSA, ECDSA и ГОСТ Р 34.10-2012; со службой меток време�
 - [Метка времени](#метка-времени)
 - [ГОСТ Р 34.10-2012](#гост-р-3410-2012)
 - [Размер подписи](#размер-подписи)
+- [Подпись вне сервера](#подпись-вне-сервера)
 - [Проверка подписи](#проверка-подписи)
 - [Поля подписи](#поля-подписи)
 - [Штамп](#штамп)
@@ -133,6 +134,76 @@ granted, отпечаток и nonce, который был запрошен, �
 ли метка времени. Если подписант встраивает больше ожидаемого, подпись
 завершается ошибкой с сообщением о необходимом размере; чтобы переопределить
 оценку, задайте `contentsReserveBytes`.
+
+## Подпись вне сервера
+
+Когда ключ не может попасть на сервер — квалифицированный сертификат на
+токене или в КриптоПро на машине пользователя, HSM, который подписывает по
+запросу, облачный сервис подписи, — подписывайте в два шага:
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\External\{ExternalMode, ExternalSigner, PreparedSignature};
+
+// 1. Выпустить документ с пустой подписью.
+$prepared = $doc->prepareSignature(new SignatureConfig(
+    // Сертификат, если он известен, попадает на штамп; его можно не указывать.
+    signer: new ExternalSigner(certificatePem: $userCertificatePem),
+    reason: 'Approval',
+));
+$state = $prepared->toJson();        // сохраните — сессия, кэш, база данных
+$hash = $prepared->documentDigestHex(); // отправьте подписанту
+
+// 2. Позже, с тем, что вернул подписант (здесь base64 CMS).
+$pdf = PreparedSignature::fromJson($state)->completeBase64($cmsBase64);
+```
+
+| Режим | Подписант получает | Возвращает |
+|---|---|---|
+| `ExternalMode::Cms` (по умолчанию) | `documentDigest()` — или `signedContent()`, сами байты, для инструмента, подписывающего файлы | отсоединённый CMS (CAdES-BES) |
+| `ExternalMode::RawSignature` | `dataToSign()` — подписываемые атрибуты, собранные библиотекой, — или `hashToSign()` для устройства, подписывающего хеш | сырое значение подписи |
+
+`complete()` проверяет полученное перед встраиванием: CMS покрывает именно
+этот документ (его message digest), он сделан сертификатом, переданным в
+`prepareSignature()` (если он был), его подпись верна и он помещается в
+зарезервированное место. Сертификаты, которых в CMS нет, добавляются из
+подготовки; служба меток времени, переданный в `complete()`, ставит метку
+времени на подпись. Сырое значение ГОСТ в порядке байт CryptoAPI
+(little-endian) распознаётся и разворачивается.
+
+Храните состояние там, где подписант не может его изменить: оно содержит
+подготовленный документ, а его контрольная сумма ловит только повреждения,
+но не подмену. После подготовки документ нельзя генерировать заново — подпись
+покрывает именно эти байты.
+
+### КриптоПро Browser plug-in
+
+В браузере плагин подписывает хеш сертификатом пользователя и возвращает
+CMS — набросок поверх API `cadesplugin` КриптоПро:
+
+```js
+// hashHex — documentDigestHex() с сервера; cert — сертификат пользователя,
+// выбранный из хранилища (CAdESCOM.Store).
+const hashed = await cadesplugin.CreateObjectAsync("CAdESCOM.HashedData");
+await hashed.propset_Algorithm(cadesplugin.CADESCOM_HASH_ALGORITHM_CP_GOST_3411_2012_256);
+await hashed.SetHashValue(hashHex);
+
+const signer = await cadesplugin.CreateObjectAsync("CAdESCOM.CPSigner");
+await signer.propset_Certificate(cert);
+await signer.propset_Options(cadesplugin.CAPICOM_CERTIFICATE_INCLUDE_WHOLE_CHAIN);
+
+const signedData = await cadesplugin.CreateObjectAsync("CAdESCOM.CadesSignedData");
+const cmsBase64 = await signedData.SignHash(hashed, signer, cadesplugin.CADESCOM_CADES_BES);
+// отправьте cmsBase64 обратно на сервер → completeBase64()
+```
+
+Берите алгоритм хеша, соответствующий ключу: `..._GOST_3411_2012_256` для
+256-битного ключа ГОСТ, `..._GOST_3411_2012_512` для 512-битного. Передайте
+сертификат в `ExternalSigner` (экспортируйте его из плагина через
+`cert.Export(CADESCOM_ENCODE_BASE64)`), чтобы дайджест следовал ключу, а
+штамп показывал владельца; для вычисления дайджеста Стрибог на сервере тоже
+нужен gost engine. CMS, сделанный так, содержит атрибут `signing-time`;
+валидаторы его принимают, хотя строгие профили PAdES ожидают время только в
+`/M`.
 
 ## Проверка подписи
 

@@ -137,6 +137,37 @@ final class Certificate
         };
     }
 
+    /** The subjectKeyIdentifier extension value, if present. */
+    public function subjectKeyIdentifier(): ?string
+    {
+        foreach ($this->tbs->children as $field) {
+            if ($field->contextTag() !== 3) {
+                continue;
+            }
+            foreach ($field->child(0)->children as $extension) {
+                if ($extension->child(0)->oid() === '2.5.29.14') {
+                    $value = $extension->children[count($extension->children) - 1]->expect(Der::TAG_OCTET_STRING);
+
+                    return DerReader::parse($value->content)->expect(Der::TAG_OCTET_STRING)->content;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /** OpenSSL's PEM public key, for `openssl_verify()`. */
+    public function publicKey(): \OpenSSLAsymmetricKey
+    {
+        $key = openssl_pkey_get_public($this->pem());
+        if ($key === false) {
+            throw new \RuntimeException('Cannot read the certificate public key'
+                .($this->keyType() === KeyType::Gost256 || $this->keyType() === KeyType::Gost512 ? ' — is the OpenSSL gost engine loaded?' : ''));
+        }
+
+        return $key;
+    }
+
     private function spki(): Asn1Node
     {
         return $this->tbs->child($this->fieldOffset() + 5)->expect(Der::TAG_SEQUENCE);
