@@ -19,6 +19,9 @@ code, filled in from the certificate when the document is signed.
 - [Signing an existing PDF](#signing-an-existing-pdf)
 - [Certification and locked fields](#certification-and-locked-fields)
 - [Long-term validation](#long-term-validation)
+- [Filling a signed form](#filling-a-signed-form)
+- [Encrypted PDFs](#encrypted-pdfs)
+- [Validating signatures](#validating-signatures)
 - [Checking a signature](#checking-a-signature)
 - [Signature fields](#signature-fields)
 - [The stamp](#the-stamp)
@@ -290,6 +293,65 @@ embeds certificates only. Calling it again extends the DSS.
 `timestamp()` adds a document timestamp (`ETSI.RFC3161`) over the whole file,
 DSS included. Repeat `addValidationData()` + `timestamp()` before the last
 timestamp's certificate expires to extend the archive.
+
+## Filling a signed form
+
+`ExistingFormFiller::toBytes(incremental: true)` writes the filled values as
+an incremental update instead of rewriting the file, so signatures stay
+valid — and a document certified for form filling stays certified:
+
+```php
+$filled = ExistingFormFiller::fromBytes($signedPdf)
+    ->setValue('amount', '100')
+    ->toBytes(incremental: true);
+```
+
+A document certified with `NoChanges` refuses it, and under any
+certification `flatten()` and image stamps (page changes) are refused.
+Without `incremental: true` the filler still rewrites the whole file, which
+invalidates signatures.
+
+## Encrypted PDFs
+
+Pass the password that opens the file: `PdfSigner::fromBytes($pdf,
+$password)`, `ExistingFormFiller::fromBytes($pdf, $password)`,
+`SignatureValidator::fromBytes($pdf, $password)`. The update is encrypted
+with the file's own key (RC4, AES-128, AES-256), the signature value itself
+stays plain as the format requires, and `/Encrypt` and the document ID are
+kept. A file with an owner password only opens with an empty one.
+
+## Validating signatures
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\Validation\{SignatureValidator, TrustStore};
+
+$report = SignatureValidator::fromBytes($pdf)
+    ->validate(TrustStore::fromPem('root.crt'));   // or TrustStore::system()
+
+$report->allValid();
+foreach ($report->signatures as $s) {
+    $s->fieldName; $s->isValid(); $s->errors; $s->warnings;
+    $s->signer; $s->chain; $s->timestampTime; $s->revocation; $s->modifications;
+}
+$original = SignatureValidator::fromBytes($pdf)->signedRevision('approver');
+```
+
+For every signature and document timestamp:
+
+| Check | What it catches |
+|---|---|
+| `/ByteRange` starts at 0, stays in the file, its gap is exactly the `<hex>` signature value, the signed bytes end at a revision's `%%EOF`, and the signature dictionary of that revision carries the same value | signature wrapping, universal signature forgery, a swapped `/Contents` |
+| the message digest matches the signed bytes; the signature verifies with the signer's key; `signing-certificate-v2` names that certificate | tampering, a substituted certificate |
+| a signature timestamp covers this signature value, verifies, and its TSA chains to a trusted root — the chain is then judged at that time | backdated or stolen timestamps |
+| the signer chains to a trust anchor, each link verified with its issuer's key and valid at the time | untrusted or expired signers |
+| OCSP responses and CRLs from the DSS (their own signatures verified), or fetched through a `RevocationSource` | revoked signers — revoked before signing is an error, after a timestamped signing a warning |
+| everything appended after the signature, object by object: signing (signatures, timestamps, DSS), form filling, annotations, or anything else — never allowed | incremental-saving attacks, shadow attacks (replaced page content, overlays) |
+| a certification's DocMDP level and a signature's FieldMDP lock against those changes | changes the certification or lock forbids |
+
+`modifications` reports the level reached (`ModificationLevel::None`,
+`Signing`, `FormFilling`, `Annotations`, `Other`). An approval signature
+followed by annotations stays valid but says so; under a "form filling"
+certification the same annotations make it invalid.
 
 ## Checking a signature
 

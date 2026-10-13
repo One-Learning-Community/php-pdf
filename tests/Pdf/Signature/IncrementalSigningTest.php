@@ -245,14 +245,61 @@ final class IncrementalSigningTest extends TestCase
         self::assertAllVerify($prepared->complete($builder->assemble($attributes, $signer->sign($attributes))), 1);
     }
 
-    #[Test]
-    public function encrypted_pdfs_are_refused(): void
+    /** @return iterable<string, array{\Dskripchenko\PhpPdf\Pdf\EncryptionAlgorithm, string, string}> */
+    public static function encryptions(): iterable
     {
-        // Refused by the reader (no password) or by the update (encrypted).
+        foreach (['RC4' => \Dskripchenko\PhpPdf\Pdf\EncryptionAlgorithm::Rc4_128, 'AES-128' => \Dskripchenko\PhpPdf\Pdf\EncryptionAlgorithm::Aes_128,
+            'AES-256 R6' => \Dskripchenko\PhpPdf\Pdf\EncryptionAlgorithm::Aes_256_R6] as $name => $algorithm) {
+            yield "$name, user password" => [$algorithm, 'user', 'user'];
+            yield "$name, owner password only" => [$algorithm, '', ''];
+        }
+    }
+
+    #[Test]
+    #[DataProvider('encryptions')]
+    public function encrypted_pdfs_are_signed_with_their_own_key(\Dskripchenko\PhpPdf\Pdf\EncryptionAlgorithm $algorithm, string $userPassword, string $open): void
+    {
+        $doc = Document::new();
+        $doc->addPage()->addFormField('text', 'name', 72, 700, 200, 20);
+        $doc->metadata(title: 'Договор');
+        $doc->encrypt(userPassword: $userPassword, ownerPassword: 'owner', algorithm: $algorithm);
+        $original = $doc->toBytes();
+
+        $signed = PdfSigner::fromBytes($original, $open)
+            ->addField('sig', 0, 72, 600, 200, 50, SignatureAppearance::simple())
+            ->sign(new SignatureConfig(signer: Pki::rsaSigner(), reason: 'Approved'));
+
+        self::assertStringStartsWith($original, $signed);
+        // The signature itself is not encrypted, and verifies.
+        self::assertAllVerify($signed, 1);
+        // The update is readable with the file key: the title still decrypts.
+        $reader = ReaderDocument::fromBytes($signed, $open);
+        $info = $reader->deref($reader->trailer()->get('Info'));
+        self::assertInstanceOf(PdfDictionary::class, $info);
+        self::assertSame("\xFE\xFF".mb_convert_encoding('Договор', 'UTF-16BE', 'UTF-8'), $info->get('Title') instanceof PdfString ? $info->get('Title')->bytes : null);
+        $report = \Dskripchenko\PhpPdf\Pdf\Signature\Validation\SignatureValidator::fromBytes($signed, $open)
+            ->validate(\Dskripchenko\PhpPdf\Pdf\Signature\Validation\TrustStore::fromPem(Pki::DIR.'/root-ca.crt'))->signature('sig');
+        self::assertTrue($report?->isValid(), implode('; ', $report?->errors ?? []));
+    }
+
+    #[Test]
+    public function a_third_party_encrypted_pdf_is_signed_with_its_password(): void
+    {
+        $original = (string) file_get_contents(self::EXTERNAL.'/libreoffice-password.pdf');
+        $signed = PdfSigner::fromBytes($original, 'openpassword')->sign(new SignatureConfig(signer: Pki::rsaSigner()));
+
+        self::assertStringStartsWith($original, $signed);
+        self::assertAllVerify($signed, 1);
+        self::assertSame(1, ReaderDocument::fromBytes($signed, 'openpassword')->pageCount());
+    }
+
+    #[Test]
+    public function an_encrypted_pdf_needs_its_password(): void
+    {
         try {
             PdfSigner::fromBytes((string) file_get_contents(self::EXTERNAL.'/libreoffice-password.pdf'))
                 ->sign(new SignatureConfig(signer: Pki::rsaSigner()));
-            self::fail('An encrypted PDF was signed');
+            self::fail('An encrypted PDF was signed without its password');
         } catch (\RuntimeException|\InvalidArgumentException $e) {
             self::assertMatchesRegularExpression('/password|encrypted/i', $e->getMessage());
         }

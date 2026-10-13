@@ -88,6 +88,36 @@ final class Decryptor
         return $this->apply($this->stringMethod, $data, $objNum, $gen);
     }
 
+    /**
+     * Encrypts with the file's own key and methods — for objects an
+     * incremental update writes into an encrypted file.
+     */
+    public function encryptStream(string $data, int $objNum, int $gen): string
+    {
+        return $this->encrypt($this->streamMethod, $data, $objNum, $gen);
+    }
+
+    public function encryptString(string $data, int $objNum, int $gen): string
+    {
+        return $this->encrypt($this->stringMethod, $data, $objNum, $gen);
+    }
+
+    private function encrypt(string $method, string $data, int $objNum, int $gen): string
+    {
+        $aes = static function (string $key, int $bits) use ($data): string {
+            $iv = random_bytes(16);
+
+            return $iv.(string) openssl_encrypt($data, "aes-{$bits}-cbc", $key, OPENSSL_RAW_DATA, $iv);
+        };
+
+        return match ($method) {
+            self::METHOD_RC4 => Encryption::rc4($this->objectKey($objNum, $gen, aes: false), $data),
+            self::METHOD_AESV2 => $aes($this->objectKey($objNum, $gen, aes: true), 128),
+            self::METHOD_AESV3 => $aes($this->fileKey, 256),
+            default => $data,
+        };
+    }
+
     private function apply(string $method, string $data, int $objNum, int $gen): string
     {
         return match ($method) {

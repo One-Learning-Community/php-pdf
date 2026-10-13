@@ -35,6 +35,12 @@ final class ObjectImporter
 
     private ?ReaderDocument $source = null;
 
+    /** @var array<int, array{ReaderDocument, int}> newId → the source object it was imported from */
+    private array $origins = [];
+
+    /** @var array<int, true> newIds written after import (set / allocate) */
+    private array $changed = [];
+
     /**
      * Switch the active source. Object-number dedup is scoped per source, since
      * numbers collide across documents.
@@ -77,12 +83,36 @@ final class ObjectImporter
     {
         $id = $this->nextId++;
         $this->objects[$id] = $value;
+        $this->changed[$id] = true;
         return $id;
     }
 
     public function set(int $id, mixed $value): void
     {
         $this->objects[$id] = $value;
+        $this->changed[$id] = true;
+    }
+
+    /**
+     * The object number in `$source` a newId was imported from; null for an
+     * allocated object or one imported from another source.
+     */
+    public function sourceNumber(int $id, ReaderDocument $source): ?int
+    {
+        $origin = $this->origins[$id] ?? null;
+
+        return $origin !== null && $origin[0] === $source ? $origin[1] : null;
+    }
+
+    /**
+     * NewIds changed or created after import — what an incremental update
+     * has to write.
+     *
+     * @return list<int>
+     */
+    public function changedIds(): array
+    {
+        return array_keys($this->changed);
     }
 
     public function get(int $id): mixed
@@ -105,6 +135,7 @@ final class ObjectImporter
 
         $id = $this->nextId++;
         $this->sourceMap[$sourceNumber] = $id;
+        $this->origins[$id] = [$this->source, $sourceNumber];
         $this->objects[$id] = PdfNull::instance(); // placeholder for cycles
 
         $this->objects[$id] = $this->importObjectBody($this->source->getObject($sourceNumber));

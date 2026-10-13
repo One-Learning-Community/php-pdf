@@ -34,6 +34,18 @@ final class PdfSource
         return new self($bytes, $password);
     }
 
+    /** @internal */
+    public function password(): string
+    {
+        return $this->password;
+    }
+
+    /** The source file as given. */
+    public function bytes(): string
+    {
+        return $this->bytes;
+    }
+
     public function document(): ReaderDocument
     {
         return $this->document ??= ReaderDocument::fromBytes($this->bytes, $this->password);

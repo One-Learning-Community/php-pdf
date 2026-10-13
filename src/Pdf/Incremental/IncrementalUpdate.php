@@ -9,6 +9,7 @@ use Dskripchenko\PhpPdf\Pdf\Reader\PdfReference;
 use Dskripchenko\PhpPdf\Pdf\Reader\PdfString;
 use Dskripchenko\PhpPdf\Pdf\Reader\PdfValueSerializer;
 use Dskripchenko\PhpPdf\Pdf\Reader\ReaderDocument;
+use Dskripchenko\PhpPdf\Pdf\ObjectEncryptor;
 use Dskripchenko\PhpPdf\Pdf\Writer;
 
 /**
@@ -21,8 +22,9 @@ use Dskripchenko\PhpPdf\Pdf\Writer;
  * kind of the file's last one — a classic table, or a cross-reference
  * stream — and chains to it with /Prev.
  *
- * Encrypted files are refused: their new objects would have to be
- * encrypted with the file key.
+ * In an encrypted file the new and replaced objects are encrypted with the
+ * file's own key (the password must open it), and /Encrypt and the first
+ * /ID — which the key depends on — are kept.
  */
 final class IncrementalUpdate
 {
@@ -39,12 +41,12 @@ final class IncrementalUpdate
 
     private readonly bool $xrefStream;
 
-    private function __construct(private readonly string $original)
+    private function __construct(private readonly string $original, string $password)
     {
-        $this->doc = ReaderDocument::fromBytes($original);
+        $this->doc = ReaderDocument::fromBytes($original, $password);
         $trailer = $this->doc->trailer();
-        if ($trailer->has('Encrypt')) {
-            throw new \InvalidArgumentException('Incremental updates of encrypted PDFs are not supported');
+        if ($trailer->has('Encrypt') && $this->doc->decryptor() === null) {
+            throw new \InvalidArgumentException('The encrypted PDF cannot be opened for an update');
         }
         $size = $trailer->get('Size');
         if (! is_int($size) || $size < 1) {
@@ -64,9 +66,12 @@ final class IncrementalUpdate
         $this->allocator = new Writer(firstObjectId: $size);
     }
 
-    public static function fromBytes(string $pdf): self
+    /**
+     * @param  string  $password  For an encrypted file: its user or owner password.
+     */
+    public static function fromBytes(string $pdf, #[\SensitiveParameter] string $password = ''): self
     {
-        return new self($pdf);
+        return new self($pdf, $password);
     }
 
     /** The document as it stands before this update. */
@@ -132,9 +137,19 @@ final class IncrementalUpdate
             $out .= "\n";
         }
 
+        $decryptor = $this->doc->decryptor();
         $offsets = [];
         foreach ($objects as $number => $body) {
             $gen = isset($this->replaced[$number]) ? $this->generation($number) : 0;
+            if ($decryptor !== null) {
+                $body = ObjectEncryptor::encryptBody(
+                    $body,
+                    static fn (string $data, bool $stream): string => $stream
+                        ? $decryptor->encryptStream($data, $number, $gen)
+                        : $decryptor->encryptString($data, $number, $gen),
+                    keepContents: preg_match('#^<<\s*/Type\s*/(Sig|DocTimeStamp)\b#', $body) === 1,
+                );
+            }
             $offsets[$number] = [strlen($out), $gen];
             $out .= sprintf("%d %d obj\n%s\nendobj\n", $number, $gen, $body);
         }
@@ -142,7 +157,7 @@ final class IncrementalUpdate
         $trailer = $this->doc->trailer();
         $nextSize = $objects === [] ? $this->size : max($this->size, max(array_keys($objects)) + 1);
         $extra = '';
-        foreach (['Root', 'Info'] as $key) {
+        foreach (['Root', 'Info', 'Encrypt'] as $key) {
             $value = $trailer->get($key);
             if ($value instanceof PdfReference) {
                 $extra .= sprintf(' /%s %d %d R', $key, $value->number, $value->generation);

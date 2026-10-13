@@ -547,6 +547,8 @@ foreach (ExistingFormFiller::fromFile('template.pdf')->fields() as $name => $fie
 
 输出是对文档的完整重写，且不加密。已有的数字签名将不再有效；一旦有任何改动，XFA 表单定义会被移除（否则支持 XFA 的阅读器会显示 XFA 层而不是已填写的值）。
 
+`toBytes(incremental: true)` 则只在原文件之后追加改动：签名保持有效（参见[填写已签名的表单](SIGNING.md#填写已签名的表单)）。
+
 ---
 
 ## 标注
