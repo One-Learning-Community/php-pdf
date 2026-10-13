@@ -4,6 +4,16 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.17.0] — 2026-10-14
+
+### Added
+- `SignatureReport::$untrustedTimestampTime` — the time stated by a signature
+  timestamp that verifies but whose TSA does not chain to a trusted root.
+  `timestampTime` stays reserved for a vouched-for time; before, such a
+  timestamp left no trace but a warning, and a report could only say "no
+  timestamp" for a signature that has one (freetsa.org's, unless its root is
+  trusted).
+
 ## [1.16.1] — 2026-10-14
 
 ### Fixed

@@ -43,6 +43,13 @@ final class SignatureReport
     /** Time vouched for by a verified timestamp (signature or document timestamp). */
     public ?\DateTimeImmutable $timestampTime = null;
 
+    /**
+     * A signature timestamp that verifies, from a TSA that does not chain to a
+     * trusted root: the time it states, not vouched for. Lets a report say
+     * "timestamped by an untrusted TSA" rather than "no timestamp".
+     */
+    public ?\DateTimeImmutable $untrustedTimestampTime = null;
+
     public RevocationStatus $revocation = RevocationStatus::Unknown;
 
     /** Where revocation data came from: 'dss', 'fetched', or null. */
