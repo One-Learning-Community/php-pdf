@@ -23,6 +23,7 @@ code, filled in from the certificate when the document is signed.
 - [Encrypted PDFs](#encrypted-pdfs)
 - [Validating signatures](#validating-signatures)
 - [Checking a signature](#checking-a-signature)
+- [Detached signatures](#detached-signatures)
 - [Signature fields](#signature-fields)
 - [The stamp](#the-stamp)
 - [Ready-made stamps](#ready-made-stamps)
@@ -363,6 +364,31 @@ including several signers and certification. Long-term validation is
 checked with pyHanko's PAdES-LT / LTA profiles offline: the validator is
 given only the TSA's current status, so the signer's revocation data must
 come from the DSS (`scripts/conformance/pades-ltv-check.py`).
+
+## Detached signatures
+
+A `.p7s` beside a file — the PDF stays as it is, the signature is a separate
+CMS over its bytes (any bytes, not only PDF):
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\Cms\DetachedSignature;
+
+$p7s = DetachedSignature::sign($pdf, $signer, timestampAuthority: $tsa);   // DER
+$report = DetachedSignature::verify($pdf, $p7s, TrustStore::fromPem('root.crt'));
+$report->isValid(); $report->signer; $report->timestampTime;
+
+$p7s = DetachedSignature::addTimestamp($cmsFromCryptoPro, $tsa);  // CAdES-BES → CAdES-T
+```
+
+`sign()` writes CAdES-BES: `content-type`, `message-digest`, `signing-time`
+and `signing-certificate-v2`, the signer's certificate and chain embedded;
+with a timestamp authority it is CAdES-T. `verify()` returns the same
+`SignatureReport` as the PDF validator: digest and signature value, the
+certificate binding, the timestamp, the chain (judged at the timestamped
+time) and, given a `RevocationSource`, revocation. It takes DER, BER,
+base64 or PEM; an attached signature must carry exactly the content given;
+a signature without signed attributes (`openssl cms -noattr`) verifies,
+with a warning that neither the time nor the certificate is bound to it.
 
 ## Signature fields
 

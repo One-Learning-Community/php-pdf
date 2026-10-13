@@ -5,15 +5,17 @@ declare(strict_types=1);
 namespace Dskripchenko\PhpPdf\Tests\Pdf\Signature;
 
 use Dskripchenko\PhpPdf\Pdf\Document;
+use Dskripchenko\PhpPdf\Pdf\SignatureConfig;
 use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\SignatureAppearance;
 use Dskripchenko\PhpPdf\Pdf\Signature\Asn1\DerReader;
 use Dskripchenko\PhpPdf\Pdf\Signature\Asn1\Oid;
+use Dskripchenko\PhpPdf\Pdf\Signature\Cms\DetachedSignature;
 use Dskripchenko\PhpPdf\Pdf\Signature\External\ExternalMode;
 use Dskripchenko\PhpPdf\Pdf\Signature\External\ExternalSigner;
 use Dskripchenko\PhpPdf\Pdf\Signature\Signer\DigestAlgorithm;
 use Dskripchenko\PhpPdf\Pdf\Signature\Signer\KeyType;
 use Dskripchenko\PhpPdf\Pdf\Signature\Signer\OpenSslSigner;
-use Dskripchenko\PhpPdf\Pdf\SignatureConfig;
+use Dskripchenko\PhpPdf\Pdf\Signature\Validation\TrustStore;
 use Dskripchenko\PhpPdf\Tests\Pdf\Signature\Support\Pki;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Test;
@@ -160,6 +162,27 @@ final class GostSignatureTest extends TestCase
             escapeshellarg("$dir/sig.der"), escapeshellarg("$dir/data"), escapeshellarg("$dir/cert256.pem"),
         ), $out, $code);
         self::assertSame(0, $code, implode("\n", $out));
+    }
+
+    #[Test]
+    #[DataProvider('variants')]
+    public function a_detached_gost_signature_verifies(string $bits): void
+    {
+        $content = "any bytes, a PDF beside its .p7s\n";
+        $p7s = DetachedSignature::sign($content, self::signer($bits));
+
+        $dir = self::$dir;
+        file_put_contents("$dir/detached.der", $p7s);
+        file_put_contents("$dir/detached.data", $content);
+        exec(sprintf(
+            'openssl cms -verify -binary -inform DER -in %s -content %s -CAfile %s -out /dev/null 2>&1',
+            escapeshellarg("$dir/detached.der"), escapeshellarg("$dir/detached.data"), escapeshellarg("$dir/cert$bits.pem"),
+        ), $out, $code);
+        self::assertSame(0, $code, implode("\n", $out));
+
+        $report = DetachedSignature::verify($content, $p7s, TrustStore::fromPem((string) file_get_contents("$dir/cert$bits.pem")));
+        self::assertTrue($report->isValid(), implode('; ', $report->errors));
+        self::assertFalse(DetachedSignature::verify($content.'x', $p7s)->cryptographicallyValid);
     }
 
     #[Test]

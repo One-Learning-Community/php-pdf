@@ -4,6 +4,23 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.0] — 2026-10-13
+
+### Added
+- **Detached signatures** — `Signature\Cms\DetachedSignature`: `sign()`
+  writes a CAdES-BES `.p7s` over any bytes (`signing-time`,
+  `signing-certificate-v2`, chain embedded), CAdES-T with a timestamp
+  authority; `verify()` checks one — digest, signature, certificate binding,
+  timestamp, chain, revocation — into a `SignatureReport`, accepting DER,
+  BER, base64 and PEM, attached signatures of the same content and
+  signatures without signed attributes (with a warning);
+  `addTimestamp()` timestamps a signature made elsewhere.
+
+### Changed
+- The CMS checks of `SignatureValidator` (digest, signature,
+  `signing-certificate-v2`, signature timestamp, chain, revocation) moved to
+  an internal class shared with `DetachedSignature`; results are unchanged.
+
 ## [1.15.1] — 2026-10-13
 
 ### Documentation

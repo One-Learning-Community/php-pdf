@@ -23,6 +23,7 @@ RSA, ECDSA и ГОСТ Р 34.10-2012; со службой меток време�
 - [Зашифрованные PDF](#зашифрованные-pdf)
 - [Проверка подписей](#проверка-подписей)
 - [Проверка подписи](#проверка-подписи)
+- [Откреплённая подпись](#откреплённая-подпись)
 - [Поля подписи](#поля-подписи)
 - [Штамп](#штамп)
 - [Готовые штампы](#готовые-штампы)
@@ -364,6 +365,31 @@ $original = SignatureValidator::fromBytes($pdf)->signedRevision('approver');
 pyHanko PAdES-LT / LTA офлайн: валидатору передаётся только текущий статус TSA,
 поэтому данные об отзыве сертификата подписанта должны браться из DSS
 (`scripts/conformance/pades-ltv-check.py`).
+
+## Откреплённая подпись
+
+`.p7s` рядом с файлом: PDF остаётся как есть, подпись — отдельный CMS над
+его байтами (любыми, не только PDF):
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\Cms\DetachedSignature;
+
+$p7s = DetachedSignature::sign($pdf, $signer, timestampAuthority: $tsa);   // DER
+$report = DetachedSignature::verify($pdf, $p7s, TrustStore::fromPem('root.crt'));
+$report->isValid(); $report->signer; $report->timestampTime;
+
+$p7s = DetachedSignature::addTimestamp($cmsFromCryptoPro, $tsa);  // CAdES-BES → CAdES-T
+```
+
+`sign()` пишет CAdES-BES: `content-type`, `message-digest`, `signing-time`
+и `signing-certificate-v2`, сертификат подписанта и цепочка внутри; с
+сервером меток времени — CAdES-T. `verify()` возвращает тот же
+`SignatureReport`, что и проверка PDF: дайджест и значение подписи,
+привязку сертификата, метку времени, цепочку (на момент метки времени) и,
+если передан `RevocationSource`, отзыв. Принимает DER, BER, base64 и PEM;
+присоединённая подпись должна нести ровно переданное содержимое; подпись
+без подписанных атрибутов (`openssl cms -noattr`) проверяется, с
+предупреждением, что ни время, ни сертификат к ней не привязаны.
 
 ## Поля подписи
 
