@@ -4,6 +4,17 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.16.1] — 2026-10-14
+
+### Fixed
+- An unreachable OCSP responder (a timeout, a refused connection) no longer
+  stops `addValidationData()`: the transport's failure is an `LtvException`
+  like an HTTP error, so the CRL is used instead. Seen with freetsa.org, whose
+  OCSP responder does not answer while its CRL does.
+- Transport failures are typed elsewhere too: an unreachable CRL is an
+  `LtvException`, an unreachable timestamp authority a `TsaException`; an
+  unreachable issuer URL moves on to the next one.
+
 ## [1.16.0] — 2026-10-13
 
 ### Added

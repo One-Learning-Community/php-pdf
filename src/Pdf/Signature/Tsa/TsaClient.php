@@ -61,7 +61,11 @@ final class TsaClient
             $headers['Authorization'] = 'Basic '.base64_encode($this->username.':'.($this->password ?? ''));
         }
 
-        $response = $this->transport->post($this->url, $request, $headers, $this->timeoutSeconds);
+        try {
+            $response = $this->transport->post($this->url, $request, $headers, $this->timeoutSeconds);
+        } catch (\RuntimeException $e) {
+            throw new TsaException("TSA {$this->url} unreachable: ".$e->getMessage(), previous: $e);
+        }
         if ($response->status !== 200) {
             throw new TsaException(sprintf('TSA %s answered HTTP %d', $this->url, $response->status));
         }

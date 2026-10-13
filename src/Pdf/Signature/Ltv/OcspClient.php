@@ -33,10 +33,16 @@ final class OcspClient
     public function fetch(Certificate $certificate, Certificate $issuer, ?string $url = null): string
     {
         $url ??= $certificate->ocspUrls()[0] ?? throw new LtvException('The certificate names no OCSP responder');
-        $response = $this->transport->post($url, $this->request($certificate, $issuer), [
-            'Content-Type' => 'application/ocsp-request',
-            'Accept' => 'application/ocsp-response',
-        ], $this->timeoutSeconds);
+        try {
+            $response = $this->transport->post($url, $this->request($certificate, $issuer), [
+                'Content-Type' => 'application/ocsp-request',
+                'Accept' => 'application/ocsp-response',
+            ], $this->timeoutSeconds);
+        } catch (\RuntimeException $e) {
+            // Unreachable is a revocation failure like any other: the source
+            // falls back to the CRL instead of giving up.
+            throw new LtvException("OCSP responder $url unreachable: ".$e->getMessage(), previous: $e);
+        }
         if ($response->status !== 200) {
             throw new LtvException(sprintf('OCSP responder %s answered HTTP %d', $url, $response->status));
         }

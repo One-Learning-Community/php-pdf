@@ -24,7 +24,11 @@ final class CrlFetcher
     public function fetch(Certificate $certificate, ?string $url = null): string
     {
         $url ??= $certificate->crlUrls()[0] ?? throw new LtvException('The certificate names no CRL distribution point');
-        $response = $this->transport->get($url, [], $this->timeoutSeconds);
+        try {
+            $response = $this->transport->get($url, [], $this->timeoutSeconds);
+        } catch (\RuntimeException $e) {
+            throw new LtvException("CRL $url unreachable: ".$e->getMessage(), previous: $e);
+        }
         if ($response->status !== 200) {
             throw new LtvException(sprintf('CRL %s answered HTTP %d', $url, $response->status));
         }
