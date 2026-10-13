@@ -14,7 +14,9 @@ namespace Dskripchenko\PhpPdf\Pdf;
  * Certificate and private key are accepted as PEM strings. Optional
  * fields (`signerName`, `reason`, `location`, `contactInfo`, `signedAt`)
  * populate the corresponding entries of the signature dictionary per
- * PDF spec §12.8.1.
+ * PDF spec §12.8.1, and the placeholders of the signature stamp.
+ *
+ * `fieldName` picks the signature field to sign; null signs the first one.
  */
 final readonly class SignatureConfig
 {
@@ -27,10 +29,27 @@ final readonly class SignatureConfig
         public ?string $location = null,
         public ?string $contactInfo = null,
         public ?\DateTimeImmutable $signedAt = null,
+        public ?string $fieldName = null,
     ) {
         if (! function_exists('openssl_pkcs7_sign')) {
             throw new \RuntimeException('PKCS#7 signing requires the openssl extension');
         }
+    }
+
+    /** The same configuration with the signing time fixed. */
+    public function withSignedAt(\DateTimeImmutable $signedAt): self
+    {
+        return new self(
+            $this->certPem,
+            $this->privateKeyPem,
+            $this->privateKeyPassphrase,
+            $this->signerName,
+            $this->reason,
+            $this->location,
+            $this->contactInfo,
+            $signedAt,
+            $this->fieldName,
+        );
     }
 
     public function effectiveSignedAt(): \DateTimeImmutable

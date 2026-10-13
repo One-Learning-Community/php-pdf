@@ -17,6 +17,7 @@ use Dskripchenko\PhpPdf\Element\AreaChart;
 use Dskripchenko\PhpPdf\Element\ColumnSet;
 use Dskripchenko\PhpPdf\Element\DonutChart;
 use Dskripchenko\PhpPdf\Element\FormField;
+use Dskripchenko\PhpPdf\Element\SignatureField;
 use Dskripchenko\PhpPdf\Element\GroupedBarChart;
 use Dskripchenko\PhpPdf\Element\Heading;
 use Dskripchenko\PhpPdf\Element\MathExpression;
@@ -433,6 +434,7 @@ final class Engine
             $block instanceof Barcode => $this->renderBarcode($block, $ctx),
             $block instanceof ColumnSet => $this->renderColumnSet($block, $ctx),
             $block instanceof FormField => $this->renderFormField($block, $ctx),
+            $block instanceof SignatureField => $this->renderSignatureField($block, $ctx),
             $block instanceof BarChart => $this->renderBarChart($block, $ctx),
             $block instanceof LineChart => $this->renderLineChart($block, $ctx),
             $block instanceof PieChart => $this->renderPieChart($block, $ctx),
@@ -1897,6 +1899,41 @@ final class Engine
             buttonCaption: $field->buttonCaption,
             submitUrl: $field->submitUrl,
             clickScript: $field->clickScript,
+        );
+
+        $ctx->cursorY -= $h;
+        $ctx->cursorY -= $field->spaceAfterPt;
+    }
+
+    /**
+     * Digital-signature field: reserves its room and places the widget; the
+     * stamp itself is drawn when the document is emitted.
+     */
+    private function renderSignatureField(SignatureField $field, LayoutContext $ctx): void
+    {
+        $ctx->cursorY -= $field->spaceBeforePt;
+
+        $h = $field->heightPt;
+        $w = min($field->widthPt, $ctx->contentWidth);
+        $this->ensureRoomFor($ctx, $h);
+
+        $x = match ($field->alignment) {
+            Alignment::Center => $ctx->leftX + ($ctx->contentWidth - $w) / 2,
+            Alignment::End => $ctx->leftX + $ctx->contentWidth - $w,
+            default => $ctx->leftX,
+        };
+
+        $ctx->currentPage->addSignatureField(
+            name: $field->name,
+            x: $x,
+            y: $ctx->cursorY - $h,
+            width: $w,
+            height: $h,
+            appearance: $field->appearance,
+            tooltip: $field->tooltip,
+            repeatOnOtherPages: $field->repeatOnOtherPages,
+            fallbackFont: $this->resolveEmbeddedFont(new RunStyle),
+            fallbackBoldFont: $this->resolveEmbeddedFont(new RunStyle(bold: true)),
         );
 
         $ctx->cursorY -= $h;
@@ -4795,6 +4832,7 @@ final class Engine
             // A vector block used to take no room: a table row holding a single
             // mark measured as zero height, and the drawing spilled out of it.
             $block instanceof SvgElement => $block->spaceBeforePt + $block->heightPt + $block->spaceAfterPt,
+            $block instanceof SignatureField => $block->spaceBeforePt + $block->heightPt + $block->spaceAfterPt,
             default => 0,
         };
     }

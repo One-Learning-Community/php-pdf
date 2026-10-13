@@ -238,7 +238,7 @@ final readonly class Document
      */
     public function toFile(string $path, ?Engine $engine = null): int
     {
-        $fp = @fopen($path, 'wb');
+        $fp = @fopen($path, 'w+b');
         if ($fp === false) {
             throw new \RuntimeException('Failed to open PDF file for writing: '.$path);
         }

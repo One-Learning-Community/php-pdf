@@ -611,34 +611,30 @@ AES 需要 `ext-openssl`。
 
 ```php
 use Dskripchenko\PhpPdf\Pdf\Document;
+use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\SignatureAppearance;
 use Dskripchenko\PhpPdf\Pdf\SignatureConfig;
-use Dskripchenko\PhpPdf\Element\FormField;
 
 $doc = Document::new();
 $page = $doc->addPage();
 
-// At least one signature widget must exist.
-$page->addFormField(new FormField(
-    type: 'signature',
-    name: 'sig1',
-    x: 100, y: 100, w: 200, h: 60,
-));
+// 签名字段，以填入证书信息的签章显示。
+$page->addSignatureField('approval', x: 72, y: 600, width: 250, height: 75,
+    appearance: SignatureAppearance::simple());
 
 $doc->sign(new SignatureConfig(
-    certificatePem: file_get_contents('cert.pem'),
-    privateKeyPem: file_get_contents('key.pem'),
+    certPem: file_get_contents('signer.crt'),
+    privateKeyPem: file_get_contents('signer.key'),
     privateKeyPassphrase: 'optional',
     signerName: 'Jane Doe',
     reason: 'Document approval',
     location: 'Berlin',
-    contactInfo: 'jane@example.com',
 ));
 
 $doc->toFile('signed.pdf');
 ```
 
 PDF 先以占位的 `/ByteRange` 与 `/Contents` 发射，然后在 PKCS#7
-分离签名完成后就地修补。
+分离签名完成后就地修补。版式流中的签名字段、签章设计、占位符、字体以及多个签署人，详见[签名指南](SIGNING.md)。
 
 ---
 

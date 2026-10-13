@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Dskripchenko\PhpPdf\Pdf;
 
 use Dskripchenko\PhpPdf\Image\PdfImage;
+use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\AppearanceResources;
+use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\SignatureAppearance;
 use Dskripchenko\PhpPdf\Style\Orientation;
 use Dskripchenko\PhpPdf\Style\PaperSize;
 
@@ -24,7 +26,7 @@ use Dskripchenko\PhpPdf\Style\PaperSize;
  *   $page = $doc->addPage();
  *   $page->showText('Hello', x: 72, y: 720, font: StandardFont::TimesRoman, sizePt: 12);
  */
-final class Page
+final class Page implements AppearanceResources
 {
     /** Accumulates content stream commands — deferred render on toBytes(). */
     private ContentStream $stream;
@@ -300,6 +302,14 @@ final class Page
     private int $fontCounter = 0;
 
     private int $imageCounter = 0;
+
+    /**
+     * Content drawn over the page at emission — copies of signature stamps.
+     * Replaced on every build, so emitting twice does not draw them twice.
+     *
+     * @var list<string>
+     */
+    private array $overlays = [];
 
     /**
      * @param  array{0: float, 1: float}|null  $customDimensionsPt  [widthPt, heightPt]
@@ -1500,6 +1510,53 @@ final class Page
     }
 
     /**
+     * Add a signature field — the place a digital signature goes, drawn as
+     * a stamp.
+     *
+     * The field the document is signed into ({@see SignatureConfig::$fieldName},
+     * else the first signature field) shows the stamp filled with the
+     * certificate and signature details; other signature fields stay empty
+     * for later signers and show the stamp with its own variables only.
+     * Without an appearance the field is a thin empty frame. A zero-size
+     * field is an invisible signature.
+     *
+     * @param  bool  $repeatOnOtherPages  Also draw the stamp, as plain
+     *                                    non-interactive content, at the same
+     *                                    position on every other page.
+     * @param  ?PdfFont  $fallbackFont  Font for stamp text when the appearance sets none.
+     * @param  ?PdfFont  $fallbackBoldFont  Bold counterpart of `$fallbackFont`.
+     */
+    public function addSignatureField(
+        string $name,
+        float $x,
+        float $y,
+        float $width,
+        float $height,
+        ?SignatureAppearance $appearance = null,
+        ?string $tooltip = null,
+        bool $repeatOnOtherPages = false,
+        ?PdfFont $fallbackFont = null,
+        ?PdfFont $fallbackBoldFont = null,
+    ): self {
+        if ($name === '') {
+            throw new \InvalidArgumentException('Signature field name must not be empty');
+        }
+        if ($width < 0.0 || $height < 0.0) {
+            throw new \InvalidArgumentException('Signature field size must not be negative');
+        }
+        $this->addFormField('signature', $name, $x, $y, $width, $height, tooltip: $tooltip);
+        $last = array_key_last($this->formFields);
+        $this->formFields[$last] += [
+            'appearance' => $appearance,
+            'repeatOnOtherPages' => $repeatOnOtherPages,
+            'fallbackFont' => $fallbackFont,
+            'fallbackBoldFont' => $fallbackBoldFont,
+        ];
+
+        return $this;
+    }
+
+    /**
      * @return list<array<string, mixed>>
      *
      * @internal
@@ -1527,7 +1584,41 @@ final class Page
      */
     public function buildContentStream(): string
     {
-        return $this->stream->toString();
+        return $this->stream->toString().implode('', $this->overlays);
+    }
+
+    /**
+     * @param  list<string>  $overlays  Content drawn over the page.
+     *
+     * @internal Used by Document for signature stamp copies.
+     */
+    public function setOverlays(array $overlays): void
+    {
+        $this->overlays = $overlays;
+    }
+
+    /** @internal */
+    public function fontResource(PdfFont $font): string
+    {
+        return $this->registerEmbeddedFont($font);
+    }
+
+    /** @internal */
+    public function standardFontResource(StandardFont $font): string
+    {
+        return $this->registerStandardFont($font);
+    }
+
+    /** @internal */
+    public function imageResource(PdfImage $image): string
+    {
+        return $this->registerImage($image);
+    }
+
+    /** @internal */
+    public function extGStateResource(PdfExtGState $state): string
+    {
+        return $this->registerExtGState($state);
     }
 
     /**

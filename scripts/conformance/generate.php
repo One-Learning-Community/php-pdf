@@ -7,10 +7,12 @@ declare(strict_types=1);
  *
  * Usage: php scripts/conformance/generate.php [output-dir]
  *
- * Output: one PDF per flavour (pdfa-1b, pdfa-1a, pdfa-2b, pdfa-2u, pdfa-3b),
- * built with embedded Liberation fonts (run scripts/fetch-fonts.sh first)
- * and the vendored sRGB ICC profile. These files are the input for
- * scripts/conformance/verapdf.sh (veraPDF validation in CI).
+ * Output: one PDF per flavour (pdfa-1b, pdfa-1a, pdfa-2b, pdfa-2u, pdfa-3b,
+ * plus pdfa-2b-signed — signed, with a signature stamp), built with embedded
+ * Liberation fonts (run scripts/fetch-fonts.sh first) and the vendored sRGB
+ * ICC profile. These files are the input for scripts/conformance/verapdf.sh
+ * (veraPDF validation in CI). Also the visual fixtures (form-fill,
+ * signature-stamp) for scripts/conformance/visual-check.sh.
  */
 
 use Dskripchenko\PhpPdf\Document;
@@ -19,16 +21,26 @@ use Dskripchenko\PhpPdf\Element\Heading;
 use Dskripchenko\PhpPdf\Element\Paragraph;
 use Dskripchenko\PhpPdf\Element\Row;
 use Dskripchenko\PhpPdf\Element\Run;
+use Dskripchenko\PhpPdf\Element\SignatureField;
 use Dskripchenko\PhpPdf\Element\Table;
 use Dskripchenko\PhpPdf\Font\Ttf\TtfFile;
+use Dskripchenko\PhpPdf\Image\PdfImage;
 use Dskripchenko\PhpPdf\Layout\Engine;
 use Dskripchenko\PhpPdf\Pdf\Document as PdfDocument;
 use Dskripchenko\PhpPdf\Pdf\Forms\ExistingFormFiller;
 use Dskripchenko\PhpPdf\Pdf\PdfAConfig;
 use Dskripchenko\PhpPdf\Pdf\PdfFont;
 use Dskripchenko\PhpPdf\Pdf\PdfXConfig;
+use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\Box;
+use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\ImageBlock;
+use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\QrBlock;
+use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\SignatureAppearance;
+use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\TextBlock;
+use Dskripchenko\PhpPdf\Pdf\SignatureConfig;
 use Dskripchenko\PhpPdf\Section;
+use Dskripchenko\PhpPdf\Style\Alignment;
 use Dskripchenko\PhpPdf\Style\RunStyle;
+use Dskripchenko\PhpPdf\Style\VerticalAlignment;
 
 $root = dirname(__DIR__, 2);
 
@@ -213,5 +225,58 @@ try {
     $formFillOk = false;
 }
 $failures += $formFillOk ? 0 : 1;
+
+// Signature stamps. The signer is a committed test certificate with a fixed
+// serial and validity, and the signing time is fixed, so the stamp text — and
+// the visual golden — do not change between runs.
+$pki = $root.'/tests/fixtures/pki';
+$signature = new SignatureConfig(
+    (string) file_get_contents($pki.'/stamp-signer.crt'),
+    (string) file_get_contents($pki.'/stamp-signer.key'),
+    reason: 'Согласование',
+    location: 'Москва',
+    signedAt: new \DateTimeImmutable('2026-10-13 12:00:00+03:00'),
+    fieldName: 'approval',
+);
+$stampSection = new Section([
+    new Heading(1, [new Run('Signature stamps')]),
+    new Paragraph([new Run('Договор поставки № 42. The field "approval" is signed and shows the '.
+        'certificate; "counterparty" is left empty for a later signer.')]),
+    new SignatureField('approval', appearance: SignatureAppearance::electronicSignatureStamp('ru')),
+    new SignatureField(
+        'counterparty',
+        heightPt: 50,
+        appearance: new SignatureAppearance(
+            [new TextBlock("Место для подписи\n{party}", align: Alignment::Center, verticalAlign: VerticalAlignment::Center, sizePt: 9)],
+            borderColor: '#888888',
+            variables: ['party' => 'Контрагент'],
+        ),
+        alignment: Alignment::End,
+    ),
+    new SignatureField(
+        'seal',
+        widthPt: 220,
+        heightPt: 80,
+        appearance: new SignatureAppearance([
+            new ImageBlock(PdfImage::fromPath($root.'/tests/fixtures/sample.png'), new Box(0, 0, 0.6, 1)),
+            new QrBlock('https://example.com/verify?s=5A17C0DE2026', new Box(0.65, 0, 0.35, 1)),
+        ], borderColor: '#1F3A93'),
+    ),
+]);
+$failures += $emit('signature-stamp', new Document($stampSection, lang: 'ru', signature: $signature)) ? 0 : 1;
+$failures += $emit('pdfa-2b-signed', new Document(
+    $stampSection,
+    lang: 'ru',
+    pdfA: new PdfAConfig(
+        $iccPath,
+        iccProfileName: 'sRGB2014',
+        lang: 'ru',
+        title: 'php-pdf conformance reference — PDFA-2B signed',
+        author: 'dskripchenko/php-pdf',
+        part: PdfAConfig::PART_2,
+        conformance: PdfAConfig::CONFORMANCE_B,
+    ),
+    signature: $signature,
+)) ? 0 : 1;
 
 exit($failures > 0 ? 1 : 0);

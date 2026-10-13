@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Dskripchenko\PhpPdf\Pdf;
 
+use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\AppearanceRenderer;
+use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\CertificateInfo;
+use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\SignatureAppearance;
 use Dskripchenko\PhpPdf\Style\Orientation;
 use Dskripchenko\PhpPdf\Style\PaperSize;
 
@@ -154,6 +157,22 @@ final class Document
 
     /** Tracks whether /V was already attached to one signature widget. */
     private bool $signatureFieldLinked = false;
+
+    /**
+     * The signing config of the current emit, with the signing time fixed so
+     * the stamp and /M agree.
+     */
+    private ?SignatureConfig $activeSignature = null;
+
+    /** Name of the signature field that receives /V in the current emit. */
+    private ?string $signatureTargetName = null;
+
+    /**
+     * Rendered stamp content per signature field of the current emit.
+     *
+     * @var array<int, array<int, string>> page index → field index → content
+     */
+    private array $signatureAppearances = [];
 
     /** Reserved Helvetica font ID for AcroForm appearance streams. */
     private ?int $appearanceFontId = null;
@@ -517,8 +536,11 @@ final class Document
     /**
      * Enable PKCS#7 detached signing.
      *
-     * Requires at least one form field of type 'signature' to be added —
-     * it will receive /V referencing the signature dictionary.
+     * Requires at least one signature field ({@see Page::addSignatureField()}
+     * or a form field of type 'signature'). The one named by
+     * {@see SignatureConfig::$fieldName}, else the first, receives /V
+     * referencing the signature dictionary, and its stamp is filled with the
+     * certificate and signature details.
      *
      * The PDF bytes are patched in toBytes() after assembly:
      *   1. /ByteRange [a b c d] computed from actual /Contents position.
@@ -896,9 +918,17 @@ final class Document
         // reference it during field emission.
         $this->signatureDictId = null;
         $this->signatureFieldLinked = false;
+        $this->activeSignature = $this->signatureConfig;
         if ($this->signatureConfig !== null) {
             $this->signatureDictId = $writer->reserveObject();
+            if ($this->signatureConfig->signedAt === null) {
+                $this->activeSignature = $this->signatureConfig->withSignedAt(new \DateTimeImmutable);
+            }
         }
+
+        // Signature stamps register their fonts and images on the pages, so
+        // they are drawn before the page resources are emitted below.
+        $this->prepareSignatureFields();
 
         // Reset appearance font IDs — assigned lazily in buildAppearance*.
         $this->appearanceFontId = null;
@@ -1209,7 +1239,11 @@ final class Document
             }
             // AcroForm widgets — emit widget annotations + optional /AA
             // JavaScript actions + collect field object IDs.
-            foreach ($page->formFields() as $field) {
+            foreach ($page->formFields() as $fieldIndex => $field) {
+                if ($field['type'] === 'signature') {
+                    $field['stampContent'] = $this->signatureAppearances[$i][$fieldIndex] ?? null;
+                    $field['pageResources'] = $resourcesDict;
+                }
                 $tooltipPart = $field['tooltip'] !== null
                     ? ' /TU '.$this->pdfTextString($field['tooltip'])
                     : '';
@@ -1445,9 +1479,15 @@ final class Document
             $sigFlagsPart = ($this->signatureConfig !== null && $this->signatureFieldLinked)
                 ? ' /SigFlags 3'
                 : '';
+            // Every widget carries its own appearance stream. NeedAppearances
+            // would have the viewer redraw them, which PDF/A forbids and which
+            // a signed document cannot survive, so it is left out there.
+            $needAppearancesPart = ($this->signatureConfig === null && $this->pdfA === null)
+                ? ' /NeedAppearances true'
+                : '';
             $acroFormId = $writer->addObject(sprintf(
-                '<< /Fields [%s] /NeedAppearances true%s%s%s%s >>',
-                $fieldsArray, $coRef, $daPart, $drPart, $sigFlagsPart,
+                '<< /Fields [%s]%s%s%s%s%s >>',
+                $fieldsArray, $needAppearancesPart, $coRef, $daPart, $drPart, $sigFlagsPart,
             ));
             $acroFormRef = " /AcroForm $acroFormId 0 R";
         }
@@ -1460,7 +1500,7 @@ final class Document
                     'Document::sign() requires at least one form field of type "signature"',
                 );
             }
-            $cfg = $this->signatureConfig;
+            $cfg = $this->activeSignature ?? $this->signatureConfig;
             $sigDictBody = $this->buildSignatureDictBody($cfg);
             $writer->setObject($this->signatureDictId, $sigDictBody);
             $writer->setSignature($cfg, $this->signatureDictId);
@@ -1881,7 +1921,7 @@ final class Document
      */
     public function toFile(string $path): int
     {
-        $fp = fopen($path, 'wb');
+        $fp = fopen($path, 'w+b');
         if ($fp === false) {
             throw new \RuntimeException('Failed to open ' . $path . ' for writing');
         }
@@ -2159,20 +2199,32 @@ final class Document
             );
         }
         if ($type === 'signature') {
-            // Signature widget references signature dictionary via /V;
-            // only the first signature widget receives /V (subsequent
-            // widgets remain unsigned placeholders).
+            // The signed field references the signature dictionary via /V;
+            // the other signature widgets remain unsigned placeholders.
             $vPart = '';
-            if ($this->signatureDictId !== null && ! $this->signatureFieldLinked) {
+            if ($this->signatureDictId !== null && ! $this->signatureFieldLinked
+                && $field['name'] === $this->signatureTargetName) {
                 $vPart = sprintf(' /V %d 0 R', $this->signatureDictId);
                 $this->signatureFieldLinked = true;
             }
-            // Minimal appearance (blank box with optional caption).
-            $apId = $this->buildSignatureAppearance($writer, (float) $field['w'], (float) $field['h']);
-            $apRef = sprintf(' /AP << /N %d 0 R >>', $apId);
+            $w = (float) $field['w'];
+            $h = (float) $field['h'];
+            if ($w <= 0.0 || $h <= 0.0) {
+                // Invisible signature: zero-size rectangle, no appearance.
+                $rect = '[0 0 0 0]';
+                $apRef = '';
+            } else {
+                // The stamp shares the page's resources: its fonts and images
+                // were registered on the page when it was drawn.
+                $apId = isset($field['stampContent'])
+                    ? $this->emitAppearanceStream($writer, $w, $h, $field['stampContent'], $field['pageResources'])
+                    : $this->buildSignatureAppearance($writer, $w, $h);
+                $apRef = sprintf(' /AP << /N %d 0 R >>', $apId);
+            }
 
+            // /F 4 — Print: the stamp is printed with the page.
             return sprintf(
-                '<< /Type /Annot /Subtype /Widget /FT /Sig /Rect %s '
+                '<< /Type /Annot /Subtype /Widget /FT /Sig /Rect %s /F 4 '
                 .'%s%s%s /Ff %d /P %d 0 R%s%s >>',
                 $rect, $namePart, $vPart, $tooltipPart, $flags, $pageId, $apRef, $aaPart,
             );
@@ -2506,6 +2558,103 @@ final class Document
         );
 
         return $this->emitAppearanceStream($writer, $w, $h, $content, $resources);
+    }
+
+    /**
+     * Pick the field the document is signed into and draw the signature
+     * stamps: into each field's own appearance, and as plain content on the
+     * other pages for stamps that repeat.
+     */
+    private function prepareSignatureFields(): void
+    {
+        $this->signatureTargetName = null;
+        $this->signatureAppearances = [];
+        foreach ($this->pages as $page) {
+            $page->setOverlays([]);
+        }
+
+        $fields = [];
+        foreach ($this->pages as $pageIndex => $page) {
+            foreach ($page->formFields() as $fieldIndex => $field) {
+                if ($field['type'] === 'signature') {
+                    $fields[] = [$pageIndex, $fieldIndex, $field];
+                }
+            }
+        }
+
+        $signature = $this->activeSignature;
+        if ($signature !== null) {
+            $wanted = $signature->fieldName;
+            foreach ($fields as [, , $field]) {
+                if ($wanted === null || $field['name'] === $wanted) {
+                    $this->signatureTargetName = $field['name'];
+
+                    break;
+                }
+            }
+            if ($wanted !== null && $this->signatureTargetName === null) {
+                throw new \LogicException(sprintf('Document::sign(): no signature field named "%s"', $wanted));
+            }
+        }
+
+        $certificate = null;
+        $overlays = [];
+        foreach ($fields as [$pageIndex, $fieldIndex, $field]) {
+            $appearance = $field['appearance'] ?? null;
+            $w = (float) $field['w'];
+            $h = (float) $field['h'];
+            if (! $appearance instanceof SignatureAppearance || $w <= 0.0 || $h <= 0.0) {
+                continue;
+            }
+
+            $values = [];
+            if ($signature !== null && $field['name'] === $this->signatureTargetName) {
+                $certificate ??= CertificateInfo::fromPem($signature->certPem);
+                $values = $this->stampValues($signature, $certificate, $appearance);
+            }
+
+            $render = fn (Page $host): string => (new AppearanceRenderer(
+                $host,
+                $field['fallbackFont'] ?? null,
+                $field['fallbackBoldFont'] ?? null,
+                requireEmbeddedFonts: $this->pdfA !== null,
+            ))->render($appearance, $values, $w, $h);
+
+            $this->signatureAppearances[$pageIndex][$fieldIndex] = $render($this->pages[$pageIndex]);
+
+            if (! empty($field['repeatOnOtherPages'])) {
+                foreach ($this->pages as $otherIndex => $other) {
+                    if ($otherIndex === $pageIndex) {
+                        continue;
+                    }
+                    $overlays[$otherIndex][] = sprintf(
+                        "/Artifact BMC\nq\n1 0 0 1 %s %s cm\n%sQ\nEMC\n",
+                        $this->fmt((float) $field['x']), $this->fmt((float) $field['y']),
+                        $render($other),
+                    );
+                }
+            }
+        }
+        foreach ($overlays as $pageIndex => $list) {
+            $this->pages[$pageIndex]->setOverlays($list);
+        }
+    }
+
+    /**
+     * Placeholder values of the signed field's stamp.
+     *
+     * @return array<string, string>
+     */
+    private function stampValues(SignatureConfig $signature, CertificateInfo $certificate, SignatureAppearance $appearance): array
+    {
+        return [
+            ...$certificate->placeholders($appearance->dateFormat),
+            'signer' => $signature->signerName ?? $certificate->commonName,
+            'signedAt' => $signature->effectiveSignedAt()->format($appearance->dateTimeFormat),
+            'reason' => $signature->reason ?? '',
+            'location' => $signature->location ?? '',
+            'contact' => $signature->contactInfo ?? '',
+        ];
     }
 
     /**

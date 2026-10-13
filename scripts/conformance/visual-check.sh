@@ -33,7 +33,7 @@ FUZZ="5%"
 MAX_DIFF_PCT="0.5"
 
 # First page of each document is the visual fixture.
-DOCS=(pdfa-1b pdfx-4 form-fill)
+DOCS=(pdfa-1b pdfx-4 form-fill signature-stamp)
 
 mkdir -p "$RENDER" "$GOLDEN"
 

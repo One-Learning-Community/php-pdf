@@ -13,8 +13,9 @@ set -euo pipefail
 DIR="${1:-build/conformance}"
 VERAPDF="${VERAPDF:-verapdf}"
 
-NAMES=(pdfa-1b pdfa-1a pdfa-2b pdfa-2u pdfa-3b)
-flavour() { echo "${1#pdfa-}"; }
+NAMES=(pdfa-1b pdfa-1a pdfa-2b pdfa-2u pdfa-3b pdfa-2b-signed)
+# pdfa-2b-signed → 2b
+flavour() { local f="${1#pdfa-}"; echo "${f%%-*}"; }
 
 version="$("$VERAPDF" --version 2>/dev/null | head -1 || echo 'veraPDF')"
 summary="$DIR/summary.md"

@@ -514,8 +514,12 @@ final class Writer
     private static function streamIsSeekable($stream): bool
     {
         $meta = stream_get_meta_data($stream);
+        // Patching in place reads the emitted bytes back, so a write-only
+        // handle ('wb') takes the buffered path even though it can seek.
+        $mode = $meta['mode'];
+        $readable = str_contains($mode, 'r') || str_contains($mode, '+');
 
-        return ($meta['seekable'] ?? false) === true;
+        return ($meta['seekable'] ?? false) === true && $readable;
     }
 
     /**

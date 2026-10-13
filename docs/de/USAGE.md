@@ -665,27 +665,23 @@ Berechtigungsbits: `PERM_PRINT`, `PERM_MODIFY`, `PERM_COPY`,
 
 ```php
 use Dskripchenko\PhpPdf\Pdf\Document;
+use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\SignatureAppearance;
 use Dskripchenko\PhpPdf\Pdf\SignatureConfig;
-use Dskripchenko\PhpPdf\Element\FormField;
 
 $doc = Document::new();
 $page = $doc->addPage();
 
-// At least one signature widget must exist.
-$page->addFormField(new FormField(
-    type: 'signature',
-    name: 'sig1',
-    x: 100, y: 100, w: 200, h: 60,
-));
+// Das Signaturfeld, als Stempel mit den Zertifikatsdaten dargestellt.
+$page->addSignatureField('approval', x: 72, y: 600, width: 250, height: 75,
+    appearance: SignatureAppearance::simple());
 
 $doc->sign(new SignatureConfig(
-    certificatePem: file_get_contents('cert.pem'),
-    privateKeyPem: file_get_contents('key.pem'),
+    certPem: file_get_contents('signer.crt'),
+    privateKeyPem: file_get_contents('signer.key'),
     privateKeyPassphrase: 'optional',
     signerName: 'Jane Doe',
     reason: 'Document approval',
     location: 'Berlin',
-    contactInfo: 'jane@example.com',
 ));
 
 $doc->toFile('signed.pdf');
@@ -694,6 +690,8 @@ $doc->toFile('signed.pdf');
 Das PDF wird mit Platzhaltern für `/ByteRange` und `/Contents`
 ausgegeben und anschließend nach der PKCS#7-Detached-Signatur an Ort
 und Stelle gepatcht.
+Signaturfelder im Layoutfluss, Stempelgestaltung, Platzhalter, Schriften
+und mehrere Unterzeichner beschreibt der [Signaturleitfaden](SIGNING.md).
 
 ---
 
