@@ -98,6 +98,23 @@ final class TsaClientTest extends TestCase
     }
 
     #[Test]
+    public function an_unreachable_tsa_is_a_tsa_error(): void
+    {
+        $transport = new class implements HttpTransport
+        {
+            public function post(string $url, string $body, array $headers, float $timeoutSeconds): HttpResponse
+            {
+                throw new \RuntimeException("HTTP request to $url failed: connection refused");
+            }
+        };
+        $client = new TsaClient('http://tsa.test/', transport: $transport);
+
+        $this->expectException(TsaException::class);
+        $this->expectExceptionMessageMatches('/unreachable: HTTP request to .* connection refused/');
+        $client->timestamp('x');
+    }
+
+    #[Test]
     public function a_token_for_other_data_is_refused(): void
     {
         $this->requireTsa();

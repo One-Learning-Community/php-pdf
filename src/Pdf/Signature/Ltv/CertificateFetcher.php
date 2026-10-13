@@ -24,7 +24,12 @@ final class CertificateFetcher
     public function issuerOf(Certificate $certificate): ?Certificate
     {
         foreach ($certificate->caIssuersUrls() as $url) {
-            $response = $this->transport->get($url, [], $this->timeoutSeconds);
+            try {
+                $response = $this->transport->get($url, [], $this->timeoutSeconds);
+            } catch (\RuntimeException) {
+                // The next URL, if any; none found means the issuer is unknown.
+                continue;
+            }
             if ($response->status !== 200 || $response->body === '') {
                 continue;
             }

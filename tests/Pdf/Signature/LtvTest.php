@@ -140,6 +140,22 @@ final class LtvTest extends TestCase
     }
 
     #[Test]
+    public function crls_are_used_when_the_ocsp_responder_is_unreachable(): void
+    {
+        // A timeout or a refused connection, as a transport reports it.
+        $unreachableOcsp = new class implements HttpTransport
+        {
+            public function post(string $url, string $body, array $headers, float $timeoutSeconds): HttpResponse
+            {
+                throw new \RuntimeException("HTTP request to $url failed: Operation timed out");
+            }
+        };
+        $lt = $this->addValidationData($this->signed(), $unreachableOcsp);
+
+        self::assertSame(['certs' => 4, 'ocsps' => 0, 'crls' => 2], self::dss($lt));
+    }
+
+    #[Test]
     public function a_second_call_extends_the_dss(): void
     {
         $lt = $this->addValidationData($this->signed());
