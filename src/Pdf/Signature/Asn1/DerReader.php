@@ -9,7 +9,9 @@ namespace Dskripchenko\PhpPdf\Pdf\Signature\Asn1;
  *
  * Constructed elements are parsed recursively; OCTET STRINGs are left as
  * bytes (their content is often DER again — parse it with another call when
- * needed). Indefinite lengths are refused: DER does not allow them.
+ * needed). Indefinite lengths are refused: DER does not allow them —
+ * except by {@see parseBer()}, for CMS made by tools that write BER
+ * (CryptoPro among them); {@see Asn1Node::toDer()} then re-encodes it.
  *
  * @internal
  */
@@ -20,7 +22,7 @@ final class DerReader
     public static function parse(string $der): Asn1Node
     {
         $offset = 0;
-        $node = self::element($der, $offset, 0);
+        $node = self::element($der, $offset, 0, false);
         if ($offset !== strlen($der)) {
             throw new Asn1Exception(sprintf('%d trailing bytes after the DER element', strlen($der) - $offset));
         }
@@ -36,10 +38,21 @@ final class DerReader
     {
         $offset = 0;
 
-        return self::element($bytes, $offset, 0);
+        return self::element($bytes, $offset, 0, false);
     }
 
-    private static function element(string $data, int &$offset, int $depth): Asn1Node
+    /**
+     * The first element of a buffer in BER: constructed elements may use the
+     * indefinite length, closed by an end-of-contents marker.
+     */
+    public static function parseBer(string $bytes): Asn1Node
+    {
+        $offset = 0;
+
+        return self::element($bytes, $offset, 0, true);
+    }
+
+    private static function element(string $data, int &$offset, int $depth, bool $ber): Asn1Node
     {
         if ($depth > self::MAX_DEPTH) {
             throw new Asn1Exception('ASN.1 nesting too deep');
@@ -55,7 +68,25 @@ final class DerReader
         }
         $len = ord($data[$offset++]);
         if ($len === 0x80) {
-            throw new Asn1Exception('Indefinite length is not DER');
+            if (! $ber || ($tag & 0x20) === 0) {
+                throw new Asn1Exception('Indefinite length is not DER');
+            }
+            // Children up to the end-of-contents marker 00 00.
+            $contentStart = $offset;
+            $children = [];
+            while (true) {
+                if ($offset + 2 > $size) {
+                    throw new Asn1Exception('Indefinite-length element without an end-of-contents marker');
+                }
+                if ($data[$offset] === "\x00" && $data[$offset + 1] === "\x00") {
+                    break;
+                }
+                $children[] = self::element($data, $offset, $depth + 1, true);
+            }
+            $content = substr($data, $contentStart, $offset - $contentStart);
+            $offset += 2;
+
+            return new Asn1Node($tag, substr($data, $start, $offset - $start), $content, $children);
         }
         if ($len > 0x80) {
             $n = $len & 0x7F;
@@ -77,7 +108,7 @@ final class DerReader
         if (($tag & 0x20) !== 0) {
             $inner = 0;
             while ($inner < $len) {
-                $children[] = self::element($content, $inner, $depth + 1);
+                $children[] = self::element($content, $inner, $depth + 1, $ber);
             }
         }
 

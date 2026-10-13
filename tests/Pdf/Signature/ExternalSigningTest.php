@@ -198,13 +198,40 @@ final class ExternalSigningTest extends TestCase
     }
 
     #[Test]
-    public function an_attached_cms_is_refused(): void
+    public function an_attached_cms_of_this_document_is_made_detached(): void
+    {
+        $prepared = self::prepare(new SignatureConfig(signer: new ExternalSigner));
+        $attached = $this->cliSign($prepared->signedContent(), extra: '-nodetach');
+        self::assertSame($prepared->signedContent(), \Dskripchenko\PhpPdf\Pdf\Signature\Cms\SignedDataReader::parse($attached)->encapsulatedContent());
+
+        $pdf = $prepared->complete($attached);
+        [$der] = Pki::extract($pdf);
+        self::assertNull(\Dskripchenko\PhpPdf\Pdf\Signature\Cms\SignedDataReader::parse($der)->encapsulatedContent());
+        self::assertLessThan(strlen($attached), strlen($der));
+        self::assertVerifies($pdf);
+    }
+
+    #[Test]
+    public function an_attached_cms_of_other_content_is_refused(): void
     {
         $prepared = self::prepare(new SignatureConfig(signer: new ExternalSigner));
 
         $this->expectException(CmsException::class);
-        $this->expectExceptionMessageMatches('/detached/');
-        $prepared->complete($this->cliSign($prepared->signedContent(), extra: '-nodetach'));
+        $prepared->complete($this->cliSign('other content', extra: '-nodetach'));
+    }
+
+    #[Test]
+    public function a_ber_cms_with_indefinite_lengths_is_accepted(): void
+    {
+        // `openssl cms -stream` writes indefinite lengths, as CryptoPro does.
+        $prepared = self::prepare(new SignatureConfig(signer: new ExternalSigner));
+        $ber = $this->cliSign($prepared->signedContent(), extra: '-stream');
+        self::assertSame("\x30\x80", substr($ber, 0, 2), 'The fixture must be indefinite-length BER');
+
+        $pdf = $prepared->complete($ber);
+        [$der] = Pki::extract($pdf);
+        self::assertNotSame("\x80", $der[1], 'Embedded as definite lengths');
+        self::assertVerifies($pdf);
     }
 
     #[Test]

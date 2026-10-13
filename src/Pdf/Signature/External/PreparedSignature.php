@@ -181,6 +181,13 @@ final class PreparedSignature
     {
         $cms = SignedDataReader::parse($der);
 
+        // Tools often sign "attached" by default; the copy inside is fine as
+        // long as it is this document, and is dropped when embedding.
+        $attached = $cms->encapsulatedContent();
+        if ($attached !== null && $attached !== $this->signedContent()) {
+            throw new CmsException('The CMS carries content other than this document');
+        }
+
         $digest = $cms->digestAlgorithm();
         if ($cms->messageDigest() !== $digest->digest($this->signedContent())) {
             throw new CmsException('The CMS signs different data: its message digest does not match this document');

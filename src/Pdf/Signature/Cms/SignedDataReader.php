@@ -33,10 +33,7 @@ final class SignedDataReader
         }
         $this->signedData = $contentInfo->child(1)->child(0)->expect(Der::TAG_SEQUENCE);
 
-        $encap = $this->signedData->child(2)->expect(Der::TAG_SEQUENCE);
-        if (count($encap->children) > 1) {
-            throw new CmsException('The CMS carries the content inside; a detached signature is needed');
-        }
+        $this->signedData->child(2)->expect(Der::TAG_SEQUENCE);
         $signerInfos = $this->signerInfos();
         if (count($signerInfos->children) !== 1) {
             throw new CmsException(sprintf('Expected one SignerInfo, found %d', count($signerInfos->children)));
@@ -50,10 +47,30 @@ final class SignedDataReader
     public static function parse(string $der): self
     {
         try {
-            return new self(DerReader::parseFirst($der));
+            // Tools write BER (CryptoPro: indefinite lengths); work on the
+            // definite-length re-encoding, which is what gets embedded.
+            return new self(DerReader::parse(DerReader::parseBer($der)->toDer()));
         } catch (Asn1Exception $e) {
             throw new CmsException('Unreadable CMS: '.$e->getMessage(), previous: $e);
         }
+    }
+
+    /**
+     * The content an attached signature carries, or null for a detached one.
+     * A BER constructed OCTET STRING is joined from its pieces.
+     */
+    public function encapsulatedContent(): ?string
+    {
+        $eContent = $this->signedData->child(2)->contextChild(0);
+        if ($eContent === null) {
+            return null;
+        }
+        $octets = $eContent->child(0);
+        if (! $octets->isConstructed()) {
+            return $octets->expect(Der::TAG_OCTET_STRING)->content;
+        }
+
+        return implode('', array_map(static fn (Asn1Node $n): string => $n->content, $octets->children));
     }
 
     public function digestAlgorithm(): DigestAlgorithm
@@ -140,9 +157,10 @@ final class SignedDataReader
     }
 
     /**
-     * The same CMS with certificates added (if missing) and unsigned
-     * attributes appended. Signed content is untouched, so the signature
-     * stays valid.
+     * The same CMS, detached, with certificates added (if missing) and
+     * unsigned attributes appended. What was signed — the signed attributes,
+     * which carry the content digest — is untouched, so the signature stays
+     * valid; an attached copy of the content is dropped.
      *
      * @param  list<Certificate>  $certificates
      * @param  list<string>  $unsignedAttributes  Encoded `Attribute`s.
@@ -171,7 +189,8 @@ final class SignedDataReader
         // SignedData: version, digestAlgorithms, encapContentInfo,
         // [0] certificates?, [1] crls?, signerInfos.
         $children = $this->signedData->children;
-        $fields = [$children[0]->der, $children[1]->der, $children[2]->der];
+        $encapType = $children[2]->child(0)->der;
+        $fields = [$children[0]->der, $children[1]->der, Der::sequence($encapType)];
         if ($present !== []) {
             $fields[] = Der::implicitConstructed(0, implode('', $present));
         }

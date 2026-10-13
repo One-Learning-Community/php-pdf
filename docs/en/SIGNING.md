@@ -169,7 +169,10 @@ certificate given to `prepareSignature()` (if one was), its signature
 verifies, and it fits the reserved space. Certificates the CMS lacks are
 added from the preparation; a timestamp authority passed to `complete()`
 timestamps the signature. A GOST raw value in CryptoAPI's little-endian
-order is recognised and turned around.
+order is recognised and turned around. CMS written as BER (CryptoPro
+uses indefinite lengths) is accepted, and an attached signature — the
+default of many tools — is made detached when the content inside is this
+document.
 
 Keep the state where the signer cannot change it: it carries the prepared
 document, and its checksum only catches damage, not tampering. Once

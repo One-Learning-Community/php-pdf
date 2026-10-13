@@ -21,7 +21,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     made with the prepared certificate, verifies, fits the reserved space —
     adds missing certificates, and can add an RFC 3161 timestamp.
     `completeBase64()` takes base64 or PEM. GOST raw values in CryptoAPI's
-    little-endian order are recognised.
+    little-endian order are recognised. BER with indefinite lengths (what
+    CryptoPro writes) is read and embedded as definite lengths; an attached
+    CMS whose content is this document is made detached.
   - `toJson()` / `fromJson()` keep the state between requests.
   - `ExternalSigner` stands in for the absent key, with or without the
     certificate (the stamp shows it when given).
