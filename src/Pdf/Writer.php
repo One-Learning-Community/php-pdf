@@ -689,9 +689,14 @@ final class Writer
         }
         $enc = $this->encryption;
 
-        // Encrypt literal strings first (before streams, so the regex is
-        // not corrupted by binary content).
-        $body = $this->encryptLiteralStrings($body, $objId);
+        // Strings live in the dictionary; what follows `stream` is bytes, and
+        // a `(` or `<` among them is not a string. Scanning the stream data
+        // too used to "encrypt" pieces of compressed fonts and images and
+        // broke them.
+        $streamAt = str_starts_with($body, "stream\n") ? 0 : strpos($body, "\nstream\n");
+        $head = $streamAt === false ? $body : substr($body, 0, $streamAt);
+        $tail = $streamAt === false ? '' : substr($body, $streamAt);
+        $body = $this->encryptStrings($head, $objId).$tail;
 
         // Encrypt stream content: `stream\n<bytes>\nendstream`.
         $encryptedLength = null;
@@ -725,23 +730,24 @@ final class Writer
     }
 
     /**
-     * Encrypt literal PDF strings (...) -> output as hex form
-     * <ENCRYPTED_HEX>. Walks body manually for correct paren balance
-     * (literal strings allow nested () pairs balanced).
+     * Encrypts the strings of a dictionary or array — literal `(...)` and
+     * hexadecimal `<...>` alike — writing them back as hex. The signature
+     * dictionary's /Contents is left alone (§7.6.1: it is not encrypted).
      */
-    private function encryptLiteralStrings(string $body, int $objId): string
+    private function encryptStrings(string $body, int $objId): string
     {
         if ($this->encryption === null) {
             return $body;
         }
         $enc = $this->encryption;
+        $keepContents = $objId === $this->signatureDictId;
         $out = '';
         $len = strlen($body);
         $i = 0;
         while ($i < $len) {
             $ch = $body[$i];
             if ($ch === '(') {
-                // Find matching closing paren respecting nested + escaped.
+                // Find the matching closing paren, respecting nesting and escapes.
                 $depth = 1;
                 $j = $i + 1;
                 $strStart = $j;
@@ -764,23 +770,58 @@ final class Writer
                 }
                 if ($depth !== 0) {
                     // Malformed — keep as-is.
-                    $out .= substr($body, $i, $j - $i + 1);
-                    $i = $j + 1;
+                    $out .= substr($body, $i);
+
+                    break;
+                }
+                $decoded = self::unescapeLiteral(substr($body, $strStart, $j - $strStart));
+                $out .= '<'.bin2hex($enc->encryptObject($decoded, $objId)).'>';
+                $i = $j + 1;
+
+                continue;
+            }
+            if ($ch === '<' && ($body[$i + 1] ?? '') !== '<' && ($i === 0 || $body[$i - 1] !== '<')) {
+                $end = strpos($body, '>', $i + 1);
+                $hex = $end === false ? null : substr($body, $i + 1, $end - $i - 1);
+                if ($hex !== null && preg_match('/^[0-9A-Fa-f\s]*$/', $hex) === 1) {
+                    $hex = (string) preg_replace('/\s+/', '', $hex);
+                    if ($keepContents && str_ends_with($out, '/Contents ')) {
+                        $out .= '<'.$hex.'>';
+                    } else {
+                        $bytes = (string) hex2bin(strlen($hex) % 2 === 1 ? $hex.'0' : $hex);
+                        $out .= '<'.bin2hex($enc->encryptObject($bytes, $objId)).'>';
+                    }
+                    $i = (int) $end + 1;
 
                     continue;
                 }
-                $raw = substr($body, $strStart, $j - $strStart);
-                // Unescape PDF literal string escapes: \\, \(, \).
-                $decoded = strtr($raw, ['\\\\' => '\\', '\\(' => '(', '\\)' => ')']);
-                $encrypted = $enc->encryptObject($decoded, $objId);
-                $out .= '<'.bin2hex($encrypted).'>';
-                $i = $j + 1; // skip closing )
-            } else {
-                $out .= $ch;
-                $i++;
             }
+            $out .= $ch;
+            $i++;
         }
 
         return $out;
+    }
+
+    /** The bytes of a literal string body, its escapes resolved (§7.3.4.2). */
+    private static function unescapeLiteral(string $raw): string
+    {
+        return (string) preg_replace_callback(
+            '/\\\\(?:([0-7]{1,3})|(\r\n|\r|\n)|(.))/s',
+            static function (array $m): string {
+                if (($m[1] ?? '') !== '') {
+                    return chr(octdec($m[1]) & 0xFF);
+                }
+                if (($m[2] ?? '') !== '') {
+                    return '';
+                }
+
+                return match ($m[3]) {
+                    'n' => "\n", 'r' => "\r", 't' => "\t", 'b' => "\x08", 'f' => "\x0C",
+                    default => $m[3],
+                };
+            },
+            $raw,
+        );
     }
 }
