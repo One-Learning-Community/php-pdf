@@ -190,4 +190,4 @@ PdfSource::fromFile('protected.pdf', password: 'secret');
 见[注释与书签](#注释与书签)。
 
 记录这些是为了避免把“支持合并”误解为“保留一切”。完整范围和路线图见
-`docs/design/pdf-merge.md`。
+`docs/internal/design/pdf-merge.md`。

@@ -75,7 +75,7 @@ composer require dskripchenko/php-pdf
 ```
 
 要求 PHP 8.2 或更高版本。必需扩展：`mbstring`、`zlib`、`dom`。
-如需 AES 加密或 PKCS#7 签名，请额外启用 `openssl`。
+如需 AES 加密或数字签名，请额外启用 `openssl`。
 
 ---
 
@@ -213,8 +213,8 @@ file_put_contents('hello.pdf', $doc->toBytes());
 
 - 📖 [使用指南](USAGE.md) —— 段落、表格、图表、
   条形码、表单、加密、签名、PDF/A。
-- ✍️ [数字签名](SIGNING.md) —— 签名、签名字段、签章设计、占位符、
-  多个签署人。
+- ✍️ [数字签名](SIGNING.md) —— PAdES 与 GOST 签名、签章、在服务器之外签名
+  （CryptoPro、HSM）、签署已有 PDF 与多个签署人、认证、长期验证、签名验证。
 - 🔗 [读取与合并 PDF](MERGE.md) —— 读取现有文件、追加/重排页面、
   盖印叠加、FPDI 风格导入。
 - ⚖️ [与 mpdf / tcpdf / dompdf / FPDF 的对比](COMPARISON.md) ——
@@ -250,7 +250,7 @@ FPDF 在最简单的场景中胜出（没有 HTML、没有换行、没有表格�
 
 - PHP **8.2** 或更高版本。
 - 必需：`ext-mbstring`、`ext-zlib`、`ext-dom`。
-- 可选：`ext-openssl`（AES 加密与 PKCS#7 签名）。
+- 可选：`ext-openssl`（AES 加密与数字签名）。
 - 无外部二进制依赖 —— 纯 PHP 实现。
 
 ---

@@ -16,7 +16,7 @@ einen Rundgang oder springen Sie direkt zum benötigten Feature.
   - [Bilder](#bilder)
   - [Kopf-, Fußzeilen, Wasserzeichen](#kopf--fußzeilen-wasserzeichen)
   - [Seitenaufbau und Abschnittsumbrüche](#seitenaufbau-und-abschnittsumbrüche)
-- [HTML- / CSS-Eingabe](#html--css-eingabe)
+- [HTML- / CSS-Eingabe](#html---css-eingabe)
 - [Eigene Schriftarten](#eigene-schriftarten)
 - [Barcodes](#barcodes)
 - [Diagramme](#diagramme)
@@ -691,8 +691,8 @@ $doc->toFile('signed.pdf');
 ```
 
 Das PDF wird mit Platzhaltern für `/ByteRange` und `/Contents`
-ausgegeben und anschließend nach der PKCS#7-Detached-Signatur an Ort
-und Stelle gepatcht.
+ausgegeben und anschließend an Ort und Stelle mit der abgetrennten
+CMS-Signatur (standardmäßig PAdES) gepatcht.
 Signaturfelder im Layoutfluss, Stempelgestaltung, Platzhalter, Schriften
 und mehrere Unterzeichner beschreibt der [Signaturleitfaden](SIGNING.md).
 

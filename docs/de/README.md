@@ -85,7 +85,7 @@ composer require dskripchenko/php-pdf
 ```
 
 PHP 8.2 oder neuer. Erforderliche Erweiterungen: `mbstring`, `zlib`,
-`dom`. Fügen Sie `openssl` für AES-Verschlüsselung oder PKCS#7-Signing
+`dom`. Fügen Sie `openssl` für AES-Verschlüsselung oder digitale Signaturen
 hinzu.
 
 ---
@@ -230,8 +230,9 @@ Eine vollständige Anleitung findet sich in [docs/en/USAGE.md](USAGE.md).
 
 - 📖 [Anwendungsleitfaden](USAGE.md) — Absätze, Tabellen, Diagramme,
   Barcodes, Formulare, Verschlüsselung, Signing, PDF/A.
-- ✍️ [Digitale Signaturen](SIGNING.md) — Signieren, Signaturfelder,
-  Stempelgestaltung, Platzhalter, mehrere Unterzeichner.
+- ✍️ [Digitale Signaturen](SIGNING.md) — PAdES- und GOST-Signaturen,
+  Stempel, Signieren außerhalb des Servers (CryptoPro, HSM), bestehende PDFs
+  und mehrere Unterzeichner, Zertifizierung, Langzeit- und Signaturvalidierung.
 - 🔗 [PDFs lesen & zusammenführen](MERGE.md) — bestehende Dateien lesen,
   Seiten anhängen/umordnen, Overlays stempeln, FPDI-Stil-Import.
 - ⚖️ [Vergleich mit mpdf / tcpdf / dompdf / FPDF](COMPARISON.md) —
@@ -271,7 +272,7 @@ Signing.
 
 - PHP **8.2** oder neuer.
 - Erforderlich: `ext-mbstring`, `ext-zlib`, `ext-dom`.
-- Optional: `ext-openssl` (AES-Verschlüsselung und PKCS#7-Signing).
+- Optional: `ext-openssl` (AES-Verschlüsselung und digitale Signaturen).
 - Keine externen Binärdateien — reines PHP.
 
 ---

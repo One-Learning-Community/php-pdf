@@ -68,7 +68,7 @@ $mpdf = new Mpdf([], $engine);
 | custom TTF fonts (`fontdata` config) | `new Engine(defaultFont: new PdfFont(TtfFile::fromFile($path)), boldFont: ..., fontProvider: ...)` passed to `toBytes()/toFile()` |
 | `SetProtection([...], $user, $owner)` | `new Document($section, encryption: new EncryptionParams($user, $owner, ...))` |
 | `PDFA` config flag | `new Document($section, pdfA: new PdfAConfig($iccPath, ...))` — [validated with veraPDF in CI](CONFORMANCE.md) |
-| digital signature (via external tools) | built-in: `new Document($section, signature: new SignatureConfig($certPem, $keyPem))` |
+| digital signature (via external tools) | built-in: `new Document($section, signature: new SignatureConfig($certPem, $keyPem))` — see the [signing guide](SIGNING.md) |
 | `<barcode code="..." type="QR">` | `new Barcode('...', BarcodeFormat::Qr)` element (12 linear + 4 2D formats) |
 
 ## Find/replace cheat-sheet

@@ -69,7 +69,7 @@ $mpdf = new Mpdf([], $engine);
 | eigene TTFs (`fontdata`-Konfig) | `new Engine(defaultFont: new PdfFont(TtfFile::fromFile($path)), boldFont: ..., fontProvider: ...)` an `toBytes()/toFile()` |
 | `SetProtection([...], $user, $owner)` | `new Document($section, encryption: new EncryptionParams($user, $owner, ...))` |
 | `PDFA`-Konfigflag | `new Document($section, pdfA: new PdfAConfig($iccPath, ...))` — [in CI mit veraPDF validiert](../en/CONFORMANCE.md) |
-| digitale Signatur (über externe Tools) | eingebaut: `new Document($section, signature: new SignatureConfig($certPem, $keyPem))` |
+| digitale Signatur (über externe Tools) | eingebaut: `new Document($section, signature: new SignatureConfig($certPem, $keyPem))` — siehe [Signaturleitfaden](SIGNING.md) |
 | `<barcode code="..." type="QR">` | `new Barcode('...', BarcodeFormat::Qr)`-Element (12 lineare + 4 2D-Formate) |
 
 ## Suchen/Ersetzen-Spickzettel

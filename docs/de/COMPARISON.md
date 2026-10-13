@@ -143,7 +143,15 @@ leistet — ist eingebaut und MIT-lizenziert, ohne proprietäres Add-on.
 | AES-256 V5 R5 (Adobe Supplement)       | ✅      | ✅   | ✅    | ❌     | ❌   |
 | **AES-256 V5 R6 (PDF 2.0)**            | ✅      | ❌   | ❌    | ❌     | ❌   |
 | Verschlüsselte Strings + Streams + Catalog | ✅  | ✅   | ✅    | ❌     | ❌   |
-| PKCS#7 Detached Signing                | ✅      | ❌   | ✅    | ❌     | ❌   |
+| PKCS#7 Detached Signing (`adbe.pkcs7.detached`) | ✅ | ❌ | ✅ | ❌ | ❌ |
+| PAdES-Signaturen (`ETSI.CAdES.detached`) | ✅ | ❌ | ❌ | ❌ | ❌ |
+| RFC-3161-Signaturzeitstempel | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Sichtbarer Signaturstempel aus dem Zertifikat | ✅ | ❌ | ⚠️ | ❌ | ❌ |
+| Zertifizierungssignatur (DocMDP) | ✅ | ❌ | ✅ | ❌ | ❌ |
+| Bestehende PDFs signieren / mehrere Unterzeichner | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Signieren außerhalb des Servers (HSM, CryptoPro) | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Langzeitvalidierung (DSS, Dokumentzeitstempel) | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Signaturvalidierung | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Public-Key-Verschlüsselung (/PubSec)   | ❌      | ❌   | ✅    | ❌     | ❌   |
 
 ## Konformität und Barrierefreiheit

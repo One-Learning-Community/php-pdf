@@ -69,7 +69,7 @@ $mpdf = new Mpdf([], $engine);
 | свои TTF (`fontdata` в конфиге) | `new Engine(defaultFont: new PdfFont(TtfFile::fromFile($path)), boldFont: ..., fontProvider: ...)` в `toBytes()/toFile()` |
 | `SetProtection([...], $user, $owner)` | `new Document($section, encryption: new EncryptionParams($user, $owner, ...))` |
 | флаг `PDFA` в конфиге | `new Document($section, pdfA: new PdfAConfig($iccPath, ...))` — [валидируется veraPDF в CI](../en/CONFORMANCE.md) |
-| цифровая подпись (внешними тулами) | встроено: `new Document($section, signature: new SignatureConfig($certPem, $keyPem))` |
+| цифровая подпись (внешними тулами) | встроено: `new Document($section, signature: new SignatureConfig($certPem, $keyPem))` — см. [руководство по подписи](SIGNING.md) |
 | `<barcode code="..." type="QR">` | элемент `new Barcode('...', BarcodeFormat::Qr)` (12 линейных + 4 2D формата) |
 
 ## Cheat-sheet find/replace
