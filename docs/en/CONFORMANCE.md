@@ -16,7 +16,7 @@ summary page.
 | PDF/X structure | ISO 15930 | Ghostscript render (`-dPDFSTOPONERROR`) + byte-level assertions (OutputIntent `/GTS_PDFX`, CMYK profile and RGB-operator ban for X-1a, Info keys, trailer `/ID`, TrimBox/ArtBox per page, no encryption) | PDF/X-1a, X-3, X-4 |
 | Visual regression | — | poppler `pdftoppm` render diffed against committed golden PNGs (ImageMagick, 5% fuzz, ≤0.5% differing pixels) | reference pages, form fill, signature stamps |
 | Signatures | ETSI EN 319 142 (PAdES), RFC 5652, RFC 3161 | OpenSSL CLI: `openssl cms -verify` over the exact `/ByteRange` bytes up to a test root CA, `openssl ts -verify` for timestamps; tampering must break verification. [pyHanko](https://github.com/MatthiasValvekens/pyHanko) validates the signed PDFs as a whole (trust, timestamp, whole-file coverage) | test suite (`Signature*Test`, `PadesSignatureTest`, `CmsBuilderTest`) |
-| GOST signatures | GOST R 34.10-2012 / 34.11-2012 | `openssl cms -verify` with the gost engine, in the `docker/gost` image | CI job "GOST R 34.10-2012 signing" (`GostSignatureTest`) |
+| GOST signatures | GOST R 34.10-2012 / 34.11-2012 | `openssl cms -verify` with the gost engine, in the `docker/gost` image | CI job "GOST R 34.10-2012 signing" (`GostSignatureTest`); checked by hand in CryptoPro CSP — a detached signature from the library verifies as CAdES-BES |
 | Torture set | — | 11 worst-case documents (tables, Arabic/CJK, barcodes, charts, SVG, forms, signature, PDF/A, merge) rendered by poppler **and** Ghostscript; manual cross-viewer checklist in [VIEWER-MATRIX.md](VIEWER-MATRIX.md) | `examples/torture/` |
 
 The reference documents are not toy files: they embed subsetted TrueType

@@ -123,7 +123,7 @@ Signature/
 - `Signer` + `OpenSslSigner` (PEM, PKCS#12, цепочка). `CmsBuilder` уже разделён на `signedAttributes()` / `assemble()` — основа для этапа C.
 - Алгоритмы: RSA PKCS#1 v1.5, ECDSA P-256/384/521, ГОСТ 2012-256/512. **RSA-PSS не делаем**: `openssl_sign` в PHP не умеет PSS-паддинг; при необходимости — через свой `Signer`.
 - `SignatureProfile` (B5) не заведён: уровень следует из конфигурации — без TSA B-B, с TSA B-T.
-- ГОСТ: OID-ы сверены с `openssl cms -sign` (signatureAlgorithm = ключевой OID 1.2.643.7.1.1.1.x); проверка `openssl cms -verify` в образе `docker/gost`, отдельный CI-job. Проверка в КриптоПро — за автором.
+- ГОСТ: OID-ы сверены с `openssl cms -sign` (signatureAlgorithm = ключевой OID 1.2.643.7.1.1.1.x); проверка `openssl cms -verify` в образе `docker/gost`, отдельный CI-job. Проверено в КриптоПро CSP (cptools, macOS) 2026-10-13: отделённая подпись нашего `CmsBuilder` тестовым ГОСТ 2012-256 ключом — «успешно проверена», тип CAdES-BES, OID-ы распознаны. PDF под КриптоПро PDF (Acrobat/Windows) не проверялся.
 - CI: pyHanko (`pipx install pyhanko-cli`) в job PHP 8.4. EU DSS — не подключён (решение 4 открыто).
 
 ### B6. Тесты и CI
