@@ -30,7 +30,14 @@ use Dskripchenko\PhpPdf\Pdf\Writer;
  */
 final class PdfImage
 {
-    private ?int $objectId = null;
+    /**
+     * Object number per writer. An image instance is often reused — a logo
+     * cached between requests — and a number from one document means
+     * another object in the next.
+     *
+     * @var \WeakMap<Writer, int>|null
+     */
+    private ?\WeakMap $objectIds = null;
 
     public function __construct(
         public readonly int $widthPx,
@@ -74,8 +81,9 @@ final class PdfImage
 
     public function registerWith(Writer $writer): int
     {
-        if ($this->objectId !== null) {
-            return $this->objectId;
+        $this->objectIds ??= new \WeakMap;
+        if (isset($this->objectIds[$writer])) {
+            return $this->objectIds[$writer];
         }
         // The mask is registered first: its identifier is needed in the
         // dictionary of the image itself. PDF cannot carry transparency inside
@@ -105,12 +113,13 @@ final class PdfImage
             strlen($this->imageData),
         );
 
-        $this->objectId = $writer->addObject(sprintf(
+        $id = $writer->addObject(sprintf(
             "%s\nstream\n%s\nendstream",
             $dict, $this->imageData,
         ));
+        $this->objectIds[$writer] = $id;
 
-        return $this->objectId;
+        return $id;
     }
 
     /**
