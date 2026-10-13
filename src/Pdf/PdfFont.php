@@ -55,11 +55,12 @@ final class PdfFont
     /**
      * Per-Writer registration cache. Allows safe reuse of the same
      * PdfFont instance across multiple Documents - each writer gets its own
-     * fontObjectId.
+     * fontObjectId. Weak, so a font kept between documents (a long-running
+     * worker) does not keep every finished writer alive.
      *
-     * @var \SplObjectStorage<Writer, int>
+     * @var \WeakMap<Writer, int>
      */
-    private \SplObjectStorage $writerRegistrations;
+    private \WeakMap $writerRegistrations;
 
     /**
      * @var bool  Apply ligature substitutions from GSUB ('liga' feature).
@@ -100,7 +101,7 @@ final class PdfFont
                 'Vertical writing requested but font lacks vhea+vmtx tables'
             );
         }
-        $this->writerRegistrations = new \SplObjectStorage;
+        $this->writerRegistrations = new \WeakMap;
     }
 
     public function isVerticalWriting(): bool
@@ -119,7 +120,7 @@ final class PdfFont
     public function reset(): void
     {
         $this->usedGlyphs = [];
-        $this->writerRegistrations = new \SplObjectStorage;
+        $this->writerRegistrations = new \WeakMap;
         $this->decodeCache = [];
     }
 

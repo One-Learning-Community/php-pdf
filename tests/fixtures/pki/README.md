@@ -14,6 +14,13 @@ public.
 | `signer-ec.crt` / `.key` | ECDSA P-256 signer. |
 | `tsa.crt` / `.key` | Timestamp authority (EKU timeStamping, critical) under the root; used by the test TSA (`openssl ts -reply`). |
 
+| `root-ca.crl` / `intermediate-ca.crl` | CRLs of the two CAs, nothing revoked, valid ten years. |
+| `ocsp-root.index` / `ocsp-intermediate.index` | `openssl ocsp -index` databases: the CAs answer OCSP for what they issued. |
+
+Certificates name their endpoints under `http://pki.test/` — `ocsp/<ca>`,
+`crl/<ca>.crl`, `ca/<ca>.crt` (AIA caIssuers). The tests serve them offline
+(`tests/Pdf/Signature/Support/OfflinePkiTransport.php`).
+
 `generate.sh` recreates all but `stamp-signer` (valid ten years from
 generation). GOST certificates are not committed: `GostSignatureTest` makes
 them on the fly, since it runs only where the gost engine is loaded.

@@ -28,19 +28,21 @@ final readonly class SignaturePlaceholder
     /**
      * Finds the placeholders and patches /ByteRange.
      *
+     * @param  int  $from  Search from this offset — past an existing file, for
+     *                      an incremental update, so its signatures are not taken
      * @return array{0: string, 1: self} the patched bytes and the placeholder
      */
-    public static function locate(string $bytes): array
+    public static function locate(string $bytes, int $from = 0): array
     {
         // /ByteRange [<digits> <digits> <digits> <digits>] — zeros padded
         // with spaces to 10 digits each, room for offsets of ~10 GB files.
-        if (! preg_match('@/ByteRange \[(\d+ +\d+ +\d+ +\d+) +\]@', $bytes, $brMatch, PREG_OFFSET_CAPTURE)) {
+        if (! preg_match('@/ByteRange \[(\d+ +\d+ +\d+ +\d+) +\]@', $bytes, $brMatch, PREG_OFFSET_CAPTURE, $from)) {
             throw new \RuntimeException('/ByteRange placeholder not found in PDF stream');
         }
         $brStart = (int) $brMatch[0][1];
         $brLen = strlen((string) $brMatch[0][0]);
 
-        if (! preg_match('@/Contents <0+>@', $bytes, $cMatch, PREG_OFFSET_CAPTURE)) {
+        if (! preg_match('@/Contents <0+>@', $bytes, $cMatch, PREG_OFFSET_CAPTURE, $from)) {
             throw new \RuntimeException('/Contents placeholder not found');
         }
         $cStart = (int) $cMatch[0][1];

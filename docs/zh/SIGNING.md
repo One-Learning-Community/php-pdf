@@ -14,6 +14,9 @@ PAdES B-T 级别。签名字段可以显示**签章**：一个包含文字、图
 - [GOST R 34.10-2012](#gost-r-3410-2012)
 - [签名大小](#签名大小)
 - [在服务器之外签名](#在服务器之外签名)
+- [签署已有 PDF](#签署已有-pdf)
+- [认证签名与锁定字段](#认证签名与锁定字段)
+- [长期验证](#长期验证)
 - [检查签名](#检查签名)
 - [签名字段](#签名字段)
 - [签章](#签章)
@@ -174,12 +177,83 @@ const cmsBase64 = await signedData.SignHash(hashed, signer, cadesplugin.CADESCOM
 
 请使用与密钥匹配的哈希算法：256 位 GOST 密钥用 `..._GOST_3411_2012_256`，512 位用 `..._GOST_3411_2012_512`。把证书传给 `ExternalSigner`（用 `cert.Export(CADESCOM_ENCODE_BASE64)` 从插件导出），这样摘要会随密钥而定，签章也会显示持有人；计算 Streebog 摘要时，服务器上同样需要 gost engine。以这种方式生成的 CMS 带有 `signing-time` 属性；验证器接受它，但严格的 PAdES 配置要求时间仅出现在 `/M` 中。
 
+## 签署已有 PDF
+
+`PdfSigner` 可以签署在别处生成的 PDF，或已经签过名的 PDF，方式是**增量更新**：
+原有字节保持不变，签名写在其后，因此先前的签名仍然恰好覆盖它们当初所签的内容。
+传统交叉引用表和交叉引用流两种形式都能处理。
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\PdfSigner;
+
+$signed = PdfSigner::fromBytes(file_get_contents('contract.pdf'))
+    ->addField('approver', page: 0, x: 72, y: 72, width: 250, height: 75,
+        appearance: SignatureAppearance::electronicSignatureStamp('ru', $font))
+    ->sign(new SignatureConfig(signer: $signer));
+
+// A second signer, into an empty field already there; its stamp is redrawn.
+$twice = PdfSigner::fromBytes($signed)
+    ->withAppearance(SignatureAppearance::simple($font))
+    ->sign(new SignatureConfig(signer: $other, fieldName: 'counterparty'));
+```
+
+被签署的字段是：给定了 `fieldName` 时即该字段（文档中已有的空签名字段，或用
+`addField()` 添加的字段）；否则是用 `addField()` 添加的字段；再否则是第一个空签名字段；
+最后才是第一页上新建的不可见字段。`signatureFields()` 列出文档的签名字段及其是否已签。
+用 `prepare()` 代替 `sign()` 会得到 `PreparedSignature`，供服务器之外的密钥使用，
+方式同上。加密的 PDF 会被拒绝。
+
+## 认证签名与锁定字段
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\{DocMdpPermission, FieldLock};
+
+new SignatureConfig(signer: $signer,
+    certification: DocMdpPermission::FormFilling,   // None
+    lockFields: FieldLock::only(['amount', 'date']), // // what may change afterwards
+);
+```
+
+**认证签名**（DocMDP）声明签名之后允许修改什么：`NoChanges`、`FormFilling`
+（填写表单和签名）或 `FormFillingAndAnnotations`。只有文档的第一个签名可以对其认证。
+认证之后，后续签名只能放入文档中已有的空签名字段——添加字段会改变页面，而认证禁止这样做——
+因此请在认证更新中用 `PdfSigner::addEmptyField()`（或在生成文档时）布置好这些字段。
+以 `NoChanges` 认证的文档不再接受后续签名。
+
+`FieldLock::all()`、`only([...])` 或 `allExcept([...])` 用于锁定表单字段（FieldMDP）：
+事后修改这些字段会使签名失效。
+
+两者既适用于自己生成的文档（`Pdf\Document::sign()`），也适用于已有文档（`PdfSigner`）。
+
+## 长期验证
+
+多年之后要验证签名，验证器必须仍能找到证书及其吊销状态——OCSP 响应服务和 CRL
+会随 CA 一同消失。PAdES 把它们保存在文档里：
+
+```php
+$bt   = $doc->toBytes();                       // // fields frozen by this signature
+$blt  = PdfSigner::fromBytes($bt)->addValidationData();   // // B-T: signed with a timestamp
+$blta = PdfSigner::fromBytes($blt)->timestamp($tsa);      // // B-LT: + DSS
+```
+
+`addValidationData()` 收集文档签名及其时间戳令牌的所有证书，下载缺失的颁发者证书
+（AIA caIssuers——证书链省略的根证书），查询每个证书的 OCSP 响应服务，失败时回退到
+其 CRL，并以增量更新的方式写入文档安全存储（DSS）。可以传入自己的 `RevocationSource`
+（缓存、存储），或通过 `extra:` 传入要嵌入的数据；`fetchRevocation: false` 则只嵌入证书。
+再次调用会扩充 DSS。
+
+`timestamp()` 对整个文件（包括 DSS）添加文档时间戳（`ETSI.RFC3161`）。在最后一个
+时间戳的证书到期之前，重复执行 `addValidationData()` + `timestamp()` 即可延长归档。
+
 ## 检查签名
 
 测试套件使用独立于本库的工具检查每个签名：`openssl cms -verify`（验证至测试根 CA）、
 用于时间戳的 `openssl ts -verify`，以及针对整个 PDF 的
 [pyHanko](https://github.com/MatthiasValvekens/pyHanko)
-（`pyhanko sign validate --trust root.crt file.pdf`）。
+（`pyhanko sign validate --trust root.crt file.pdf`），
+包括多个签名者和认证签名的情形。长期验证使用 pyHanko 的 PAdES-LT / LTA 配置离线检查：
+验证器只获得 TSA 的当前状态，因此签名者的吊销数据必须来自 DSS
+（`scripts/conformance/pades-ltv-check.py`）。
 
 ## 签名字段
 

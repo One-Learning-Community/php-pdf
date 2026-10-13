@@ -17,6 +17,9 @@ Signieren des Dokuments aus dem Zertifikat befüllt wird.
 - [GOST R 34.10-2012](#gost-r-3410-2012)
 - [Signaturgröße](#signaturgröße)
 - [Signieren außerhalb des Servers](#signieren-außerhalb-des-servers)
+- [Bestehende PDF signieren](#bestehende-pdf-signieren)
+- [Zertifizierung und gesperrte Felder](#zertifizierung-und-gesperrte-felder)
+- [Langzeitvalidierung](#langzeitvalidierung)
 - [Eine Signatur prüfen](#eine-signatur-prüfen)
 - [Signaturfelder](#signaturfelder)
 - [Der Stempel](#der-stempel)
@@ -214,13 +217,102 @@ wird die Gost-Engine auch auf dem Server benötigt. Das so erzeugte CMS
 enthält ein `signing-time`-Attribut; Validatoren akzeptieren es, auch wenn
 strenge PAdES-Profile die Zeit nur in `/M` erwarten.
 
+## Bestehende PDF signieren
+
+`PdfSigner` signiert ein anderswo erzeugtes — oder bereits signiertes — PDF
+als **inkrementelles Update**: Die Originalbytes bleiben unverändert, die
+Signatur wird dahinter geschrieben, sodass frühere Signaturen weiterhin genau
+das abdecken, was sie signiert haben. Klassische Cross-Reference-Tabellen und
+Cross-Reference-Streams werden beide verarbeitet.
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\PdfSigner;
+
+$signed = PdfSigner::fromBytes(file_get_contents('contract.pdf'))
+    ->addField('approver', page: 0, x: 72, y: 72, width: 250, height: 75,
+        appearance: SignatureAppearance::electronicSignatureStamp('ru', $font))
+    ->sign(new SignatureConfig(signer: $signer));
+
+// Ein zweiter Signierer, in ein bereits vorhandenes leeres Feld; sein Stempel wird neu gezeichnet.
+$twice = PdfSigner::fromBytes($signed)
+    ->withAppearance(SignatureAppearance::simple($font))
+    ->sign(new SignatureConfig(signer: $other, fieldName: 'counterparty'));
+```
+
+Signiert wird das Feld `fieldName`, falls angegeben (ein leeres
+Signaturfeld des Dokuments oder das mit `addField()` hinzugefügte), sonst das
+mit `addField()` hinzugefügte Feld, sonst das erste leere Signaturfeld, sonst
+ein neues unsichtbares Feld auf der ersten Seite. `signatureFields()` listet
+die Signaturfelder des Dokuments auf und zeigt, ob sie signiert sind.
+`prepare()` statt `sign()` liefert eine `PreparedSignature` für einen
+Schlüssel außerhalb des Servers, wie oben. Verschlüsselte PDFs werden
+abgelehnt.
+
+## Zertifizierung und gesperrte Felder
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\{DocMdpPermission, FieldLock};
+
+new SignatureConfig(signer: $signer,
+    certification: DocMdpPermission::FormFilling,   // None
+    lockFields: FieldLock::only(['amount', 'date']), // // was danach geändert werden darf
+);
+```
+
+Eine **Zertifizierungssignatur** (DocMDP) legt fest, was danach geändert
+werden darf: `NoChanges`, `FormFilling` (Formulare ausfüllen und signieren)
+oder `FormFillingAndAnnotations`. Nur die erste Signatur eines Dokuments kann
+es zertifizieren. Nach der Zertifizierung kommen weitere Signaturen nur in
+die leeren Signaturfelder, die das Dokument bereits hat — ein neues Feld
+ändert die Seite, was die Zertifizierung verbietet —, legen Sie sie daher im
+zertifizierenden Update mit `PdfSigner::addEmptyField()` an (oder im
+erzeugten Dokument). Ein mit `NoChanges` zertifiziertes Dokument lehnt
+weitere Signaturen ab.
+
+`FieldLock::all()`, `only([...])` oder `allExcept([...])` sperrt
+Formularfelder (FieldMDP): Werden sie danach geändert, ist die Signatur
+ungültig.
+
+Beides funktioniert für erzeugte Dokumente (`Pdf\Document::sign()`) und für
+bestehende (`PdfSigner`).
+
+## Langzeitvalidierung
+
+Eine Signatur lässt sich Jahre später nur prüfen, wenn der Validator die
+Zertifikate und ihren Sperrstatus noch findet — OCSP-Responder und CRLs
+verschwinden mit der CA. PAdES legt sie im Dokument ab:
+
+```php
+$bt   = $doc->toBytes();                       // // durch diese Signatur eingefrorene Felder
+$blt  = PdfSigner::fromBytes($bt)->addValidationData();   // // B-T: mit Zeitstempel signiert
+$blta = PdfSigner::fromBytes($blt)->timestamp($tsa);      // // B-LT: + DSS
+```
+
+`addValidationData()` sammelt alle Zertifikate der Signaturen des Dokuments
+und ihrer Zeitstempel-Token, lädt fehlende Aussteller nach (AIA caIssuers —
+das Root-Zertifikat, das eine Kette auslässt), fragt den OCSP-Responder jedes
+Zertifikats ab, greift ersatzweise auf dessen CRL zurück und schreibt den
+Document Security Store (DSS) als inkrementelles Update. Übergeben Sie eine
+eigene `RevocationSource` (Cache, Speicher) oder Daten über `extra:` zum
+Einbetten; `fetchRevocation: false` bettet nur Zertifikate ein. Ein erneuter
+Aufruf erweitert den DSS.
+
+`timestamp()` fügt einen Dokumentzeitstempel (`ETSI.RFC3161`) über die
+gesamte Datei hinzu, einschließlich des DSS. Wiederholen Sie
+`addValidationData()` + `timestamp()`, bevor das Zertifikat des letzten
+Zeitstempels abläuft, um das Archiv zu verlängern.
+
 ## Eine Signatur prüfen
 
 Die Testsuite prüft jede Signatur mit Werkzeugen, die von der Bibliothek
 unabhängig sind: `openssl cms -verify` bis zu einer Test-Stamm-CA,
 `openssl ts -verify` für Zeitstempel und
 [pyHanko](https://github.com/MatthiasValvekens/pyHanko) für das PDF als
-Ganzes (`pyhanko sign validate --trust root.crt file.pdf`).
+Ganzes (`pyhanko sign validate --trust root.crt file.pdf`), auch mit mehreren
+Signierern und Zertifizierung. Die Langzeitvalidierung wird mit den
+PAdES-LT-/LTA-Profilen von pyHanko offline geprüft: Der Validator erhält nur
+den aktuellen Status der TSA, die Sperrdaten des Signierers müssen also aus
+dem DSS stammen (`scripts/conformance/pades-ltv-check.py`).
 
 ## Signaturfelder
 

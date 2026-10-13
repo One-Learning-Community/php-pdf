@@ -87,7 +87,35 @@ final class Writer
         private readonly string $version = '1.7',
         private readonly bool $useXrefStream = false,
         private readonly bool $useObjectStreams = false,
-    ) {}
+        /**
+         * First object number to issue — above an existing file's /Size when
+         * the writer only allocates objects for an incremental update.
+         */
+        int $firstObjectId = 1,
+    ) {
+        $this->nextId = $firstObjectId;
+    }
+
+    /**
+     * Bodies of the objects written so far, by number — for an incremental
+     * update, which writes them after an existing file.
+     *
+     * @return array<int, string>
+     *
+     * @internal
+     */
+    public function objectBodies(): array
+    {
+        $out = [];
+        foreach ($this->objects as $id => $body) {
+            if ($body === null) {
+                throw new \LogicException("Object $id was reserved but never filled.");
+            }
+            $out[$id] = $body;
+        }
+
+        return $out;
+    }
 
     /**
      * Compute deterministic document /ID hex string.

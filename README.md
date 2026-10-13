@@ -72,7 +72,9 @@ PDF stack:
 - **PAdES signing** (B-B, B-T with an RFC 3161 timestamp) — RSA, ECDSA and
   GOST R 34.10-2012, PEM / PKCS#12 / your own `Signer` (token, HSM), or
   **two-phase signing outside the server** (CryptoPro plug-in, HSM, signing
-  service) — with a visible **signature stamp** filled from the certificate.
+  service) — with a visible **signature stamp** filled from the certificate;
+  **sign existing PDFs** incrementally (several signers, certification, field
+  locks) and **long-term validation** (B-LT DSS, B-LTA document timestamps).
 - **PDF/A-1a / 1b / 2u and PDF/X-1a / 3 / 4** conformance with embedded
   sRGB ICC profile and XMP metadata.
 - **Tagged PDF / PDF/UA-ready** structure tree with H1–H6, Table/TR/TD,
