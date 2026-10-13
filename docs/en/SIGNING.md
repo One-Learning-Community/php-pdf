@@ -1,13 +1,21 @@
 # Digital signatures
 
-php-pdf signs a document as it writes it: PKCS#7 detached signature
-(`adbe.pkcs7.detached`) through the `openssl` extension, with the
+php-pdf signs a document as it writes it: a detached CMS signature in
+the **PAdES** format (`ETSI.CAdES.detached`, ETSI EN 319 142), built by
+the library itself and signed through the `openssl` extension, with the
 `/ByteRange` and `/Contents` placeholders patched after the file is
-assembled. The signature field can show a **signature stamp**: a frame
-with text, pictures and a QR code, filled in from the certificate when
-the document is signed.
+assembled. RSA, ECDSA and GOST R 34.10-2012 keys are supported; with a
+timestamp authority the signature reaches PAdES B-T. The signature field
+can show a **signature stamp**: a frame with text, pictures and a QR
+code, filled in from the certificate when the document is signed.
 
 - [Signing](#signing)
+- [Keys and certificates](#keys-and-certificates)
+- [Signature format](#signature-format)
+- [Timestamp](#timestamp)
+- [GOST R 34.10-2012](#gost-r-3410-2012)
+- [Signature size](#signature-size)
+- [Checking a signature](#checking-a-signature)
 - [Signature fields](#signature-fields)
 - [The stamp](#the-stamp)
 - [Ready-made stamps](#ready-made-stamps)
@@ -44,6 +52,95 @@ $doc->toFile('signed.pdf');
 `signedAt` sets the signing time; by default it is the time of writing.
 The same moment goes into the signature dictionary (`/M`) and into the
 stamp.
+
+## Keys and certificates
+
+Three ways to hand over the key:
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\Signer\OpenSslSigner;
+
+// 1. PEM strings, with the intermediate certificates so a validator can
+//    build the path to a trusted root.
+new SignatureConfig(
+    certPem: $cert, privateKeyPem: $key, privateKeyPassphrase: 'secret',
+    certificateChainPem: file_get_contents('intermediate.crt'),
+);
+
+// 2. A PKCS#12 container (.p12 / .pfx) — key, certificate and chain.
+new SignatureConfig(signer: OpenSslSigner::fromPkcs12(file_get_contents('signer.p12'), 'password'));
+
+// 3. Your own Signer — a PKCS#11 token, an HSM, a signing service.
+new SignatureConfig(signer: $mySigner);
+```
+
+`Signer` is a small interface: `certificate()`, `chain()`,
+`digestAlgorithm()` and `sign(string $data): string`. The library hands
+`sign()` the DER of the signed attributes and expects the raw signature
+value back, so the key never has to be in PHP.
+
+The digest follows the key: SHA-256 for RSA and P-256, SHA-384 for P-384,
+SHA-512 for P-521, Streebog for GOST. Pass `digest:` to `OpenSslSigner`
+to choose another.
+
+## Signature format
+
+| `subFilter` | What it is |
+|---|---|
+| `SubFilter::CadesDetached` (default) | PAdES: CAdES detached CMS with `signing-certificate-v2` binding the certificate; the signing time is `/M`, not a CMS attribute. PAdES B-B, B-T with a timestamp |
+| `SubFilter::Pkcs7Detached` | the older `adbe.pkcs7.detached`; the CMS carries `signing-time`, set to the same moment as `/M` |
+
+Both are detached CMS `SignedData` with the signer's certificate and the
+chain embedded. Keep the default unless a recipient's software predates
+PAdES.
+
+## Timestamp
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\Tsa\TsaClient;
+
+new SignatureConfig(
+    signer: $signer,
+    timestampAuthority: new TsaClient('https://freetsa.org/tsr'),
+);
+```
+
+The signature value is sent to the RFC 3161 timestamp authority and the
+token goes into the signature as the `signature-time-stamp` attribute:
+the signing time is then vouched for by the TSA, not by the signer's
+clock (PAdES B-T). `TsaClient` takes the digest, HTTP basic credentials,
+extra headers (an API key), a policy OID and a timeout. It checks the
+answer — granted status, the imprint and the nonce it asked for — and
+throws `TsaException` otherwise.
+
+Requests go through PHP's stream wrapper with TLS verification. To use
+your HTTP client, proxy or retry policy, implement
+`Transport\HttpTransport` and pass it as `transport:`.
+
+## GOST R 34.10-2012
+
+GOST keys (2012, 256 and 512 bit) sign the same way as RSA, with the
+Streebog digest and the identifiers OpenSSL and CryptoPro use. PHP must
+have OpenSSL's [gost engine](https://github.com/gost-engine/engine)
+loaded — it is not packaged for OpenSSL 3, so it is built from source and
+switched on in `openssl.cnf`. `docker/gost/` in this repository is a
+working recipe (the CI runs the GOST tests in it). Without the engine a
+GOST key cannot be read, and the error says so.
+
+## Signature size
+
+Room for the signature is reserved in `/Contents` before it exists. The
+library estimates it from the certificates, the key size and whether a
+timestamp is asked for. If a signer embeds more than expected, signing
+fails with a message giving the size needed; set `contentsReserveBytes`
+to override the estimate.
+
+## Checking a signature
+
+The test suite checks every signature with tools independent of the
+library: `openssl cms -verify` up to a test root CA, `openssl ts -verify`
+for timestamps, and [pyHanko](https://github.com/MatthiasValvekens/pyHanko)
+for the PDF as a whole (`pyhanko sign validate --trust root.crt file.pdf`).
 
 ## Signature fields
 

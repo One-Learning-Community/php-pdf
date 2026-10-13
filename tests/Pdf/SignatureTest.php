@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Dskripchenko\PhpPdf\Tests\Pdf;
 
 use Dskripchenko\PhpPdf\Pdf\Document as PdfDocument;
+use Dskripchenko\PhpPdf\Pdf\Signature\SubFilter;
 use Dskripchenko\PhpPdf\Pdf\SignatureConfig;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
@@ -56,6 +57,15 @@ final class SignatureTest extends TestCase
 
         self::assertStringContainsString('/Type /Sig', $bytes);
         self::assertStringContainsString('/Filter /Adobe.PPKLite', $bytes);
+        // PAdES by default.
+        self::assertStringContainsString('/SubFilter /ETSI.CAdES.detached', $bytes);
+    }
+
+    #[Test]
+    public function the_pkcs7_sub_filter_can_still_be_chosen(): void
+    {
+        $bytes = $this->signSampleDoc(new SignatureConfig($this->certPem, $this->keyPem, subFilter: SubFilter::Pkcs7Detached));
+
         self::assertStringContainsString('/SubFilter /adbe.pkcs7.detached', $bytes);
     }
 
@@ -78,16 +88,17 @@ final class SignatureTest extends TestCase
     #[Test]
     public function contents_replaced_with_signature_hex(): void
     {
-        $bytes = $this->signSampleDoc(new SignatureConfig($this->certPem, $this->keyPem));
+        $config = new SignatureConfig($this->certPem, $this->keyPem);
+        $bytes = $this->signSampleDoc($config);
 
         // Must NOT contain only zeros (placeholder still in place).
-        self::assertDoesNotMatchRegularExpression('@/Contents <0{16384}>@', $bytes);
+        self::assertDoesNotMatchRegularExpression('@/Contents <0+>@', $bytes);
         // Should contain /Contents <hex...> with hex data.
         if (! preg_match('@/Contents <([0-9A-Fa-f]+)>@', $bytes, $m)) {
             self::fail('No /Contents <...> found');
         }
         $hex = $m[1];
-        self::assertSame(16384, strlen($hex), 'Placeholder length preserved');
+        self::assertSame(2 * $config->contentsReserve(), strlen($hex), 'Placeholder length preserved');
         // First chars should be non-zero (DER PKCS#7 starts with 0x30 = '30').
         self::assertStringStartsWith('30', strtoupper($hex));
     }

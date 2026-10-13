@@ -143,7 +143,7 @@ final class Document
      */
     private ?Encryption $encryption = null;
 
-    /** Optional PKCS#7 signing config (applied during toBytes). */
+    /** Optional signing config (applied during toBytes). */
     private ?SignatureConfig $signatureConfig = null;
 
     /** @var list<PdfLayer> Optional Content Groups (layers). */
@@ -534,7 +534,7 @@ final class Document
     }
 
     /**
-     * Enable PKCS#7 detached signing.
+     * Enable digital signing (PAdES by default, see SignatureConfig).
      *
      * Requires at least one signature field ({@see Page::addSignatureField()}
      * or a form field of type 'signature'). The one named by
@@ -544,8 +544,8 @@ final class Document
      *
      * The PDF bytes are patched in toBytes() after assembly:
      *   1. /ByteRange [a b c d] computed from actual /Contents position.
-     *   2. Bytes outside /Contents are hashed and signed via openssl_pkcs7_sign.
-     *   3. /Contents placeholder filled with hex-encoded DER PKCS#7 envelope.
+     *   2. Bytes outside /Contents are hashed and signed into a detached CMS.
+     *   3. /Contents placeholder filled with the hex-encoded DER signature.
      */
     public function sign(SignatureConfig $config): self
     {
@@ -2609,7 +2609,7 @@ final class Document
 
             $values = [];
             if ($signature !== null && $field['name'] === $this->signatureTargetName) {
-                $certificate ??= CertificateInfo::fromPem($signature->certPem);
+                $certificate ??= CertificateInfo::fromPem($signature->signer->certificate()->pem());
                 $values = $this->stampValues($signature, $certificate, $appearance);
             }
 
@@ -2890,9 +2890,9 @@ final class Document
     }
 
     /**
-     * Build the PKCS#7 signature dictionary body with placeholders for
+     * Build the signature dictionary body with placeholders for
      * /ByteRange (4 × 10-digit zero fields, padded with spaces) and
-     * /Contents (16384 hex zeros — room for an ~8KB DER PKCS#7 envelope).
+     * /Contents (hex zeros, as many as {@see SignatureConfig::contentsReserve()} allows).
      */
     private function buildSignatureDictBody(SignatureConfig $cfg): string
     {
@@ -2914,13 +2914,14 @@ final class Document
         // ByteRange: 4 entries padded to 10 digits each plus one extra pad
         // space, so a post-emit substr_replace can fit the updated values.
         $byteRange = '/ByteRange [0          0          0          0         ]';
-        // Contents: 16384 hex zeros (room for ~8KB PKCS#7 DER blob).
-        $contents = '/Contents <' . str_repeat('0', 16384) . '>';
+        // Contents: hex zeros, room for the DER signature sized from the
+        // certificates, the key and the timestamp authority.
+        $contents = '/Contents <' . str_repeat('0', 2 * $cfg->contentsReserve()) . '>';
 
         return sprintf(
-            '<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter /adbe.pkcs7.detached '
+            '<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter /%s '
             .'%s%s%s %s >>',
-            $byteRange, $contents, $signedAt, $optionalParts,
+            $cfg->subFilter->value, $byteRange, $contents, $signedAt, $optionalParts,
         );
     }
 

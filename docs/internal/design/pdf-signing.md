@@ -1,6 +1,6 @@
 # План: электронная подпись PDF — штамп, PAdES, внешняя подпись, инкрементальные обновления
 
-Статус: **этап A выпущен в 1.11.0** (PR #2), B–D — впереди · База: `php-pdf` 1.10.0 · Порядок этапов: A → B → C → D
+Статус: **этап A выпущен в 1.11.0** (PR #2), **этап B реализован** (ветка `feature/pades-cms`), C–D — впереди · База: `php-pdf` 1.10.0 · Порядок этапов: A → B → C → D
 Внедрение в printable — отдельный этап после выпуска библиотеки, здесь не рассматривается.
 
 ## 1. Исходное состояние (1.10.0)
@@ -116,6 +116,15 @@ Signature/
 
 ### B5. Профили
 - `SignatureProfile::B_B`, `B_T` в этом этапе. `B_LT` / `B_LTA` требуют дописывания в конец файла (DSS + document timestamp) → этап D.
+
+### B — что сделано и чем отличается от плана
+
+- CMS собирается своим кодом (`Signature\Asn1`, `Signature\Cms\CmsBuilder`); `openssl_pkcs7_sign` и временные файлы ушли. По умолчанию `ETSI.CAdES.detached`, `adbe.pkcs7.detached` — опцией; в нём `signing-time` = `signedAt` (ограничение A закрыто).
+- `Signer` + `OpenSslSigner` (PEM, PKCS#12, цепочка). `CmsBuilder` уже разделён на `signedAttributes()` / `assemble()` — основа для этапа C.
+- Алгоритмы: RSA PKCS#1 v1.5, ECDSA P-256/384/521, ГОСТ 2012-256/512. **RSA-PSS не делаем**: `openssl_sign` в PHP не умеет PSS-паддинг; при необходимости — через свой `Signer`.
+- `SignatureProfile` (B5) не заведён: уровень следует из конфигурации — без TSA B-B, с TSA B-T.
+- ГОСТ: OID-ы сверены с `openssl cms -sign` (signatureAlgorithm = ключевой OID 1.2.643.7.1.1.1.x); проверка `openssl cms -verify` в образе `docker/gost`, отдельный CI-job. Проверка в КриптоПро — за автором.
+- CI: pyHanko (`pipx install pyhanko-cli`) в job PHP 8.4. EU DSS — не подключён (решение 4 открыто).
 
 ### B6. Тесты и CI
 - Тестовый УЦ в `tests/fixtures/pki/`: корень → промежуточный → конечный сертификат для RSA, ECDSA и ГОСТ; локальный тестовый TSA (ответы собираются в тестах, сеть не нужна).
