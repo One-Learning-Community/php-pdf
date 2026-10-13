@@ -4,6 +4,50 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- **Signing existing PDFs** — `Signature\PdfSigner` signs a PDF made
+  elsewhere, or one already signed, as an incremental update: the original
+  bytes stay untouched, so earlier signatures remain valid and signers can
+  follow one another. Signs into a named or the first empty signature field,
+  a field added with `addField()` (with a stamp), or a new invisible one;
+  `withAppearance()` redraws the stamp of an existing field;
+  `addEmptyField()` lays out fields for later signers; `signatureFields()`
+  lists them; `prepare()` signs outside the server.
+- **Certification (DocMDP) and field locks (FieldMDP)** —
+  `SignatureConfig::$certification` (`DocMdpPermission::NoChanges`,
+  `FormFilling`, `FormFillingAndAnnotations`) and `$lockFields`
+  (`FieldLock::all()`, `only()`, `allExcept()`), for generated and existing
+  documents. Certified documents accept signatures only in the empty fields
+  they already have; "no changes" refuses further signatures.
+- **Long-term validation (PAdES B-LT, B-LTA)** —
+  `PdfSigner::addValidationData()` writes the document security store (DSS):
+  every certificate of the document's signatures and timestamp tokens,
+  missing issuers downloaded from AIA caIssuers, OCSP responses (CRL
+  fallback). `PdfSigner::timestamp()` adds a document timestamp
+  (`ETSI.RFC3161`). `Ltv\OcspClient`, `CrlFetcher`, `CertificateFetcher`,
+  `RevocationSource` / `OnlineRevocationSource`, `ValidationData`.
+- `Incremental\IncrementalUpdate` — appends changes to an existing PDF,
+  following its cross-reference kind (table or stream).
+- `Transport\HttpGetTransport` (implemented by `StreamHttpTransport`) for
+  CRL and certificate downloads.
+- Tests: all third-party fixtures signed incrementally; several signers;
+  certification checked by pyHanko's modification analysis; the test PKI now
+  has OCSP/CRL/caIssuers endpoints served offline (`openssl ocsp -index`);
+  PAdES-LT and LTA validated by pyHanko offline in CI.
+
+### Fixed
+- **A `PdfImage` reused in a second document pointed at the wrong object**
+  — its object number was cached on the instance, so a logo cached between
+  requests vanished from the next document (or showed up as a font).
+- **A `PdfFont` kept every finished document in memory** — it held a strong
+  reference to each writer (~20 KB per document in a long-running worker).
+  Both now cache per writer in a `WeakMap`.
+- `/Reason`, `/Location`, `/Name` and `/ContactInfo` of a signature are
+  written as text strings (UTF-16 for non-ASCII) — Cyrillic showed as
+  mojibake in the signature panel.
+
 ## [1.13.0] — 2026-10-13
 
 ### Added

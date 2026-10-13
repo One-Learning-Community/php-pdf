@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace Dskripchenko\PhpPdf\Pdf;
 
 use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\AppearanceRenderer;
-use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\CertificateInfo;
 use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\SignatureAppearance;
+use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\StampValues;
+use Dskripchenko\PhpPdf\Pdf\Signature\SignatureDictionary;
 use Dskripchenko\PhpPdf\Pdf\Signature\External\ExternalMode;
 use Dskripchenko\PhpPdf\Pdf\Signature\External\PreparedSignature;
 use Dskripchenko\PhpPdf\Pdf\Signature\SubFilter;
@@ -1537,7 +1538,7 @@ final class Document
                 );
             }
             $cfg = $this->activeSignature ?? $this->signatureConfig;
-            $sigDictBody = $this->buildSignatureDictBody($cfg);
+            $sigDictBody = SignatureDictionary::body($cfg);
             $writer->setObject($this->signatureDictId, $sigDictBody);
             $writer->setSignature($cfg, $this->signatureDictId);
         }
@@ -1873,7 +1874,11 @@ final class Document
             );
         }
 
-        $writer->setObject($catalogId, "<< /Type /Catalog /Pages $pagesId 0 R$namesRef$outlinesRef$acroFormRef$pdfARef$taggedRef$openActionRef$pageModeRef$pageLayoutRef$pageLabelsRef$viewerPrefsRef$langRef$ocPropertiesRef$documentAARef >>");
+        // A certification signature is named in /Perms (§12.8.4).
+        $permsRef = ($this->activeSignature?->certification !== null && $this->signatureDictId !== null)
+            ? sprintf(' /Perms << /DocMDP %d 0 R >>', $this->signatureDictId)
+            : '';
+        $writer->setObject($catalogId, "<< /Type /Catalog /Pages $pagesId 0 R$permsRef$namesRef$outlinesRef$acroFormRef$pdfARef$taggedRef$openActionRef$pageModeRef$pageLayoutRef$pageLabelsRef$viewerPrefsRef$langRef$ocPropertiesRef$documentAARef >>");
 
         $writer->setRoot($catalogId);
 
@@ -2241,6 +2246,10 @@ final class Document
             if ($this->signatureDictId !== null && ! $this->signatureFieldLinked
                 && $field['name'] === $this->signatureTargetName) {
                 $vPart = sprintf(' /V %d 0 R', $this->signatureDictId);
+                $lock = $this->activeSignature?->lockFields;
+                if ($lock !== null) {
+                    $vPart .= ' /Lock '.SignatureDictionary::lock($lock);
+                }
                 $this->signatureFieldLinked = true;
             }
             $w = (float) $field['w'];
@@ -2633,7 +2642,6 @@ final class Document
             }
         }
 
-        $certificate = null;
         $overlays = [];
         foreach ($fields as [$pageIndex, $fieldIndex, $field]) {
             $appearance = $field['appearance'] ?? null;
@@ -2643,12 +2651,9 @@ final class Document
                 continue;
             }
 
-            $values = [];
-            if ($signature !== null && $field['name'] === $this->signatureTargetName) {
-                $signingCertificate = $signature->certificate();
-                $certificate ??= $signingCertificate !== null ? CertificateInfo::fromPem($signingCertificate->pem()) : new CertificateInfo;
-                $values = $this->stampValues($signature, $certificate, $appearance);
-            }
+            $values = $signature !== null && $field['name'] === $this->signatureTargetName
+                ? StampValues::of($signature, $appearance)
+                : [];
 
             $render = fn (Page $host): string => (new AppearanceRenderer(
                 $host,
@@ -2675,23 +2680,6 @@ final class Document
         foreach ($overlays as $pageIndex => $list) {
             $this->pages[$pageIndex]->setOverlays($list);
         }
-    }
-
-    /**
-     * Placeholder values of the signed field's stamp.
-     *
-     * @return array<string, string>
-     */
-    private function stampValues(SignatureConfig $signature, CertificateInfo $certificate, SignatureAppearance $appearance): array
-    {
-        return [
-            ...$certificate->placeholders($appearance->dateFormat),
-            'signer' => $signature->signerName ?? $certificate->commonName,
-            'signedAt' => $signature->effectiveSignedAt()->format($appearance->dateTimeFormat),
-            'reason' => $signature->reason ?? '',
-            'location' => $signature->location ?? '',
-            'contact' => $signature->contactInfo ?? '',
-        ];
     }
 
     /**
@@ -2924,42 +2912,6 @@ final class Document
             default:
                 throw new \LogicException('Unknown markup annotation kind: ' . $ann['kind']);
         }
-    }
-
-    /**
-     * Build the signature dictionary body with placeholders for
-     * /ByteRange (4 × 10-digit zero fields, padded with spaces) and
-     * /Contents (hex zeros, as many as {@see SignatureConfig::contentsReserve()} allows).
-     */
-    private function buildSignatureDictBody(SignatureConfig $cfg): string
-    {
-        $optionalParts = '';
-        if ($cfg->signerName !== null) {
-            $optionalParts .= ' /Name ' . $this->pdfString($cfg->signerName);
-        }
-        if ($cfg->reason !== null) {
-            $optionalParts .= ' /Reason ' . $this->pdfString($cfg->reason);
-        }
-        if ($cfg->location !== null) {
-            $optionalParts .= ' /Location ' . $this->pdfString($cfg->location);
-        }
-        if ($cfg->contactInfo !== null) {
-            $optionalParts .= ' /ContactInfo ' . $this->pdfString($cfg->contactInfo);
-        }
-        $signedAt = ' /M ' . $this->pdfString($cfg->pdfSignedAt());
-
-        // ByteRange: 4 entries padded to 10 digits each plus one extra pad
-        // space, so a post-emit substr_replace can fit the updated values.
-        $byteRange = '/ByteRange [0          0          0          0         ]';
-        // Contents: hex zeros, room for the DER signature sized from the
-        // certificates, the key and the timestamp authority.
-        $contents = '/Contents <' . str_repeat('0', 2 * $cfg->contentsReserve()) . '>';
-
-        return sprintf(
-            '<< /Type /Sig /Filter /Adobe.PPKLite /SubFilter /%s '
-            .'%s%s%s %s >>',
-            $cfg->subFilter->value, $byteRange, $contents, $signedAt, $optionalParts,
-        );
     }
 
     /**

@@ -59,7 +59,13 @@ jobs:
       # once is enough.
       - name: Install pyHanko
         if: matrix.php == '8.4'
-        run: pipx install pyhanko-cli
+        run: |
+          pipx install pyhanko-cli
+          # Classic PAdES-LT/LTA validation (validate_pdf_ltv_signature) for
+          # LtvTest; it was removed after 0.25.
+          python3 -m venv .cache/pyhanko-ltv
+          .cache/pyhanko-ltv/bin/pip install -q 'pyhanko==0.25.3'
+          echo "PHPPDF_PYHANKO_PYTHON=$PWD/.cache/pyhanko-ltv/bin/python" >> "$GITHUB_ENV"
 
       - name: Run tests
         run: vendor/bin/phpunit

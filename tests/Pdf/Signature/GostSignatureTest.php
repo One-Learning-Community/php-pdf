@@ -185,4 +185,27 @@ final class GostSignatureTest extends TestCase
         ), $out, $code);
         self::assertSame(0, $code, implode("\n", $out));
     }
+
+    #[Test]
+    public function an_existing_pdf_takes_a_gost_signature_incrementally(): void
+    {
+        $doc = Document::new();
+        $doc->addPage()->addSignatureField('first', 72, 700, 200, 50);
+        $doc->sign(new SignatureConfig(signer: self::signer('256'), fieldName: 'first'));
+        $two = \Dskripchenko\PhpPdf\Pdf\Signature\PdfSigner::fromBytes($doc->toBytes())
+            ->addField('second', 0, 72, 600, 200, 50)
+            ->sign(new SignatureConfig(signer: self::signer('512')));
+
+        $dir = self::$dir;
+        foreach (Pki::extractAll($two) as $i => [$der, $content]) {
+            file_put_contents("$dir/sig.der", $der);
+            file_put_contents("$dir/data", $content);
+            $bits = $i === 0 ? '256' : '512';
+            exec(sprintf(
+                'openssl cms -verify -binary -inform DER -in %s -content %s -CAfile %s -out /dev/null 2>&1',
+                escapeshellarg("$dir/sig.der"), escapeshellarg("$dir/data"), escapeshellarg("$dir/cert$bits.pem"),
+            ), $out, $code);
+            self::assertSame(0, $code, "Signature #$i: ".implode("\n", $out));
+        }
+    }
 }

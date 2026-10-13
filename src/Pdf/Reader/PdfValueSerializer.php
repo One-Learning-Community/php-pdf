@@ -16,9 +16,11 @@ namespace Dskripchenko\PhpPdf\Pdf\Reader;
 final class PdfValueSerializer
 {
     /**
-     * @param callable(int):int $refMap source object number → output object number
+     * @param (callable(int):int)|null $refMap source object number → output object number;
+     *                                         null keeps references as they are, generation included
+     *                                         (for rewriting objects in place, as an incremental update does)
      */
-    public function __construct(private $refMap)
+    public function __construct(private $refMap = null)
     {
     }
 
@@ -33,6 +35,9 @@ final class PdfValueSerializer
             return $this->encodeDictionary($value->all());
         }
         if ($value instanceof PdfReference) {
+            if ($this->refMap === null) {
+                return $value->number . ' ' . $value->generation . ' R';
+            }
             return ($this->refMap)($value->number) . ' 0 R';
         }
         if ($value instanceof PdfName) {

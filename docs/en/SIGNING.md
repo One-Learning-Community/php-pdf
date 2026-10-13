@@ -16,6 +16,9 @@ code, filled in from the certificate when the document is signed.
 - [GOST R 34.10-2012](#gost-r-3410-2012)
 - [Signature size](#signature-size)
 - [Signing outside the server](#signing-outside-the-server)
+- [Signing an existing PDF](#signing-an-existing-pdf)
+- [Certification and locked fields](#certification-and-locked-fields)
+- [Long-term validation](#long-term-validation)
 - [Checking a signature](#checking-a-signature)
 - [Signature fields](#signature-fields)
 - [The stamp](#the-stamp)
@@ -209,12 +212,95 @@ engine on the server too. The CMS made this way carries a
 `signing-time` attribute; validators accept it, though strict PAdES
 profiles expect the time in `/M` only.
 
+## Signing an existing PDF
+
+`PdfSigner` signs a PDF made elsewhere — or one already signed — as an
+**incremental update**: the original bytes stay as they are and the
+signature is written after them, so earlier signatures keep covering exactly
+what they signed. Classic and stream cross-references are both followed.
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\PdfSigner;
+
+$signed = PdfSigner::fromBytes(file_get_contents('contract.pdf'))
+    ->addField('approver', page: 0, x: 72, y: 72, width: 250, height: 75,
+        appearance: SignatureAppearance::electronicSignatureStamp('ru', $font))
+    ->sign(new SignatureConfig(signer: $signer));
+
+// A second signer, into an empty field already there; its stamp is redrawn.
+$twice = PdfSigner::fromBytes($signed)
+    ->withAppearance(SignatureAppearance::simple($font))
+    ->sign(new SignatureConfig(signer: $other, fieldName: 'counterparty'));
+```
+
+The field signed is `fieldName` if given (an empty signature field of the
+document, or the one added with `addField()`), else the field added with
+`addField()`, else the first empty signature field, else a new invisible
+field on the first page. `signatureFields()` lists the document's signature
+fields and whether they are signed. `prepare()` instead of `sign()` gives a
+`PreparedSignature` for a key outside the server, as above. Encrypted PDFs
+are refused.
+
+## Certification and locked fields
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\{DocMdpPermission, FieldLock};
+
+new SignatureConfig(signer: $signer,
+    certification: DocMdpPermission::FormFilling,   // what may change afterwards
+    lockFields: FieldLock::only(['amount', 'date']), // fields frozen by this signature
+);
+```
+
+A **certification signature** (DocMDP) states what may change after it:
+`NoChanges`, `FormFilling` (filling forms and signing), or
+`FormFillingAndAnnotations`. Only the first signature of a document can
+certify it. After certification, further signatures go only into the empty
+signature fields the document already has — adding a field changes the page,
+which certification forbids — so lay them out in the certifying update with
+`PdfSigner::addEmptyField()` (or in the document you generate). A document
+certified with `NoChanges` refuses further signatures.
+
+`FieldLock::all()`, `only([...])` or `allExcept([...])` locks form fields
+(FieldMDP): changing them afterwards invalidates the signature.
+
+Both work for documents you generate (`Pdf\Document::sign()`) and for
+existing ones (`PdfSigner`).
+
+## Long-term validation
+
+A signature can be checked years later only if the validator still finds
+the certificates and their revocation status — OCSP responders and CRLs
+disappear with the CA. PAdES keeps them in the document:
+
+```php
+$bt   = $doc->toBytes();                       // B-T: signed with a timestamp
+$blt  = PdfSigner::fromBytes($bt)->addValidationData();   // B-LT: + DSS
+$blta = PdfSigner::fromBytes($blt)->timestamp($tsa);      // B-LTA: + document timestamp
+```
+
+`addValidationData()` collects every certificate of the document's
+signatures and their timestamp tokens, downloads missing issuers (AIA
+caIssuers — the root a chain leaves out), asks each certificate's OCSP
+responder and falls back to its CRL, and writes the document security store
+(DSS) as an incremental update. Pass a `RevocationSource` of your own
+(a cache, a store) or `extra:` data to embed; `fetchRevocation: false`
+embeds certificates only. Calling it again extends the DSS.
+
+`timestamp()` adds a document timestamp (`ETSI.RFC3161`) over the whole file,
+DSS included. Repeat `addValidationData()` + `timestamp()` before the last
+timestamp's certificate expires to extend the archive.
+
 ## Checking a signature
 
 The test suite checks every signature with tools independent of the
 library: `openssl cms -verify` up to a test root CA, `openssl ts -verify`
 for timestamps, and [pyHanko](https://github.com/MatthiasValvekens/pyHanko)
-for the PDF as a whole (`pyhanko sign validate --trust root.crt file.pdf`).
+for the PDF as a whole (`pyhanko sign validate --trust root.crt file.pdf`),
+including several signers and certification. Long-term validation is
+checked with pyHanko's PAdES-LT / LTA profiles offline: the validator is
+given only the TSA's current status, so the signer's revocation data must
+come from the DSS (`scripts/conformance/pades-ltv-check.py`).
 
 ## Signature fields
 

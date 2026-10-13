@@ -104,6 +104,12 @@ final class ReaderDocument
         }
     }
 
+    /** Generation number of an object per the cross-reference table (0 inside object streams). */
+    public function generationOf(int $number): int
+    {
+        return $this->xref->generations[$number] ?? 0;
+    }
+
     public function trailer(): PdfDictionary
     {
         return $this->xref->trailer;

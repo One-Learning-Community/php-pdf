@@ -137,6 +137,101 @@ final class Certificate
         };
     }
 
+    /** The subject's commonName, for messages. */
+    public function subjectCommonName(): string
+    {
+        $parsed = openssl_x509_parse($this->pem());
+        $cn = is_array($parsed) ? ($parsed['subject']['CN'] ?? '') : '';
+
+        return is_array($cn) ? implode(', ', $cn) : (string) $cn;
+    }
+
+    /** Whether the certificate names itself as issuer (a root, typically). */
+    public function isSelfIssued(): bool
+    {
+        return $this->issuerDer() === $this->subjectDer();
+    }
+
+    /** The subject public key bits (BIT STRING content), as OCSP's issuerKeyHash hashes them. */
+    public function publicKeyBits(): string
+    {
+        return $this->spki()->child(1)->bits();
+    }
+
+    /**
+     * OCSP responder URLs from the authorityInfoAccess extension.
+     *
+     * @return list<string>
+     */
+    public function ocspUrls(): array
+    {
+        return $this->accessUrls('1.3.6.1.5.5.7.48.1');
+    }
+
+    /**
+     * Where the issuer's certificate can be downloaded (AIA caIssuers).
+     *
+     * @return list<string>
+     */
+    public function caIssuersUrls(): array
+    {
+        return $this->accessUrls('1.3.6.1.5.5.7.48.2');
+    }
+
+    /** @return list<string> */
+    private function accessUrls(string $method): array
+    {
+        $value = $this->extension('1.3.6.1.5.5.7.1.1');
+        $out = [];
+        foreach ($value->children ?? [] as $access) {
+            if ($access->child(0)->oid() === $method && $access->child(1)->contextTag() === 6) {
+                $out[] = $access->child(1)->content;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * CRL URLs from the cRLDistributionPoints extension.
+     *
+     * @return list<string>
+     */
+    public function crlUrls(): array
+    {
+        $value = $this->extension('2.5.29.31');
+        $out = [];
+        foreach ($value->children ?? [] as $point) {
+            $name = $point->contextChild(0);
+            foreach ($name?->contextChild(0)->children ?? [] as $general) {
+                if ($general->contextTag() === 6) {
+                    $out[] = $general->content;
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /** A parsed extension value, by OID. */
+    private function extension(string $oid): ?Asn1Node
+    {
+        foreach ($this->tbs->children as $field) {
+            if ($field->contextTag() !== 3) {
+                continue;
+            }
+            foreach ($field->child(0)->children as $extension) {
+                if ($extension->child(0)->oid() === $oid) {
+                    $value = $extension->children[count($extension->children) - 1]->expect(Der::TAG_OCTET_STRING);
+
+                    return DerReader::parse($value->content);
+                }
+            }
+        }
+
+        return null;
+    }
+
     /** The subjectKeyIdentifier extension value, if present. */
     public function subjectKeyIdentifier(): ?string
     {

@@ -8,9 +8,22 @@ namespace Dskripchenko\PhpPdf\Pdf\Signature\Transport;
  * HTTP(S) POST through PHP's stream wrapper. TLS certificates are verified;
  * redirects are followed for up to three hops.
  */
-final class StreamHttpTransport implements HttpTransport
+final class StreamHttpTransport implements HttpTransport, HttpGetTransport
 {
+    public function get(string $url, array $headers, float $timeoutSeconds): HttpResponse
+    {
+        return $this->request('GET', $url, null, $headers, $timeoutSeconds);
+    }
+
     public function post(string $url, string $body, array $headers, float $timeoutSeconds): HttpResponse
+    {
+        return $this->request('POST', $url, $body, $headers, $timeoutSeconds);
+    }
+
+    /**
+     * @param  array<string, string>  $headers
+     */
+    private function request(string $method, string $url, ?string $body, array $headers, float $timeoutSeconds): HttpResponse
     {
         $lines = [];
         foreach ($headers as $name => $value) {
@@ -18,9 +31,9 @@ final class StreamHttpTransport implements HttpTransport
         }
         $context = stream_context_create([
             'http' => [
-                'method' => 'POST',
+                'method' => $method,
                 'header' => implode("\r\n", $lines),
-                'content' => $body,
+                'content' => $body ?? '',
                 'timeout' => $timeoutSeconds,
                 'ignore_errors' => true,
                 'max_redirects' => 3,

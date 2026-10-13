@@ -97,6 +97,25 @@ final class SignedDataReader
         return null;
     }
 
+    /**
+     * DER of each value of an unsigned attribute (a timestamp token, say).
+     *
+     * @return list<string>
+     */
+    public function unsignedAttributeValues(string $oid): array
+    {
+        $out = [];
+        foreach ($this->signerInfo->contextChild(1)->children ?? [] as $attr) {
+            if ($attr->child(0)->oid() === $oid) {
+                foreach ($attr->child(1)->children as $value) {
+                    $out[] = $value->der;
+                }
+            }
+        }
+
+        return $out;
+    }
+
     public function signatureValue(): string
     {
         foreach ($this->signerInfo->children as $i => $child) {

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Dskripchenko\PhpPdf\Pdf;
 
 use Dskripchenko\PhpPdf\Pdf\Signature\Cms\CmsBuilder;
+use Dskripchenko\PhpPdf\Pdf\Signature\DocMdpPermission;
+use Dskripchenko\PhpPdf\Pdf\Signature\FieldLock;
 use Dskripchenko\PhpPdf\Pdf\Signature\External\ExternalSigner;
 use Dskripchenko\PhpPdf\Pdf\Signature\Signer\Certificate;
 use Dskripchenko\PhpPdf\Pdf\Signature\Signer\OpenSslSigner;
@@ -33,6 +35,9 @@ use Dskripchenko\PhpPdf\Pdf\Signature\Tsa\TsaClient;
  * - `fieldName` picks the signature field to sign; null signs the first one.
  * - `contentsReserveBytes` overrides the space reserved for the signature;
  *   by default it is estimated from the certificates and the TSA.
+ * - `certification` makes this a certification signature (DocMDP): what may
+ *   change after it. Only the first signature of a document can certify.
+ * - `lockFields` locks form fields with the signature (FieldMDP).
  */
 final readonly class SignatureConfig
 {
@@ -72,6 +77,8 @@ final readonly class SignatureConfig
         public ?TsaClient $timestampAuthority = null,
         public array|string $certificateChainPem = [],
         public ?int $contentsReserveBytes = null,
+        public ?DocMdpPermission $certification = null,
+        public ?FieldLock $lockFields = null,
     ) {
         if ($signer === null) {
             if ($certPem === '' || $privateKeyPem === '') {
@@ -103,6 +110,8 @@ final readonly class SignatureConfig
             $this->timestampAuthority,
             $this->certificateChainPem,
             $this->contentsReserveBytes,
+            $this->certification,
+            $this->lockFields,
         );
     }
 
