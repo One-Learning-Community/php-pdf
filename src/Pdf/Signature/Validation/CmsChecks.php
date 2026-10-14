@@ -148,6 +148,7 @@ final class CmsChecks
             }
         } elseif (! $chain['trusted']) {
             $report->warn('The timestamp authority is not trusted: '.implode('; ', $chain['problems']));
+            $report->untrustedTimestampTime = $genTime;
 
             return;
         }

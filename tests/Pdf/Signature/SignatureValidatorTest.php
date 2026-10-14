@@ -300,6 +300,24 @@ final class SignatureValidatorTest extends TestCase
     }
 
     #[Test]
+    public function a_timestamp_from_an_untrusted_tsa_keeps_its_time_apart(): void
+    {
+        if (! OpenSslTsaTransport::available()) {
+            self::markTestSkipped('openssl CLI not available');
+        }
+        $pdf = self::signed(new SignatureConfig(signer: Pki::rsaSigner(), timestampAuthority: new TsaClient('http://tsa.test/', transport: new OpenSslTsaTransport)));
+
+        // Nothing trusted: the token verifies, its time is reported apart.
+        $untrusted = SignatureValidator::fromBytes($pdf)->validate(new TrustStore)->signatures[0];
+        self::assertNull($untrusted->timestampTime);
+        self::assertNotNull($untrusted->untrustedTimestampTime);
+
+        $trusted = $this->report($pdf);
+        self::assertNotNull($trusted->timestampTime);
+        self::assertNull($trusted->untrustedTimestampTime);
+    }
+
+    #[Test]
     public function pyhanko_agrees_on_the_attacks(): void
     {
         $pyhanko = Pki::pyhanko();
