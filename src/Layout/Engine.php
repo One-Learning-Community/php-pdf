@@ -3094,28 +3094,28 @@ final class Engine
 
         $ctx->cursorY -= $p->style->spaceBeforePt;
 
-        // Paragraph padding + background-color.
-        // Pre-measure paragraph height to draw bg BEFORE content.
-        $hasPadding = $p->style->paddingTopPt + $p->style->paddingRightPt
-            + $p->style->paddingBottomPt + $p->style->paddingLeftPt > 0;
-        $hasBackground = $p->style->backgroundColor !== null;
+        // The paragraph's box: background under border and padding, the
+        // border on its edges, the lines inside. Measured up front so the
+        // background goes BEFORE the content.
+        [$insetTop, $insetRight, $insetBottom, $insetLeft] = $this->paragraphInsets($p);
+        $hasBox = $insetTop + $insetRight + $insetBottom + $insetLeft > 0
+            || $p->style->backgroundColor !== null;
         $savedLeftX = $ctx->leftX;
         $savedContentWidth = $ctx->contentWidth;
-        if ($hasPadding || $hasBackground) {
-            $contentH = $this->measureParagraphHeight($p, $ctx->contentWidth
-                - $p->style->paddingLeftPt - $p->style->paddingRightPt)
-                - $p->style->spaceBeforePt - $p->style->spaceAfterPt;
-            $totalH = $contentH + $p->style->paddingTopPt + $p->style->paddingBottomPt;
-            if ($hasBackground) {
-                [$r, $g, $b] = $this->hexToRgb((string) $p->style->backgroundColor);
-                $ctx->currentPage->fillRect(
-                    $ctx->leftX, $ctx->cursorY - $totalH, $ctx->contentWidth, $totalH,
-                    $r, $g, $b,
-                );
+        if ($hasBox) {
+            $boxH = $insetTop + $insetBottom
+                + $this->measureParagraphLines($p, $ctx->contentWidth - $insetLeft - $insetRight);
+            $boxBottom = $ctx->cursorY - $boxH;
+            if ($p->style->backgroundColor !== null) {
+                [$r, $g, $b] = $this->hexToRgb($p->style->backgroundColor);
+                $ctx->currentPage->fillRect($ctx->leftX, $boxBottom, $ctx->contentWidth, $boxH, $r, $g, $b);
             }
-            $ctx->cursorY -= $p->style->paddingTopPt;
-            $ctx->leftX += $p->style->paddingLeftPt;
-            $ctx->contentWidth -= $p->style->paddingLeftPt + $p->style->paddingRightPt;
+            if ($p->style->borders !== null) {
+                $this->drawBoxBorders($ctx->currentPage, $ctx->leftX, $boxBottom, $ctx->contentWidth, $boxH, $p->style->borders);
+            }
+            $ctx->cursorY -= $insetTop;
+            $ctx->leftX += $insetLeft;
+            $ctx->contentWidth -= $insetLeft + $insetRight;
         }
 
         // Outline entry for heading paragraph (only in the final pass —
@@ -3303,11 +3303,11 @@ final class Engine
             $this->emitLine($currentLine, $p, $ctx, $effectiveDefault, $isFirstLine, $firstLineExtraIndent);
         }
 
-        // Restore leftX/contentWidth + apply paddingBottom.
-        if ($hasPadding || $hasBackground) {
+        // Restore leftX/contentWidth, step past padding and border.
+        if ($hasBox) {
             $ctx->leftX = $savedLeftX;
             $ctx->contentWidth = $savedContentWidth;
-            $ctx->cursorY -= $p->style->paddingBottomPt;
+            $ctx->cursorY -= $insetBottom;
         }
 
         $ctx->cursorY -= $p->style->spaceAfterPt;
@@ -4757,6 +4757,27 @@ final class Engine
         }
     }
 
+    /**
+     * Borders drawn INSIDE a box (x, y — bottom-left), as CSS paints a border
+     * within the border box: each line is centred half its width in from the
+     * edge, so the box occupies exactly its measured height.
+     */
+    private function drawBoxBorders(\Dskripchenko\PhpPdf\Pdf\Page $page, float $x, float $y, float $w, float $h, BorderSet $borders): void
+    {
+        if ($borders->top !== null) {
+            $this->drawHorizontalBorder($page, $x, $y + $h - $borders->top->widthPt() / 2, $w, $borders->top);
+        }
+        if ($borders->bottom !== null) {
+            $this->drawHorizontalBorder($page, $x, $y + $borders->bottom->widthPt() / 2, $w, $borders->bottom);
+        }
+        if ($borders->left !== null) {
+            $this->drawVerticalBorder($page, $x + $borders->left->widthPt() / 2, $y, $h, $borders->left);
+        }
+        if ($borders->right !== null) {
+            $this->drawVerticalBorder($page, $x + $w - $borders->right->widthPt() / 2, $y, $h, $borders->right);
+        }
+    }
+
     private function drawHorizontalBorder(\Dskripchenko\PhpPdf\Pdf\Page $page, float $x, float $y, float $w, Border $b): void
     {
         [$r, $g, $bb] = $this->hexToRgb($b->color);
@@ -4837,7 +4858,40 @@ final class Engine
         };
     }
 
+    /**
+     * The paragraph's outer height: margins, border and padding included —
+     * a table row and the page flow reserve exactly what renderParagraph()
+     * draws.
+     */
     private function measureParagraphHeight(Paragraph $p, float $contentWidth): float
+    {
+        [$top, $right, $bottom, $left] = $this->paragraphInsets($p);
+
+        return $p->style->spaceBeforePt + $top
+            + $this->measureParagraphLines($p, $contentWidth - $left - $right)
+            + $bottom + $p->style->spaceAfterPt;
+    }
+
+    /**
+     * Border plus padding on each side of a paragraph's box.
+     *
+     * @return array{0: float, 1: float, 2: float, 3: float} top, right, bottom, left
+     */
+    private function paragraphInsets(Paragraph $p): array
+    {
+        $s = $p->style;
+        $b = $s->borders;
+
+        return [
+            $s->paddingTopPt + ($b?->top?->widthPt() ?? 0.0),
+            $s->paddingRightPt + ($b?->right?->widthPt() ?? 0.0),
+            $s->paddingBottomPt + ($b?->bottom?->widthPt() ?? 0.0),
+            $s->paddingLeftPt + ($b?->left?->widthPt() ?? 0.0),
+        ];
+    }
+
+    /** Height of the lines alone, laid out in `$contentWidth`. */
+    private function measureParagraphLines(Paragraph $p, float $contentWidth): float
     {
         $headingStyle = $this->headingStyle($p->headingLevel);
         $effectiveDefault = $p->defaultRunStyle->inheritFrom($headingStyle);
@@ -4898,11 +4952,10 @@ final class Engine
             $flushLine();
         }
 
-        $total = $p->style->spaceBeforePt;
+        $total = 0.0;
         foreach ($lineMaxSizes as $s) {
             $total += $this->effectiveLineHeightPt($p, $s);
         }
-        $total += $p->style->spaceAfterPt;
 
         return $total;
     }
