@@ -4143,20 +4143,31 @@ final class Engine
             $ctx->pdf->beginStructContainer('Table', $ctx->currentPage);
         }
 
-        $columnCount = $t->columnCount();
+        [$cols, $columnCount] = $this->tableGrid($t);
         $tableWidth = $this->computeTableWidth($t->style, $ctx->contentWidth);
-        $colWidths = $this->computeColumnWidths($t, $tableWidth, $columnCount);
+        $colWidths = $this->computeColumnWidths($t, $tableWidth, $columnCount, $cols);
         $tableLeftX = $this->computeTableLeftX($t->style->alignment, $ctx, $tableWidth);
+        $heights = $this->rowHeights($t, $colWidths, $cols);
 
-        $headerRows = array_values(array_filter($t->rows, fn (Row $r): bool => $r->isHeader));
+        /** @var array<int, Row> $headerRows */
+        $headerRows = array_filter($t->rows, fn (Row $r): bool => $r->isHeader);
+        $repeatHeaders = function (array &$prevRowBottomByCol) use ($t, $headerRows, $colWidths, $cols, $heights, $tableLeftX, $ctx): void {
+            foreach ($headerRows as $hi => $hr) {
+                // On header row repeat, don't count it as last (this is still
+                // the start of the page, more data rows will follow).
+                $this->renderRow($t, $hr, $colWidths, $tableLeftX, $heights[$hi], $ctx, false, $prevRowBottomByCol, $cols[$hi]);
+                $ctx->cursorY -= $heights[$hi];
+            }
+        };
 
         $totalRows = count($t->rows);
         // Cross-row border priority tracking. Reset on page break
         // (repeated header rows form a fresh row sequence).
         $prevRowBottomByCol = [];
         foreach ($t->rows as $rowIdx => $row) {
-            $rowHeight = $this->measureRowHeight($t, $row, $colWidths);
+            $rowHeight = $heights[$rowIdx];
             $isLastRow = $rowIdx === $totalRows - 1;
+            [$spanHeights, $spanLast] = $this->rowSpanGeometry($t, $rowIdx, $heights);
 
             // A table header is never left as the last line of a page: it
             // explains columns that this page will no longer carry, and it
@@ -4164,10 +4175,24 @@ final class Engine
             // the first row of data.
             $next = $t->rows[$rowIdx + 1] ?? null;
             if ($row->isHeader && $next !== null && ! $next->isHeader) {
-                $together = $rowHeight + $this->measureRowHeight($t, $next, $colWidths);
+                $together = $rowHeight + $heights[$rowIdx + 1];
                 if ($ctx->cursorY - $rowHeight >= $ctx->bottomY && $ctx->cursorY - $together < $ctx->bottomY) {
                     $this->forcePageBreak($ctx);
                     $prevRowBottomByCol = [];
+                }
+            }
+
+            // Rows bound by a vertical merge move to the next page together:
+            // a merged cell cannot be cut. A group taller than a whole page
+            // goes as it is.
+            $groupEnd = $this->rowSpanGroupEnd($t, $rowIdx);
+            if (! $row->isHeader && $groupEnd > $rowIdx) {
+                $groupHeight = array_sum(array_slice($heights, $rowIdx, $groupEnd - $rowIdx + 1));
+                $atPageTop = $ctx->cursorY >= $ctx->topY - 0.01;
+                if (! $atPageTop && $ctx->cursorY - $groupHeight < $ctx->bottomY && $groupHeight <= $ctx->topY - $ctx->bottomY) {
+                    $this->forcePageBreak($ctx);
+                    $prevRowBottomByCol = [];
+                    $repeatHeaders($prevRowBottomByCol);
                 }
             }
 
@@ -4183,48 +4208,44 @@ final class Engine
                 // pulled two more documents out of shape. Word's rule here is
                 // more than a single condition.
                 $available = $ctx->cursorY - $ctx->bottomY;
-                $split = $this->splitRowForPage($t, $row, $colWidths, $available);
+                $split = $this->splitRowForPage($t, $row, $colWidths, $available, $cols[$rowIdx]);
 
                 if ($split !== null) {
                     [$head, $tail] = $split;
-                    $this->renderRow($t, $head, $colWidths, $tableLeftX, $available, $ctx, false, $prevRowBottomByCol);
+                    $this->renderRow($t, $head, $colWidths, $tableLeftX, $available, $ctx, false, $prevRowBottomByCol, $cols[$rowIdx]);
                     $ctx->cursorY -= $available;
 
                     $this->forcePageBreak($ctx);
                     $prevRowBottomByCol = [];
-                    foreach ($headerRows as $hr) {
-                        $hh = $this->measureRowHeight($t, $hr, $colWidths);
-                        $this->renderRow($t, $hr, $colWidths, $tableLeftX, $hh, $ctx, false, $prevRowBottomByCol);
-                        $ctx->cursorY -= $hh;
-                    }
+                    $repeatHeaders($prevRowBottomByCol);
 
                     // The tail may not fit again — it is handled by the same code,
                     // hence going back to the start of the iteration.
                     $row = $tail;
-                    $rowHeight = $this->measureRowHeight($t, $row, $colWidths);
+                    $rowHeight = $this->measureRowHeight($t, $row, $colWidths, $cols[$rowIdx]);
                     if ($ctx->cursorY - $rowHeight < $ctx->bottomY) {
                         $rowsToProcess = [$tail];
                         while ($rowsToProcess !== []) {
                             $current = array_shift($rowsToProcess);
-                            $currentHeight = $this->measureRowHeight($t, $current, $colWidths);
+                            $currentHeight = $this->measureRowHeight($t, $current, $colWidths, $cols[$rowIdx]);
                             $room = $ctx->cursorY - $ctx->bottomY;
                             if ($currentHeight <= $room) {
-                                $this->renderRow($t, $current, $colWidths, $tableLeftX, $currentHeight, $ctx, $isLastRow, $prevRowBottomByCol);
+                                $this->renderRow($t, $current, $colWidths, $tableLeftX, $currentHeight, $ctx, $isLastRow, $prevRowBottomByCol, $cols[$rowIdx]);
                                 $ctx->cursorY -= $currentHeight;
 
                                 continue;
                             }
-                            $next = $this->splitRowForPage($t, $current, $colWidths, $room);
+                            $next = $this->splitRowForPage($t, $current, $colWidths, $room, $cols[$rowIdx]);
                             if ($next === null) {
                                 $this->forcePageBreak($ctx);
                                 $prevRowBottomByCol = [];
-                                $this->renderRow($t, $current, $colWidths, $tableLeftX, $currentHeight, $ctx, $isLastRow, $prevRowBottomByCol);
+                                $this->renderRow($t, $current, $colWidths, $tableLeftX, $currentHeight, $ctx, $isLastRow, $prevRowBottomByCol, $cols[$rowIdx]);
                                 $ctx->cursorY -= $currentHeight;
 
                                 continue;
                             }
                             [$nextHead, $nextTail] = $next;
-                            $this->renderRow($t, $nextHead, $colWidths, $tableLeftX, $room, $ctx, false, $prevRowBottomByCol);
+                            $this->renderRow($t, $nextHead, $colWidths, $tableLeftX, $room, $ctx, false, $prevRowBottomByCol, $cols[$rowIdx]);
                             $ctx->cursorY -= $room;
                             $this->forcePageBreak($ctx);
                             $prevRowBottomByCol = [];
@@ -4234,7 +4255,7 @@ final class Engine
                         continue;
                     }
 
-                    $this->renderRow($t, $row, $colWidths, $tableLeftX, $rowHeight, $ctx, $isLastRow, $prevRowBottomByCol);
+                    $this->renderRow($t, $row, $colWidths, $tableLeftX, $rowHeight, $ctx, $isLastRow, $prevRowBottomByCol, $cols[$rowIdx]);
                     $ctx->cursorY -= $rowHeight;
 
                     continue;
@@ -4243,17 +4264,11 @@ final class Engine
                 $this->forcePageBreak($ctx);
                 $prevRowBottomByCol = [];
                 if (! $row->isHeader) {
-                    foreach ($headerRows as $hr) {
-                        $hh = $this->measureRowHeight($t, $hr, $colWidths);
-                        // On header row repeat, don't count it as last (this is still
-                        // the start of the page, more data rows will follow).
-                        $this->renderRow($t, $hr, $colWidths, $tableLeftX, $hh, $ctx, false, $prevRowBottomByCol);
-                        $ctx->cursorY -= $hh;
-                    }
+                    $repeatHeaders($prevRowBottomByCol);
                 }
             }
 
-            $this->renderRow($t, $row, $colWidths, $tableLeftX, $rowHeight, $ctx, $isLastRow, $prevRowBottomByCol);
+            $this->renderRow($t, $row, $colWidths, $tableLeftX, $rowHeight, $ctx, $isLastRow, $prevRowBottomByCol, $cols[$rowIdx], $spanHeights, $spanLast);
             $ctx->cursorY -= $rowHeight;
         }
 
@@ -4263,6 +4278,150 @@ final class Engine
         if ($taggedPdf) {
             $ctx->pdf->endStructContainer();
         }
+    }
+
+    /**
+     * Where each cell starts: the column index of every cell, row by row.
+     * A cell merged down (rowSpan) holds its columns in the rows below, and
+     * the cells of those rows start after them — as in HTML and Word.
+     *
+     * @return array{0: list<list<int>>, 1: int} the start columns, and the number of columns
+     */
+    private function tableGrid(Table $t): array
+    {
+        $held = []; // column → rows it is still held for
+        $cols = [];
+        $columnCount = 0;
+        foreach ($t->rows as $row) {
+            $starts = [];
+            $col = 0;
+            foreach ($row->cells as $cell) {
+                while (($held[$col] ?? 0) > 0) {
+                    $col++;
+                }
+                $starts[] = $col;
+                if ($cell->rowSpan > 1) {
+                    for ($k = 0; $k < $cell->columnSpan; $k++) {
+                        $held[$col + $k] = $cell->rowSpan;
+                    }
+                }
+                $col += $cell->columnSpan;
+            }
+            $columnCount = max($columnCount, $col, $held === [] ? 0 : max(array_keys(array_filter($held))) + 1);
+            foreach ($held as $c => $left) {
+                $held[$c] = max(0, $left - 1);
+            }
+            $cols[] = $starts;
+        }
+
+        return [$cols, $columnCount];
+    }
+
+    /**
+     * Heights of all rows. A cell merged down spreads over the rows it
+     * spans; when its content needs more, the last of them grows.
+     *
+     * @param  list<float>  $colWidths
+     * @param  list<list<int>>  $cols
+     * @return list<float>
+     */
+    private function rowHeights(Table $t, array $colWidths, array $cols): array
+    {
+        $heights = [];
+        foreach ($t->rows as $i => $row) {
+            $heights[] = $this->measureRowHeight($t, $row, $colWidths, $cols[$i]);
+        }
+        $last = count($heights) - 1;
+        foreach ($t->rows as $i => $row) {
+            foreach ($row->cells as $ci => $cell) {
+                if ($cell->rowSpan < 2) {
+                    continue;
+                }
+                $end = min($last, $i + $cell->rowSpan - 1);
+                $need = $this->measureCellHeight($t, $cell, $this->spanWidth($colWidths, $cols[$i][$ci], $cell->columnSpan));
+                $have = array_sum(array_slice($heights, $i, $end - $i + 1));
+                if ($need > $have) {
+                    $heights[$end] += $need - $have;
+                }
+            }
+        }
+
+        return $heights;
+    }
+
+    /**
+     * The last row tied to `$rowIdx` by vertical merges (itself when none).
+     */
+    private function rowSpanGroupEnd(Table $t, int $rowIdx): int
+    {
+        $end = $rowIdx;
+        $last = count($t->rows) - 1;
+        for ($i = $rowIdx; $i <= $end && $i <= $last; $i++) {
+            foreach ($t->rows[$i]->cells as $cell) {
+                $end = max($end, min($last, $i + $cell->rowSpan - 1));
+            }
+        }
+
+        return $end;
+    }
+
+    /**
+     * For the merged cells of a row: their full height, and whether they
+     * reach the last row of the table.
+     *
+     * @param  list<float>  $heights
+     * @return array{0: array<int, float>, 1: array<int, bool>} keyed by cell index
+     */
+    private function rowSpanGeometry(Table $t, int $rowIdx, array $heights): array
+    {
+        $spanHeights = [];
+        $spanLast = [];
+        $last = count($heights) - 1;
+        foreach ($t->rows[$rowIdx]->cells as $ci => $cell) {
+            if ($cell->rowSpan < 2) {
+                continue;
+            }
+            $end = min($last, $rowIdx + $cell->rowSpan - 1);
+            $spanHeights[$ci] = array_sum(array_slice($heights, $rowIdx, $end - $rowIdx + 1));
+            $spanLast[$ci] = $end === $last;
+        }
+
+        return [$spanHeights, $spanLast];
+    }
+
+    /**
+     * @param  list<float>  $colWidths
+     */
+    private function spanWidth(array $colWidths, int $start, int $span): float
+    {
+        return (float) array_sum(array_slice($colWidths, $start, $span));
+    }
+
+    /** A cell's height with its padding, laid out in `$cellWidth`. */
+    private function measureCellHeight(Table $t, Cell $cell, float $cellWidth): float
+    {
+        $cs = $this->effectiveCellStyle($t, $cell);
+        $contentWidth = $cellWidth - $cs->paddingLeftPt - $cs->paddingRightPt;
+
+        return $this->measureBlockListHeight($cell->children, $contentWidth) + $cs->paddingTopPt + $cs->paddingBottomPt;
+    }
+
+    /**
+     * Start columns of a row's cells laid side by side — for rows measured
+     * outside a table grid.
+     *
+     * @return list<int>
+     */
+    private function sequentialColumns(Row $row): array
+    {
+        $starts = [];
+        $col = 0;
+        foreach ($row->cells as $cell) {
+            $starts[] = $col;
+            $col += $cell->columnSpan;
+        }
+
+        return $starts;
     }
 
     private function computeTableWidth(TableStyle $style, float $contentWidth): float
@@ -4278,9 +4437,14 @@ final class Engine
     }
 
     /**
+     * Column widths: `Table::$columnWidthsPt` when given; otherwise the
+     * widths of the cells, the rest shared equally — or by content with
+     * `TableStyle::$autoLayout`.
+     *
+     * @param  list<list<int>>  $cols  Start column of each cell (tableGrid()).
      * @return list<float>
      */
-    private function computeColumnWidths(Table $t, float $tableWidth, int $columnCount): array
+    private function computeColumnWidths(Table $t, float $tableWidth, int $columnCount, array $cols = []): array
     {
         if ($t->columnWidthsPt !== null && count($t->columnWidthsPt) === $columnCount) {
             // Scale to fit tableWidth if the sum differs.
@@ -4291,11 +4455,197 @@ final class Engine
                 return array_map(fn (float $w): float => $w * $scale, array_map(floatval(...), $t->columnWidthsPt));
             }
         }
+        if ($columnCount === 0) {
+            return [];
+        }
+        if ($cols === []) {
+            [$cols] = $this->tableGrid($t);
+        }
 
-        // Equal distribution.
-        $perCol = $columnCount > 0 ? $tableWidth / $columnCount : 0;
+        // Widths the cells declare, column by column (a single-column cell
+        // speaks for its column; the first one met wins).
+        $declared = [];
+        foreach ($t->rows as $i => $row) {
+            foreach ($row->cells as $ci => $cell) {
+                $col = $cols[$i][$ci] ?? null;
+                if ($col === null || $cell->columnSpan !== 1 || isset($declared[$col])) {
+                    continue;
+                }
+                $w = $cell->style->widthPt
+                    ?? ($cell->style->widthPercent !== null ? $tableWidth * $cell->style->widthPercent / 100 : null);
+                if ($w !== null && $w > 0) {
+                    $declared[$col] = $w;
+                }
+            }
+        }
 
-        return array_fill(0, $columnCount, $perCol);
+        if (! $t->style->autoLayout) {
+            if ($declared === []) {
+                // Equal distribution.
+                return array_fill(0, $columnCount, $tableWidth / $columnCount);
+            }
+            $free = $columnCount - count($declared);
+            $rest = max(0.0, $tableWidth - array_sum($declared));
+            $widths = [];
+            for ($c = 0; $c < $columnCount; $c++) {
+                $widths[] = $declared[$c] ?? ($free > 0 ? $rest / $free : 0.0);
+            }
+
+            return $this->fitWidths($widths, $tableWidth);
+        }
+
+        return $this->autoColumnWidths($t, $cols, $columnCount, $tableWidth, $declared);
+    }
+
+    /**
+     * `table-layout: auto`: each column between its narrowest (the longest
+     * word) and its widest (no wrapping) content, as browsers do. Declared
+     * widths are kept; the rest is shared by how much each column wants.
+     *
+     * @param  list<list<int>>  $cols
+     * @param  array<int, float>  $declared
+     * @return list<float>
+     */
+    private function autoColumnWidths(Table $t, array $cols, int $columnCount, float $tableWidth, array $declared): array
+    {
+        $min = array_fill(0, $columnCount, 0.0);
+        $max = array_fill(0, $columnCount, 0.0);
+        foreach ($t->rows as $i => $row) {
+            foreach ($row->cells as $ci => $cell) {
+                $col = $cols[$i][$ci] ?? null;
+                if ($col === null || $cell->columnSpan !== 1) {
+                    continue;
+                }
+                $cs = $this->effectiveCellStyle($t, $cell);
+                $pad = $cs->paddingLeftPt + $cs->paddingRightPt;
+                [$cellMin, $cellMax] = $this->blockListContentWidths($cell->children, $tableWidth);
+                $min[$col] = max($min[$col], $cellMin + $pad);
+                $max[$col] = max($max[$col], $cellMax + $pad);
+            }
+        }
+        foreach ($declared as $col => $w) {
+            $min[$col] = $max[$col] = max($w, $min[$col]);
+        }
+        // A column only merged cells reach gets an equal claim.
+        $known = array_filter($max, static fn (float $w): bool => $w > 0);
+        $fallback = $known === [] ? $tableWidth / $columnCount : array_sum($known) / count($known);
+        for ($c = 0; $c < $columnCount; $c++) {
+            if ($max[$c] <= 0) {
+                $max[$c] = $fallback;
+            }
+        }
+
+        $sumMin = array_sum($min);
+        $sumMax = array_sum($max);
+        if ($sumMax <= $tableWidth) {
+            // Everything fits unwrapped: the spare room goes to the columns
+            // without a declared width, in proportion to their content.
+            $spare = $tableWidth - $sumMax;
+            $flexible = array_diff_key($max, $declared);
+            $flexSum = array_sum($flexible);
+            $widths = [];
+            for ($c = 0; $c < $columnCount; $c++) {
+                $extra = isset($flexible[$c]) && $flexSum > 0 ? $spare * $flexible[$c] / $flexSum : 0.0;
+                $widths[] = $max[$c] + $extra;
+            }
+
+            return $this->fitWidths($widths, $tableWidth);
+        }
+        if ($sumMin >= $tableWidth) {
+            return $this->fitWidths($min, $tableWidth);
+        }
+        // Between the two: every column gets its minimum, and the rest in
+        // proportion to how much more it would like.
+        $ratio = ($tableWidth - $sumMin) / ($sumMax - $sumMin);
+        $widths = [];
+        for ($c = 0; $c < $columnCount; $c++) {
+            $widths[] = $min[$c] + ($max[$c] - $min[$c]) * $ratio;
+        }
+
+        return $widths;
+    }
+
+    /**
+     * @param  list<float>  $widths
+     * @return list<float>
+     */
+    private function fitWidths(array $widths, float $tableWidth): array
+    {
+        $sum = array_sum($widths);
+        if ($sum <= 0) {
+            return array_fill(0, count($widths), $tableWidth / max(1, count($widths)));
+        }
+        if (abs($sum - $tableWidth) < 0.01) {
+            return $widths;
+        }
+        $scale = $tableWidth / $sum;
+
+        return array_map(static fn (float $w): float => $w * $scale, $widths);
+    }
+
+    /**
+     * The narrowest and the widest a list of blocks can be laid out: the
+     * longest word, and every line unwrapped.
+     *
+     * @param  list<BlockElement>  $blocks
+     * @return array{0: float, 1: float}
+     */
+    private function blockListContentWidths(array $blocks, float $available): array
+    {
+        $min = 0.0;
+        $max = 0.0;
+        foreach ($blocks as $block) {
+            [$bMin, $bMax] = match (true) {
+                $block instanceof Paragraph => $this->paragraphContentWidths($block),
+                $block instanceof Image => [min($block->widthPt ?? $available, $available), min($block->widthPt ?? $available, $available)],
+                $block instanceof SvgElement, $block instanceof SignatureField => [$block->widthPt, $block->widthPt],
+                // A nested table, a list, a chart: it would take what it is given.
+                default => [0.0, $available],
+            };
+            $min = max($min, $bMin);
+            $max = max($max, $bMax);
+        }
+
+        return [$min, $max];
+    }
+
+    /**
+     * @return array{0: float, 1: float}
+     */
+    private function paragraphContentWidths(Paragraph $p): array
+    {
+        $default = $p->defaultRunStyle->inheritFrom($this->headingStyle($p->headingLevel));
+        /** @var list<array<string, mixed>> $items */
+        $items = [];
+        $this->tokenizeChildren($p->children, $default, $items, null);
+
+        $min = 0.0;
+        $max = 0.0;
+        $line = 0.0;
+        $lineHasContent = false;
+        foreach ($items as $item) {
+            if ($item['type'] === 'br') {
+                $max = max($max, $line);
+                $line = 0.0;
+                $lineHasContent = false;
+
+                continue;
+            }
+            $style = $item['style'] ?? $default;
+            $w = match ($item['type']) {
+                'word' => $this->measureWidth((string) ($item['text'] ?? ''), $style),
+                'image' => (float) ($item['width'] ?? 0.0),
+                default => 0.0,
+            };
+            $min = max($min, $w);
+            $line += ($lineHasContent ? $this->measureWidth(' ', $style) : 0.0) + $w;
+            $lineHasContent = true;
+        }
+        $max = max($max, $line);
+        [, $right, , $left] = $this->paragraphInsets($p);
+        $extra = $p->style->indentLeftPt + $p->style->indentRightPt + $left + $right;
+
+        return [$min + $extra + max(0.0, $p->style->indentFirstLinePt), $max + $extra + max(0.0, $p->style->indentFirstLinePt)];
     }
 
     private function computeTableLeftX(Alignment $align, LayoutContext $ctx, float $tableWidth): float
@@ -4309,25 +4659,22 @@ final class Engine
 
     /**
      * @param  list<float>  $colWidths
+     * @param  ?list<int>  $starts  The start column of each cell; side by side when null.
      */
-    private function measureRowHeight(Table $t, Row $row, array $colWidths): float
+    private function measureRowHeight(Table $t, Row $row, array $colWidths, ?array $starts = null): float
     {
         if ($row->heightPt !== null) {
             return $row->heightPt;
         }
+        $starts ??= $this->sequentialColumns($row);
 
         $maxHeight = 0;
-        $colIdx = 0;
-        foreach ($row->cells as $cell) {
-            $cellWidth = 0;
-            for ($i = 0; $i < $cell->columnSpan && ($colIdx + $i) < count($colWidths); $i++) {
-                $cellWidth += $colWidths[$colIdx + $i];
+        foreach ($row->cells as $ci => $cell) {
+            // A cell merged down is spread over its rows by rowHeights().
+            if ($cell->rowSpan > 1) {
+                continue;
             }
-            $colIdx += $cell->columnSpan;
-            $cs = $this->effectiveCellStyle($t, $cell);
-            $contentWidth = $cellWidth - $cs->paddingLeftPt - $cs->paddingRightPt;
-            $contentHeight = $this->measureBlockListHeight($cell->children, $contentWidth);
-            $cellHeight = $contentHeight + $cs->paddingTopPt + $cs->paddingBottomPt;
+            $cellHeight = $this->measureCellHeight($t, $cell, $this->spanWidth($colWidths, $starts[$ci], $cell->columnSpan));
             if ($cellHeight > $maxHeight) {
                 $maxHeight = $cellHeight;
             }
@@ -4368,10 +4715,12 @@ final class Engine
      *     otherwise the empty part would be carried over forever.
      *
      * @param  list<float>  $colWidths
+     * @param  ?list<int>  $starts  The start column of each cell; side by side when null.
      * @return array{0: Row, 1: Row}|null
      */
-    private function splitRowForPage(Table $t, Row $row, array $colWidths, float $available): ?array
+    private function splitRowForPage(Table $t, Row $row, array $colWidths, float $available, ?array $starts = null): ?array
     {
+        $starts ??= $this->sequentialColumns($row);
         if ($row->isHeader || $available <= 0.0) {
             return null;
         }
@@ -4387,14 +4736,9 @@ final class Engine
         $anythingFits = false;
         $anythingLeft = false;
         $continued = false;
-        $colIdx = 0;
 
-        foreach ($row->cells as $cell) {
-            $cellWidth = 0.0;
-            for ($i = 0; $i < $cell->columnSpan && $colIdx + $i < count($colWidths); $i++) {
-                $cellWidth += $colWidths[$colIdx + $i];
-            }
-            $colIdx += $cell->columnSpan;
+        foreach ($row->cells as $ci => $cell) {
+            $cellWidth = $this->spanWidth($colWidths, $starts[$ci], $cell->columnSpan);
 
             $cs = $this->effectiveCellStyle($t, $cell);
             $contentWidth = $cellWidth - $cs->paddingLeftPt - $cs->paddingRightPt;
@@ -4445,9 +4789,24 @@ final class Engine
     /**
      * @param  list<float>  $colWidths
      * @param  array<int, \Dskripchenko\PhpPdf\Style\Border|null>  $prevRowBottomByCol
+     * @param  ?list<int>  $starts  The start column of each cell; side by side when null.
+     * @param  array<int, float>  $spanHeights  Full height of the cells merged down, by cell index.
+     * @param  array<int, bool>  $spanLast  Whether such a cell reaches the last row.
      */
-    private function renderRow(Table $t, Row $row, array $colWidths, float $tableLeftX, float $rowHeight, LayoutContext $ctx, bool $isLastRow = false, array &$prevRowBottomByCol = []): void
-    {
+    private function renderRow(
+        Table $t,
+        Row $row,
+        array $colWidths,
+        float $tableLeftX,
+        float $rowHeight,
+        LayoutContext $ctx,
+        bool $isLastRow = false,
+        array &$prevRowBottomByCol = [],
+        ?array $starts = null,
+        array $spanHeights = [],
+        array $spanLast = [],
+    ): void {
+        $starts ??= $this->sequentialColumns($row);
         // Tagged PDF — /TR is a grouping element (children: TD leaves).
         $taggedPdf = $ctx->pdf->isTagged();
         if ($taggedPdf) {
@@ -4471,22 +4830,21 @@ final class Engine
 
         // 1. Backgrounds + content + borders in three passes (background below,
         //    borders above, content in between).
-        $cellX = $tableLeftX;
-        $colIdx = 0;
-        foreach ($row->cells as $cell) {
-            $cellWidth = 0;
-            for ($i = 0; $i < $cell->columnSpan && ($colIdx + $i) < count($colWidths); $i++) {
-                $cellWidth += $colWidths[$colIdx + $i];
-            }
+        foreach ($row->cells as $ci => $cell) {
+            $colIdx = $starts[$ci];
+            $cellX = $tableLeftX + $this->spanWidth($colWidths, 0, $colIdx);
+            $cellWidth = $this->spanWidth($colWidths, $colIdx, $cell->columnSpan);
+            $cellHeight = $spanHeights[$ci] ?? $rowHeight;
+            $cellBottomY = $rowTopY - $cellHeight;
             $cs = $this->effectiveCellStyle($t, $cell);
 
             // Background fill (rounded if cornerRadius > 0).
             if ($cs->backgroundColor !== null) {
                 [$r, $g, $b] = $this->hexToRgb($cs->backgroundColor);
                 $drawX = $cellX + $gap;
-                $drawY = $rowBottomY + $gap;
+                $drawY = $cellBottomY + $gap;
                 $drawW = $cellWidth - 2 * $gap;
-                $drawH = $rowHeight - 2 * $gap;
+                $drawH = $cellHeight - 2 * $gap;
                 if ($cs->cornerRadiusPt > 0) {
                     $ctx->currentPage->fillRoundedRect(
                         $drawX, $drawY, $drawW, $drawH,
@@ -4496,19 +4854,12 @@ final class Engine
                     $ctx->currentPage->fillRect($drawX, $drawY, $drawW, $drawH, $r, $g, $b);
                 }
             }
-
-            $cellX += $cellWidth;
-            $colIdx += $cell->columnSpan;
         }
 
         // Content.
-        $cellX = $tableLeftX;
-        $colIdx = 0;
-        foreach ($row->cells as $cell) {
-            $cellWidth = 0;
-            for ($i = 0; $i < $cell->columnSpan && ($colIdx + $i) < count($colWidths); $i++) {
-                $cellWidth += $colWidths[$colIdx + $i];
-            }
+        foreach ($row->cells as $ci => $cell) {
+            $cellX = $tableLeftX + $this->spanWidth($colWidths, 0, $starts[$ci]);
+            $cellWidth = $this->spanWidth($colWidths, $starts[$ci], $cell->columnSpan);
             $cs = $this->effectiveCellStyle($t, $cell);
 
             // Wrap cell in /TD struct.
@@ -4522,34 +4873,38 @@ final class Engine
             // (cell-level wrapping subsumes them).
             $savedSkip = $ctx->skipParagraphTag;
             $ctx->skipParagraphTag = true;
-            $this->renderCellContent($cell, $cs, $cellX, $rowTopY, $cellWidth, $rowHeight, $ctx);
+            $this->renderCellContent($cell, $cs, $cellX, $rowTopY, $cellWidth, $spanHeights[$ci] ?? $rowHeight, $ctx);
             $ctx->skipParagraphTag = $savedSkip;
 
             if ($taggedPdf && $cellMcid !== null) {
                 $ctx->currentPage->endMarkedContent();
                 $ctx->pdf->addStructElement('TD', $cellMcid, $ctx->currentPage);
             }
-
-            $cellX += $cellWidth;
-            $colIdx += $cell->columnSpan;
         }
 
         // Borders on top.
-        $cellX = $tableLeftX;
-        $colIdx = 0;
-        foreach ($row->cells as $cell) {
-            $cellWidth = 0;
-            for ($i = 0; $i < $cell->columnSpan && ($colIdx + $i) < count($colWidths); $i++) {
-                $cellWidth += $colWidths[$colIdx + $i];
+        $prevCellEnd = null;
+        foreach ($row->cells as $ci => $cell) {
+            $colIdx = $starts[$ci];
+            $cellX = $tableLeftX + $this->spanWidth($colWidths, 0, $colIdx);
+            $cellWidth = $this->spanWidth($colWidths, $colIdx, $cell->columnSpan);
+            $cellHeight = $spanHeights[$ci] ?? $rowHeight;
+            $cellBottomY = $rowTopY - $cellHeight;
+            $cellIsLastRow = $spanLast[$ci] ?? $isLastRow;
+            // The neighbour on the left shares this edge only when it ends
+            // where this cell starts (a merged cell may sit in between).
+            if ($prevCellEnd !== $colIdx) {
+                $prevCellRight = null;
             }
+            $prevCellEnd = $colIdx + $cell->columnSpan;
             $cs = $this->effectiveCellStyle($t, $cell);
             $borders = $cs->borders ?? $this->defaultBorderSet($t->style);
 
             if ($borders !== null) {
                 $drawX = $cellX + $gap;
-                $drawY = $rowBottomY + $gap;
+                $drawY = $cellBottomY + $gap;
                 $drawW = $cellWidth - 2 * $gap;
-                $drawH = $rowHeight - 2 * $gap;
+                $drawH = $cellHeight - 2 * $gap;
                 if ($cs->cornerRadiusPt > 0 && ! $collapse && $this->areBordersUniform($borders)) {
                     $b = $borders->top;
                     [$r, $g, $bb] = $this->hexToRgb($b->color);
@@ -4573,7 +4928,7 @@ final class Engine
                     $collapsed = new BorderSet(
                         top: $topBorder,
                         left: $leftBorder,
-                        bottom: $isLastRow ? $borders->bottom : null,
+                        bottom: $cellIsLastRow ? $borders->bottom : null,
                         right: $isLastCol ? $borders->right : null,
                     );
                     $this->drawCellBorders($ctx->currentPage, $drawX, $drawY, $drawW, $drawH, $collapsed);
@@ -4587,9 +4942,6 @@ final class Engine
                     $this->drawCellBorders($ctx->currentPage, $drawX, $drawY, $drawW, $drawH, $borders);
                 }
             }
-
-            $cellX += $cellWidth;
-            $colIdx += $cell->columnSpan;
         }
 
         // Pass current row's bottom borders to caller for the next row.
@@ -5004,14 +5356,11 @@ final class Engine
         if ($t->isEmpty()) {
             return 0;
         }
-        $columnCount = $t->columnCount();
+        [$cols, $columnCount] = $this->tableGrid($t);
         $tableWidth = $this->computeTableWidth($t->style, $contentWidth);
-        $colWidths = $this->computeColumnWidths($t, $tableWidth, $columnCount);
+        $colWidths = $this->computeColumnWidths($t, $tableWidth, $columnCount, $cols);
 
-        $total = $t->style->spaceBeforePt;
-        foreach ($t->rows as $row) {
-            $total += $this->measureRowHeight($t, $row, $colWidths);
-        }
+        $total = $t->style->spaceBeforePt + array_sum($this->rowHeights($t, $colWidths, $cols));
         $total += $t->style->spaceAfterPt;
 
         return $total;

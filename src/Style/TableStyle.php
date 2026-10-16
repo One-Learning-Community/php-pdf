@@ -16,6 +16,11 @@ namespace Dskripchenko\PhpPdf\Style;
  * `borderCollapse: true` makes adjacent cells share borders (first-drawn
  * wins for color/style). Otherwise `borderSpacingPt` controls the gap
  * between cells in CSS `separate` border-spacing mode.
+ *
+ * Column widths come from `Table::$columnWidthsPt`, else from the widths
+ * of the cells (`CellStyle::$widthPt` / `$widthPercent`). Columns left
+ * without one share the rest equally — or, with `autoLayout: true`, by
+ * their content, as a browser lays out `table-layout: auto`.
  */
 final readonly class TableStyle
 {
@@ -30,6 +35,7 @@ final readonly class TableStyle
         public float $spaceAfterPt = 6,
         public bool $borderCollapse = false,
         public float $borderSpacingPt = 0,
+        public bool $autoLayout = false,
     ) {}
 
     public function copy(
@@ -43,6 +49,7 @@ final readonly class TableStyle
         ?float $spaceAfterPt = null,
         ?bool $borderCollapse = null,
         ?float $borderSpacingPt = null,
+        ?bool $autoLayout = null,
     ): self {
         return new self(
             widthPt: $widthPt ?? $this->widthPt,
@@ -55,6 +62,7 @@ final readonly class TableStyle
             spaceAfterPt: $spaceAfterPt ?? $this->spaceAfterPt,
             borderCollapse: $borderCollapse ?? $this->borderCollapse,
             borderSpacingPt: $borderSpacingPt ?? $this->borderSpacingPt,
+            autoLayout: $autoLayout ?? $this->autoLayout,
         );
     }
 }
