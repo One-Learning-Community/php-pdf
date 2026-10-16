@@ -403,6 +403,33 @@ final class ContentStream
         return $this;
     }
 
+    /**
+     * Stroked straight line with a dash pattern and line cap, inside its own
+     * graphics state so the pattern does not leak into later strokes.
+     *
+     * @param  list<float>  $pattern  alternating on/off lengths
+     */
+    public function strokeDashedLine(
+        float $x1, float $y1, float $x2, float $y2,
+        float $lineWidthPt,
+        float $r, float $g, float $b,
+        array $pattern,
+        float $phase = 0.0,
+        int $lineCap = 0,
+    ): self {
+        $this->body .= 'q'."\n";
+        $this->body .= sprintf("%s w\n", $this->formatNumber($lineWidthPt));
+        $this->body .= sprintf("%s %s %s RG\n", $this->formatNumber($r), $this->formatNumber($g), $this->formatNumber($b));
+        $this->setLineDashPattern($pattern, $phase);
+        $this->setLineCap($lineCap);
+        $this->body .= sprintf("%s %s m\n", $this->formatNumber($x1), $this->formatNumber($y1));
+        $this->body .= sprintf("%s %s l\n", $this->formatNumber($x2), $this->formatNumber($y2));
+        $this->body .= 'S'."\n";
+        $this->body .= 'Q'."\n";
+
+        return $this;
+    }
+
     public function strokeRectangle(
         float $xPt,
         float $yPt,
