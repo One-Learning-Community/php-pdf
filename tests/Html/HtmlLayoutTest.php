@@ -96,4 +96,14 @@ final class HtmlLayoutTest extends TestCase
         self::assertMatchesRegularExpression('/485\.28 0 0 485\.28 60 /', $pdf);
         self::assertEqualsWithDelta(60.0, PdfGeometry::word($pdf, 'Body')['xMin'], 0.5);
     }
+
+    #[Test]
+    public function css_dashed_and_dotted_borders_keep_their_style(): void
+    {
+        $pdf = self::render('<div style="border: 1pt dashed #ff0000">Dashed</div>'
+            .'<table><tr><td style="border-bottom: 2pt dotted #0000ff">Dotted</td></tr></table>');
+
+        self::assertMatchesRegularExpression('/1 0 0 RG\n\[3 [\d.]+\] 0 d\n0 J\n/', $pdf);
+        self::assertMatchesRegularExpression('/0 0 1 RG\n\[0 [\d.]+\] 0 d\n1 J\n/', $pdf);
+    }
 }

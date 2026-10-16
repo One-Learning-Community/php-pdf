@@ -916,6 +916,25 @@ final class Page implements AppearanceResources
     }
 
     /**
+     * Stroked straight line with a dash pattern (alternating on/off lengths)
+     * and line cap (0=butt, 1=round, 2=projecting square).
+     *
+     * @param  list<float>  $pattern
+     */
+    public function strokeDashedLine(
+        float $x1, float $y1, float $x2, float $y2,
+        float $lineWidthPt,
+        float $r, float $g, float $b,
+        array $pattern,
+        float $phase = 0.0,
+        int $lineCap = 0,
+    ): self {
+        $this->stream->strokeDashedLine($x1, $y1, $x2, $y2, $lineWidthPt, $r, $g, $b, $pattern, $phase, $lineCap);
+
+        return $this;
+    }
+
+    /**
      * Filled polygon (closed path).
      *
      * @param  list<array{0: float, 1: float}>  $points

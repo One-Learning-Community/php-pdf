@@ -4,6 +4,15 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Dashed and dotted borders (`BorderStyle::Dashed`, `BorderStyle::Dotted`,
+  CSS `dashed` / `dotted`) were drawn as solid lines. Paragraph, cell and
+  table borders now draw dashes three line widths long and round dots one
+  width across, with the gaps stretched so each side starts and ends on a
+  dash or a dot and the corners stay closed.
+
 ## [1.19.0] — 2026-10-16
 
 ### Added

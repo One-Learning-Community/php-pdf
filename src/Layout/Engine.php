@@ -5230,6 +5230,9 @@ final class Engine
 
             return;
         }
+        if ($this->drawPatternedBorder($page, $x, $y, $x + $w, $y, $b, $r, $g, $bb)) {
+            return;
+        }
         $page->strokeRect($x, $y, $w, 0, $totalWidth, $r, $g, $bb);
     }
 
@@ -5245,7 +5248,50 @@ final class Engine
 
             return;
         }
+        if ($this->drawPatternedBorder($page, $x, $y + $h, $x, $y, $b, $r, $g, $bb)) {
+            return;
+        }
         $page->strokeRect($x, $y, 0, $h, $totalWidth, $r, $g, $bb);
+    }
+
+    /**
+     * Dashed and dotted borders, the way browsers draw them: dashes three
+     * line widths long, dots round and one width across; the gaps are
+     * stretched so the line starts and ends on a dash or a dot, which keeps
+     * the corners of a box closed. Returns false for the other styles.
+     */
+    private function drawPatternedBorder(
+        \Dskripchenko\PhpPdf\Pdf\Page $page,
+        float $x1, float $y1, float $x2, float $y2,
+        Border $b, float $r, float $g, float $bb,
+    ): bool {
+        if ($b->style !== BorderStyle::Dashed && $b->style !== BorderStyle::Dotted) {
+            return false;
+        }
+        $width = $b->widthPt();
+        $length = hypot($x2 - $x1, $y2 - $y1);
+        if ($width <= 0 || $length <= 0) {
+            return true;
+        }
+        if ($b->style === BorderStyle::Dotted) {
+            // A zero-length dash with a round cap is a dot; the dot centres
+            // run from one end of the line to the other.
+            $count = max(1, (int) round($length / (2 * $width)));
+            $page->strokeDashedLine($x1, $y1, $x2, $y2, $width, $r, $g, $bb, [0.0, $length / $count], 0.0, 1);
+
+            return true;
+        }
+        $dash = 3 * $width;
+        $count = (int) round(($length + $dash) / (2 * $dash));
+        if ($count < 2) {
+            $page->strokeLine($x1, $y1, $x2, $y2, $width, $r, $g, $bb);
+
+            return true;
+        }
+        $gap = ($length - $count * $dash) / ($count - 1);
+        $page->strokeDashedLine($x1, $y1, $x2, $y2, $width, $r, $g, $bb, [$dash, $gap]);
+
+        return true;
     }
 
     /**
