@@ -7,7 +7,7 @@ namespace Dskripchenko\PhpPdf\Pdf\Signature\External;
 use Dskripchenko\PhpPdf\Pdf\Signature\Asn1\Oid;
 use Dskripchenko\PhpPdf\Pdf\Signature\Cms\CmsBuilder;
 use Dskripchenko\PhpPdf\Pdf\Signature\Cms\CmsException;
-use Dskripchenko\PhpPdf\Pdf\Signature\Cms\SignedDataReader;
+use Dskripchenko\PhpPdf\Pdf\Signature\Cms\OutsideCms;
 use Dskripchenko\PhpPdf\Pdf\Signature\SignaturePlaceholder;
 use Dskripchenko\PhpPdf\Pdf\Signature\Signer\Certificate;
 use Dskripchenko\PhpPdf\Pdf\Signature\Signer\DigestAlgorithm;
@@ -179,39 +179,7 @@ final class PreparedSignature
 
     private function fromCms(string $der, ?TsaClient $tsa, bool $verify): string
     {
-        $cms = SignedDataReader::parse($der);
-
-        // Tools often sign "attached" by default; the copy inside is fine as
-        // long as it is this document, and is dropped when embedding.
-        $attached = $cms->encapsulatedContent();
-        if ($attached !== null && $attached !== $this->signedContent()) {
-            throw new CmsException('The CMS carries content other than this document');
-        }
-
-        $digest = $cms->digestAlgorithm();
-        if ($cms->messageDigest() !== $digest->digest($this->signedContent())) {
-            throw new CmsException('The CMS signs different data: its message digest does not match this document');
-        }
-
-        $signer = $cms->signerCertificate($this->certificate !== null ? [$this->certificate, ...$this->chain] : $this->chain);
-        if ($signer === null) {
-            throw new CmsException('The CMS does not identify a certificate it carries or that was given to prepareSignature()');
-        }
-        if ($this->certificate !== null && $signer->der !== $this->certificate->der) {
-            throw new CmsException('The CMS was made with a different certificate than the one given to prepareSignature()');
-        }
-        if ($verify && ! $cms->verifySignature($signer)) {
-            throw new CmsException('The CMS signature does not verify');
-        }
-
-        $unsigned = [];
-        if ($tsa !== null) {
-            $unsigned[] = CmsBuilder::attribute(Oid::SIGNATURE_TIMESTAMP_TOKEN, $tsa->timestamp($cms->signatureValue())->token);
-        }
-        // Make sure the validator can find the signer and the chain.
-        $certificates = array_values(array_filter([$signer, ...$this->chain]));
-
-        return $cms->amend($certificates, $unsigned);
+        return OutsideCms::accept($der, $this->signedContent(), $this->certificate, $this->chain, $tsa, $verify, 'prepareSignature()');
     }
 
     public function toJson(): string

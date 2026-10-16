@@ -15,6 +15,7 @@ RSA, ECDSA и ГОСТ Р 34.10-2012; со службой меток време�
 - [Метка времени](#метка-времени)
 - [ГОСТ Р 34.10-2012](#гост-р-3410-2012)
 - [Размер подписи](#размер-подписи)
+- [Ключ за ПО, возвращающим CMS](#ключ-за-по-возвращающим-cms)
 - [Подпись вне сервера](#подпись-вне-сервера)
 - [Подпись готового PDF](#подпись-готового-pdf)
 - [Сертифицирующая подпись и заблокированные поля](#сертифицирующая-подпись-и-заблокированные-поля)
@@ -141,6 +142,43 @@ granted, отпечаток и nonce, который был запрошен, �
 ли метка времени. Если подписант встраивает больше ожидаемого, подпись
 завершается ошибкой с сообщением о необходимом размере; чтобы переопределить
 оценку, задайте `contentsReserveBytes`.
+
+## Ключ за ПО, возвращающим CMS
+
+Некоторые ключи доступны только через ПО, которое возвращает целую CMS, а
+не голое значение подписи: КриптоПро CSP на сервере
+(`CadesSignedData.SignHash`, `cryptcp`), сервис подписи, фронтенд HSM.
+Реализуйте `CmsSigner` и подписывайте одним вызовом, как ключом в процессе,
+без ручных prepare и complete:
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\Signer\{Certificate, CmsSigner, DigestAlgorithm};
+
+final class CryptcpSigner implements CmsSigner
+{
+    public function __construct(private string $certificatePem, private string $thumbprint) {}
+
+    public function certificate(): Certificate { return Certificate::fromPem($this->certificatePem); }
+    public function chain(): array { return []; }
+    public function digestAlgorithm(): DigestAlgorithm { return DigestAlgorithm::defaultFor($this->certificate()); }
+
+    public function signCms(string $content, string $digest): string
+    {
+        // Запустите утилиту подписи или API CSP, верните CMS
+    }
+}
+
+$doc->sign(new SignatureConfig(signer: new CryptcpSigner($certPem, $thumbprint)));
+```
+
+`signCms()` получает подписываемые байты и их хэш по `digestAlgorithm()` и
+возвращает CMS SignedData в DER или BER, отделённую или прикреплённую.
+Перед встраиванием библиотека проверяет её так же, как `complete()` (ниже):
+она покрывает именно этот документ, сделана сертификатом `certificate()`,
+подпись верна; недостающие сертификаты добавляются из `chain()`, а
+`timestampAuthority` из конфигурации ставит метку времени. Сертификат
+выводится в штамп. Работает с `Pdf\Document::sign()`, `signature:`
+свёрстанного документа и `PdfSigner::sign()`.
 
 ## Подпись вне сервера
 

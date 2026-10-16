@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace Dskripchenko\PhpPdf\Pdf;
 
 use Dskripchenko\PhpPdf\Pdf\Signature\Cms\CmsBuilder;
+use Dskripchenko\PhpPdf\Pdf\Signature\Cms\OutsideCms;
 use Dskripchenko\PhpPdf\Pdf\Signature\DocMdpPermission;
 use Dskripchenko\PhpPdf\Pdf\Signature\FieldLock;
 use Dskripchenko\PhpPdf\Pdf\Signature\External\ExternalSigner;
 use Dskripchenko\PhpPdf\Pdf\Signature\Signer\Certificate;
+use Dskripchenko\PhpPdf\Pdf\Signature\Signer\CmsSigner;
+use Dskripchenko\PhpPdf\Pdf\Signature\Signer\CmsSignerKey;
 use Dskripchenko\PhpPdf\Pdf\Signature\Signer\OpenSslSigner;
 use Dskripchenko\PhpPdf\Pdf\Signature\Signer\Signer;
 use Dskripchenko\PhpPdf\Pdf\Signature\SubFilter;
@@ -24,7 +27,8 @@ use Dskripchenko\PhpPdf\Pdf\Signature\Tsa\TsaClient;
  * The key comes either as PEM strings (`certPem`, `privateKeyPem`, optional
  * `privateKeyPassphrase` and `certificateChainPem`) or as a {@see Signer} —
  * an `OpenSslSigner` from PKCS#12, or your own implementation for a token or
- * HSM. Optional fields (`signerName`, `reason`, `location`, `contactInfo`,
+ * HSM — or as a {@see CmsSigner}, software that returns a whole CMS
+ * (CryptoPro CSP, a signing service). Optional fields (`signerName`, `reason`, `location`, `contactInfo`,
  * `signedAt`) populate the signature dictionary per §12.8.1, and the
  * placeholders of the signature stamp.
  *
@@ -72,7 +76,7 @@ final readonly class SignatureConfig
         public ?string $contactInfo = null,
         public ?\DateTimeImmutable $signedAt = null,
         public ?string $fieldName = null,
-        ?Signer $signer = null,
+        Signer|CmsSigner|null $signer = null,
         public SubFilter $subFilter = SubFilter::CadesDetached,
         public ?TsaClient $timestampAuthority = null,
         public array|string $certificateChainPem = [],
@@ -85,6 +89,8 @@ final readonly class SignatureConfig
                 throw new \InvalidArgumentException('SignatureConfig needs a Signer, or certPem and privateKeyPem');
             }
             $signer = new OpenSslSigner($certPem, $privateKeyPem, $privateKeyPassphrase, $certificateChainPem);
+        } elseif ($signer instanceof CmsSigner) {
+            $signer = new CmsSignerKey($signer);
         }
         $this->signer = $signer;
         if ($contentsReserveBytes !== null && $contentsReserveBytes < 1024) {
@@ -149,7 +155,7 @@ final readonly class SignatureConfig
         // An RSA signature is as long as the modulus; EC and GOST are smaller.
         $signature = max(512, $certificate !== null ? intdiv($certificate->keyBits(), 8) * 2 : 0);
         $timestamp = $this->timestampAuthority !== null ? self::TIMESTAMP_RESERVE : 0;
-        $slack = $this->signer instanceof ExternalSigner ? self::EXTERNAL_SLACK : 0;
+        $slack = $this->signer instanceof ExternalSigner || $this->signer instanceof CmsSignerKey ? self::EXTERNAL_SLACK : 0;
 
         return $certificates + $signature + $timestamp + self::CMS_OVERHEAD + $slack;
     }
@@ -175,6 +181,11 @@ final readonly class SignatureConfig
     {
         if ($this->signer instanceof ExternalSigner) {
             throw new \LogicException('The key is outside this process: use prepareSignature() and PreparedSignature::complete()');
+        }
+        if ($this->signer instanceof CmsSignerKey) {
+            $cms = $this->signer->cmsSigner->signCms($data, $this->signer->digestAlgorithm()->digest($data));
+
+            return OutsideCms::accept($cms, $data, $this->signer->certificate(), $this->signer->chain(), $this->timestampAuthority, true, 'the CmsSigner');
         }
         $builder = new CmsBuilder(
             $this->signer->certificate(),

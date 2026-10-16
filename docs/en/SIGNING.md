@@ -15,6 +15,7 @@ code, filled in from the certificate when the document is signed.
 - [Timestamp](#timestamp)
 - [GOST R 34.10-2012](#gost-r-3410-2012)
 - [Signature size](#signature-size)
+- [Keys behind CMS software](#keys-behind-cms-software)
 - [Signing outside the server](#signing-outside-the-server)
 - [Signing an existing PDF](#signing-an-existing-pdf)
 - [Certification and locked fields](#certification-and-locked-fields)
@@ -142,6 +143,43 @@ library estimates it from the certificates, the key size and whether a
 timestamp is asked for. If a signer embeds more than expected, signing
 fails with a message giving the size needed; set `contentsReserveBytes`
 to override the estimate.
+
+## Keys behind CMS software
+
+Some keys are reachable only through software that returns a whole CMS
+rather than a bare signature value: CryptoPro CSP on the server
+(`CadesSignedData.SignHash`, `cryptcp`), a signing service, an HSM front
+end. Implement `CmsSigner` and sign in one call, as with a key in the
+process — no preparing and completing by hand:
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\Signer\{Certificate, CmsSigner, DigestAlgorithm};
+
+final class CryptcpSigner implements CmsSigner
+{
+    public function __construct(private string $certificatePem, private string $thumbprint) {}
+
+    public function certificate(): Certificate { return Certificate::fromPem($this->certificatePem); }
+    public function chain(): array { return []; }
+    public function digestAlgorithm(): DigestAlgorithm { return DigestAlgorithm::defaultFor($this->certificate()); }
+
+    public function signCms(string $content, string $digest): string
+    {
+        // Run the signing tool or the CSP API, return the CMS
+    }
+}
+
+$doc->sign(new SignatureConfig(signer: new CryptcpSigner($certPem, $thumbprint)));
+```
+
+`signCms()` gets the bytes the signature covers and their hash by
+`digestAlgorithm()`; it returns a CMS SignedData in DER or BER, detached or
+attached. Before embedding it the library checks it as `complete()` does
+(below): it covers exactly this document, it was made with `certificate()`,
+its signature verifies; certificates it lacks are added from `chain()`, and
+a `timestampAuthority` in the config timestamps it. The certificate goes on
+the stamp. It works with `Pdf\Document::sign()`, a laid-out document's
+`signature:` and `PdfSigner::sign()`.
 
 ## Signing outside the server
 
