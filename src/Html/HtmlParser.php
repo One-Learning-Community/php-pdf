@@ -739,8 +739,20 @@ final class HtmlParser
             $block instanceof Paragraph => new Paragraph($block->children, $this->styleCopy($block->style, indentLeft: $block->style->indentLeftPt + $left, indentRight: $block->style->indentRightPt + $right), $block->headingLevel, $block->defaultRunStyle),
             $block instanceof Heading => new Heading($block->level, $block->children, $this->styleCopy($block->style ?? new ParagraphStyle, indentLeft: ($block->style ?? new ParagraphStyle)->indentLeftPt + $left, indentRight: ($block->style ?? new ParagraphStyle)->indentRightPt + $right), $block->anchor),
             $block instanceof Table => new Table($block->rows, $block->style->copy(indentLeftPt: $block->style->indentLeftPt + $left, indentRightPt: $block->style->indentRightPt + $right), $block->columnWidthsPt, $block->caption),
+            $block instanceof Image => $this->image($block, indentLeft: $block->indentLeftPt + $left, indentRight: $block->indentRightPt + $right),
             default => $block,
         };
+    }
+
+    /** A copy of an image with some of its placement changed. */
+    private function image(Image $i, ?float $spaceBefore = null, ?float $spaceAfter = null, ?float $indentLeft = null, ?float $indentRight = null): Image
+    {
+        return new Image(
+            $i->source, $i->widthPt, $i->heightPt, $i->alignment,
+            $spaceBefore ?? $i->spaceBeforePt, $spaceAfter ?? $i->spaceAfterPt,
+            $i->altText, $i->outOfFlow, $i->widthPercent,
+            $indentLeft ?? $i->indentLeftPt, $indentRight ?? $i->indentRightPt,
+        );
     }
 
     private function addSpace(BlockElement $block, float $before, float $after): BlockElement
@@ -750,7 +762,7 @@ final class HtmlParser
             $block instanceof Heading => new Heading($block->level, $block->children, $this->styleCopy($block->style ?? new ParagraphStyle, spaceBefore: ($block->style ?? new ParagraphStyle)->spaceBeforePt + $before, spaceAfter: ($block->style ?? new ParagraphStyle)->spaceAfterPt + $after), $block->anchor),
             $block instanceof Table => new Table($block->rows, $block->style->copy(spaceBeforePt: $block->style->spaceBeforePt + $before, spaceAfterPt: $block->style->spaceAfterPt + $after), $block->columnWidthsPt, $block->caption),
             $block instanceof ListNode => new ListNode($block->items, $block->format, $block->startAt, $block->spaceBeforePt + $before, $block->spaceAfterPt + $after),
-            $block instanceof Image => new Image($block->source, $block->widthPt, $block->heightPt, $block->alignment, $block->spaceBeforePt + $before, $block->spaceAfterPt + $after, $block->altText, $block->outOfFlow, $block->widthPercent),
+            $block instanceof Image => $this->image($block, spaceBefore: $block->spaceBeforePt + $before, spaceAfter: $block->spaceAfterPt + $after),
             default => $block,
         };
     }
