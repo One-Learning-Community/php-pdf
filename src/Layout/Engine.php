@@ -3114,12 +3114,16 @@ final class Engine
             $boxH = $insetTop + $insetBottom
                 + $this->measureParagraphLines($p, $ctx->contentWidth - $insetLeft - $insetRight);
             $boxBottom = $ctx->cursorY - $boxH;
+            // The box sits inside the paragraph's left/right indents (its
+            // margins, in CSS terms); the lines are indented inside it.
+            $boxX = $ctx->leftX + $p->style->indentLeftPt;
+            $boxW = $ctx->contentWidth - $p->style->indentLeftPt - $p->style->indentRightPt;
             if ($p->style->backgroundColor !== null) {
                 [$r, $g, $b] = $this->hexToRgb($p->style->backgroundColor);
-                $ctx->currentPage->fillRect($ctx->leftX, $boxBottom, $ctx->contentWidth, $boxH, $r, $g, $b);
+                $ctx->currentPage->fillRect($boxX, $boxBottom, $boxW, $boxH, $r, $g, $b);
             }
             if ($p->style->borders !== null) {
-                $this->drawBoxBorders($ctx->currentPage, $ctx->leftX, $boxBottom, $ctx->contentWidth, $boxH, $p->style->borders);
+                $this->drawBoxBorders($ctx->currentPage, $boxX, $boxBottom, $boxW, $boxH, $p->style->borders);
             }
             $ctx->cursorY -= $insetTop;
             $ctx->leftX += $insetLeft;

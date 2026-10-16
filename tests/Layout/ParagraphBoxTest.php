@@ -99,4 +99,27 @@ final class ParagraphBoxTest extends TestCase
 
         self::assertSame([], PdfGeometry::rects($pdf));
     }
+
+    #[Test]
+    public function the_box_stays_inside_the_paragraph_indents(): void
+    {
+        // An HTML container's padding reaches its paragraphs as indents: the
+        // bottom rule of `.lead` must be as wide as the table under it, not
+        // the whole content area.
+        $pdf = self::render([self::boxed('Indented', new ParagraphStyle(
+            indentLeftPt: 30, indentRightPt: 40,
+            borders: new BorderSet(bottom: new Border(BorderStyle::Single, 8, '0000ff')),
+            backgroundColor: 'eeeeee',
+        ))]);
+
+        $plain = self::render([new Paragraph([new Run('Indented')])]);
+        $left = PdfGeometry::word($plain, 'Indented')['xMin'];
+        $fill = PdfGeometry::fills($pdf, 'eeeeee')[0];
+        $rule = array_values(array_filter(PdfGeometry::rects($pdf), static fn (array $r): bool => ! $r['fill'] && $r['color'] === '0000ff'))[0];
+
+        self::assertEqualsWithDelta($left + 30, $fill['x'], 0.5);
+        self::assertEqualsWithDelta($fill['x'], $rule['x'], 0.5);
+        self::assertEqualsWithDelta($fill['w'], $rule['w'], 0.5);
+        self::assertEqualsWithDelta($left + 30, PdfGeometry::word($pdf, 'Indented')['xMin'], 0.5);
+    }
 }

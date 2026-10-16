@@ -49,7 +49,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A paragraph's padding was left out of its measured height, so in a
   table cell the next row was drawn over the paragraph's background.
   Padding and border now count in the measured height.
-- `ParagraphStyle::$borders` were parsed from HTML but never drawn.
+- `ParagraphStyle::$borders` were parsed from HTML but never drawn. The
+  paragraph's background and border now stay inside its left/right
+  indents (an HTML container's padding).
 - A heading inside a table cell measured zero height; a heading's runs
   lost their own font size to the level's default.
 - HTML: the cells of the row after a `rowspan` slid under the merged
