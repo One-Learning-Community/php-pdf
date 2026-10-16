@@ -91,54 +91,6 @@ parameters:
 			path: src/Font/Ttf/VariableInstance.php
 
 		-
-			message: '#^Parameter \#1 \$node of method Dskripchenko\\PhpPdf\\Html\\HtmlParser\:\:parseBlock\(\) expects DOMElement, DOMNode given\.$#'
-			identifier: argument.type
-			count: 2
-			path: src/Html/HtmlParser.php
-
-		-
-			message: '#^Parameter \#1 \$node of method Dskripchenko\\PhpPdf\\Html\\HtmlParser\:\:parseDefinitionListItems\(\) expects DOMElement, DOMNode given\.$#'
-			identifier: argument.type
-			count: 1
-			path: src/Html/HtmlParser.php
-
-		-
-			message: '#^Parameter \#1 \$node of method Dskripchenko\\PhpPdf\\Html\\HtmlParser\:\:parseDetails\(\) expects DOMElement, DOMNode given\.$#'
-			identifier: argument.type
-			count: 1
-			path: src/Html/HtmlParser.php
-
-		-
-			message: '#^Parameter \#1 \$node of method Dskripchenko\\PhpPdf\\Html\\HtmlParser\:\:parseImage\(\) expects DOMElement, DOMNode given\.$#'
-			identifier: argument.type
-			count: 1
-			path: src/Html/HtmlParser.php
-
-		-
-			message: '#^Parameter \#1 \$node of method Dskripchenko\\PhpPdf\\Html\\HtmlParser\:\:parseInlineSvg\(\) expects DOMElement, DOMNode given\.$#'
-			identifier: argument.type
-			count: 1
-			path: src/Html/HtmlParser.php
-
-		-
-			message: '#^Parameter \#1 \$node of method Dskripchenko\\PhpPdf\\Html\\HtmlParser\:\:parseParagraph\(\) expects DOMElement, DOMNode given\.$#'
-			identifier: argument.type
-			count: 1
-			path: src/Html/HtmlParser.php
-
-		-
-			message: '#^Parameter \#1 \$node of method Dskripchenko\\PhpPdf\\Html\\HtmlParser\:\:parseTable\(\) expects DOMElement, DOMNode given\.$#'
-			identifier: argument.type
-			count: 1
-			path: src/Html/HtmlParser.php
-
-		-
-			message: '#^Parameter \#1 \$tableNode of method Dskripchenko\\PhpPdf\\Html\\HtmlParser\:\:extractTableCaption\(\) expects DOMElement, DOMNode given\.$#'
-			identifier: argument.type
-			count: 1
-			path: src/Html/HtmlParser.php
-
-		-
 			message: '#^Comparison operation "\>" between 0 and 0 is always false\.$#'
 			identifier: greater.alwaysFalse
 			count: 1

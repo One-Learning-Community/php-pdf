@@ -4,6 +4,66 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- HTML input reads CSS as a browser does. `<style>` blocks with the
+  cascade (type, class, id, attribute selectors, `:first-child`,
+  `:last-child`, `:nth-child()`, `:not()`, descendant / `>` / `+` / `~`,
+  specificity, `!important`), `@media print` applied and `@media screen`
+  skipped, `@page` size and margins for `Document::fromHtml()`. No CSS
+  inliner is needed any more.
+- Inheritance: `color`, `font-*`, `text-decoration`, `text-transform`,
+  `letter-spacing`, `text-align`, `line-height`, `text-indent`,
+  `white-space` set on `body`, a `div` or a `td` reach the text inside.
+  `em` and `%` refer to the current font size (`$baseFontSizePt` of
+  `Document::fromHtml()` / `HtmlParser` where none is set).
+- HTML tables: `style` on `<td>`/`<th>` (border, background, padding,
+  vertical-align, width, height), on `<tr>` (height, `break-inside:
+  avoid`) and on `<table>` (width, `table-layout`, border-collapse,
+  border-spacing, border, margin, `auto` centring); `<col>` widths; the
+  `border`, `cellpadding`, `cellspacing`, `width`, `align`, `bgcolor`,
+  `valign` attributes; `<thead>` rows repeat on every page.
+- Containers: a `div` (or `section`, …) holding blocks keeps them as
+  blocks — its margin and padding space and indent them, a background or
+  border draws a box. `display: flex` lays children out side by side;
+  `display: none` hides.
+- `page-break-before` / `-after` (and `break-*`) in HTML; `white-space:
+  pre / pre-wrap / pre-line`; `line-height` as a length; `font-weight:
+  normal`, `font-style: normal`, `text-decoration: none` switch inherited
+  values off; `vertical-align: super / sub` on spans; images sized and
+  centred from CSS (`width: 100%`, `display: block; margin: auto`).
+- Layout: `rowSpan` — a cell merged down holds its columns in the rows
+  below, spans their height (a taller one grows the last row), and the
+  rows it binds move to the next page together.
+- Layout: `CellStyle::$widthPt` / `$widthPercent` set the column width
+  when the table has no `columnWidthsPt`; `TableStyle::$autoLayout` sizes
+  columns by their content; `TableStyle::$indentLeftPt` / `$indentRightPt`;
+  `TableStyle::$borders` is drawn around the table (on each page it
+  spans); `Row::$minHeightPt`, `Row::$cantSplit`, `CellStyle::$minHeightPt`;
+  `Image::$widthPercent`.
+- Layout: `RunStyle::$backgroundColor` and `$highlight` are painted under
+  the text.
+
+### Fixed
+- A paragraph's padding was left out of its measured height, so in a
+  table cell the next row was drawn over the paragraph's background.
+  Padding and border now count in the measured height.
+- `ParagraphStyle::$borders` were parsed from HTML but never drawn.
+- A heading inside a table cell measured zero height; a heading's runs
+  lost their own font size to the level's default.
+- HTML: the cells of the row after a `rowspan` slid under the merged
+  cell; `&nbsp;` was collapsed into a plain space; a link dropped the
+  size, font and weight around it; whitespace at the start of a block was
+  shown as an indent.
+
+### Changed
+- HTML tables have no 6pt space after them unless the CSS sets a
+  `margin-bottom`, and size their columns by content (`table-layout:
+  auto`) unless `table-layout: fixed` is set — as browsers do. Tables
+  built in PHP keep equal columns and the 6pt default.
+- `<pre>` keeps its spaces and line breaks.
+
 ## [1.18.0] — 2026-10-16
 
 ### Added

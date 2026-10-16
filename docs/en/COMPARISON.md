@@ -36,10 +36,10 @@ publishing your own.
 | Fluent builders (Document → Section)   | ✅      | ❌   | ❌    | ❌     | ❌   |
 | HTML/CSS input                         | ✅      | ✅   | ⚠️ basic | ✅  | ❌   |
 | Inline `style` attributes              | ✅      | ✅   | ⚠️    | ✅     | ❌   |
-| `<style>` blocks / external CSS        | ❌      | ✅   | ⚠️    | ✅     | ❌   |
+| `<style>` blocks / external CSS        | ⚠️ `<style>` only | ✅   | ⚠️    | ✅     | ❌   |
 | Float layout                           | ❌      | ✅   | ⚠️    | ✅     | ❌   |
 
-For complex HTML or CSS (Flexbox, multi-column, `@media`, floats),
+For complex HTML or CSS (floats, positioning, grid, external stylesheets),
 `dompdf` and `mpdf` go further. For business documents (paragraphs,
 tables, lists, inline styling, headings), `php-pdf` is on par with
 better performance.
@@ -195,7 +195,7 @@ built in and MIT-licensed, with no proprietary add-on.
 ### Choose **mpdf/mpdf** when
 - You already have it in your stack and migration cost isn't justified.
 - Your project is GPL-compatible.
-- You need richer CSS coverage (Flexbox, `@media`, complex selectors).
+- You need richer CSS coverage (floats, positioning, external stylesheets).
 - You prefer mpdf's documentation and Stack Overflow corpus.
 
 ### Choose **tecnickcom/tcpdf** when

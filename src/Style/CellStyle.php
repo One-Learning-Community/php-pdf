@@ -28,6 +28,8 @@ final readonly class CellStyle
         public ?string $backgroundColor = null,
         public ?BorderSet $borders = null,
         public float $cornerRadiusPt = 0,
+        /** The cell is at least this tall, padding included (CSS `height`). */
+        public ?float $minHeightPt = null,
     ) {}
 
     public function withPadding(float $pt): self
@@ -71,6 +73,7 @@ final readonly class CellStyle
         ?string $backgroundColor = null,
         ?BorderSet $borders = null,
         ?float $cornerRadiusPt = null,
+        ?float $minHeightPt = null,
     ): self {
         return new self(
             widthPt: $widthPt ?? $this->widthPt,
@@ -83,6 +86,7 @@ final readonly class CellStyle
             backgroundColor: $backgroundColor ?? $this->backgroundColor,
             borders: $borders ?? $this->borders,
             cornerRadiusPt: $cornerRadiusPt ?? $this->cornerRadiusPt,
+            minHeightPt: $minHeightPt ?? $this->minHeightPt,
         );
     }
 }

@@ -96,27 +96,17 @@ final readonly class Document
     /**
      * Parse HTML markup and wrap it in a Document.
      *
-     * Supported HTML5 subset:
-     *  - Block tags: p, div, section, article, h1-h6, hr, ul/ol/li,
-     *    table/tr/td/th (with thead/tbody/tfoot wrappers), blockquote, pre,
-     *    header, footer, nav, aside, main, figure, figcaption, address,
-     *    details/summary, dl/dt/dd, center
-     *  - Inline tags: span, b/strong, i/em, u, s/strike/del, sup/sub, br,
-     *    wbr, img, picture, a, font, svg, code, kbd, samp, tt, var, mark,
-     *    small, big, ins, cite, dfn, q, abbr
-     *  - Inline CSS via the `style` attribute: color, background-color,
-     *    font-size, font-family, font-weight, font-style, text-decoration,
-     *    text-transform, letter-spacing
-     *  - Block CSS: text-align, margin, padding, line-height, text-indent,
-     *    border (shorthand and per-side)
-     *
-     * Not supported: external CSS, `<style>` blocks, complex selectors,
-     * `@media` queries, JavaScript, forms, absolute/floats. Preprocess via
-     * an external CSS inliner (e.g. tijsverkoyen/css-to-inline-styles) to
-     * convert `<style>` blocks to inline before parsing.
+     * The HTML may be a whole document with `<style>` blocks: the cascade,
+     * inheritance, tables, containers and page breaks are described on
+     * {@see \Dskripchenko\PhpPdf\Html\HtmlParser}. The page comes from the
+     * stylesheet's `@page` rule (size, margins) unless `$sectionTemplate`
+     * is given — the template's page setup, headers and footers win.
      *
      * @param  string  $html  HTML markup. No outer `<html>/<body>` wrapper required.
      * @param  array<string, string>  $metadata  Optional /Info fields.
+     * @param  float  $baseFontSizePt  What `em`, `rem` and `%` refer to where no
+     *                                 element sets a size; pass the engine's
+     *                                 `defaultFontSizePt`.
      */
     public static function fromHtml(
         string $html,
@@ -130,8 +120,9 @@ final readonly class Document
         ?EncryptionParams $encryption = null,
         ?\Dskripchenko\PhpPdf\Pdf\SignatureConfig $signature = null,
         ?\Dskripchenko\PhpPdf\Pdf\PdfAConfig $pdfA = null,
+        float $baseFontSizePt = 12.0,
     ): self {
-        $parser = new \Dskripchenko\PhpPdf\Html\HtmlParser;
+        $parser = new \Dskripchenko\PhpPdf\Html\HtmlParser($baseFontSizePt);
         $blocks = $parser->parse($html);
 
         if ($sectionTemplate !== null) {
@@ -151,7 +142,8 @@ final readonly class Document
                 watermarkTextOpacity: $sectionTemplate->watermarkTextOpacity,
             );
         } else {
-            $section = new Section($blocks);
+            $pageSetup = $parser->pageSetup();
+            $section = $pageSetup !== null ? new Section($blocks, $pageSetup) : new Section($blocks);
         }
 
         return new self(

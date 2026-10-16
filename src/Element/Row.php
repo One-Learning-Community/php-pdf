@@ -20,5 +20,9 @@ final readonly class Row
         public array $cells,
         public bool $isHeader = false,
         public ?float $heightPt = null,
+        /** At least this tall (CSS `height` on a row or cell); `heightPt` is exact. */
+        public ?float $minHeightPt = null,
+        /** Never split across pages (CSS `break-inside: avoid`). */
+        public bool $cantSplit = false,
     ) {}
 }

@@ -282,34 +282,59 @@ $doc->toFile('report.pdf');
   `<header>`, `<footer>`, `<nav>`, `<aside>`, `<main>`, `<figure>`,
   `<figcaption>`, `<hr>`, `<ul>` / `<ol>` / `<li>`, `<table>` /
   `<thead>` / `<tbody>` / `<tfoot>` / `<tr>` / `<td>` / `<th>` /
-  `<caption>`, `<blockquote>`, `<pre>`, `<dl>` / `<dt>` / `<dd>`.
+  `<caption>` / `<colgroup>` / `<col>`, `<blockquote>`, `<pre>`,
+  `<dl>` / `<dt>` / `<dd>`; auch ein ganzes Dokument (`<html>`,
+  `<head>`, `<body>`).
 - Inline: `<b>` / `<strong>`, `<i>` / `<em>`, `<u>`, `<s>` / `<del>`,
   `<sup>` / `<sub>`, `<br>`, `<img>`, `<a>`, `<span>`, `<code>`,
   `<kbd>`, `<samp>`, `<tt>`, `<var>`, `<mark>`, `<small>`, `<big>`,
   `<ins>`, `<cite>`, `<dfn>`, `<q>`, `<abbr>`.
-- Legacy: `<center>`, `<font color face size>`.
+- Veraltet: `<center>`, `<font color face size>`, Tabellenattribute
+  `border`, `cellpadding`, `cellspacing`, `width`, `align`, `bgcolor`,
+  `valign`.
 
-**Unterstütztes Inline-CSS (`style`-Attribut):**
+**CSS** — aus `<style>`-Blöcken und `style`-Attributen, mit Kaskade:
 
-- `color`, `background-color` — hex `#rrggbb` / `#rgb`, `rgb()`, 21
-  benannte Farben.
-- `font-size` (pt, px, em, mm, cm, in), `font-family` (erster Wert
-  aus der Komma-Liste), `font-weight` (`bold`, `bolder`, 700+),
-  `font-style: italic`.
-- `text-decoration` (`underline`, `line-through`), `text-transform`
-  (`uppercase`, `lowercase`, `capitalize`), `text-align`,
-  `text-indent`.
-- `margin`, `padding` Kurzschreibweise (1/2/3/4 Werte), `border`
-  Kurzschreibweise (`solid`, `double`, `dashed`, `dotted`, `none` +
-  Breite + Farbe).
-- `line-height` (Multiplikator oder Prozent).
+- Selektoren: Typ, `.class`, `#id`, `*`, `[attr]` / `[attr=value]`,
+  `:first-child`, `:last-child`, `:only-child`, `:nth-child()`, `:not()`,
+  Nachfahre, `>`, `+`, `~`; Spezifität, `!important`. `@media print` und
+  `all` gelten, `@media screen` wird übersprungen.
+- Vererbt wie im Browser: `color`, `font-*`, `text-decoration`,
+  `text-transform`, `letter-spacing`, `text-align`, `line-height`,
+  `text-indent`, `white-space` — auf `body`, einem `div` oder `td`
+  gesetzt, erreichen sie den Text darin.
+- Text: `color`, `background-color` (unter dem Text gemalt),
+  `font-size` (pt, px, mm, cm, in, em, rem, %, Schlüsselwörter),
+  `font-family`, `font-weight` (`normal` schaltet Fett ab),
+  `font-style`, `text-decoration`, `text-transform`, `letter-spacing`,
+  `vertical-align: super / sub`, `white-space` (`pre`, `pre-wrap`,
+  `pre-line`, `nowrap`). `&nbsp;` bleibt erhalten.
+- Blöcke: `margin`, `padding`, `border` (Kurzform, je Seite, `-width`,
+  `-style`, `-color`), `background-color`, `text-align`, `line-height`
+  (Faktor, %, Länge), `text-indent`, `display: none / block / flex`.
+- Container: ein `div` (`section`, …) mit Blöcken behält sie als Blöcke;
+  Margin und Padding rücken sie ein und ab, Hintergrund oder Rahmen
+  zeichnen einen Kasten darum. `display: flex` stellt die Kinder
+  nebeneinander (`gap`, `width` / `flex-basis`, `align-items`).
+- Tabellen: `width`, `table-layout` (`auto` bemisst Spalten nach Inhalt
+  wie Browser), `border-collapse`, `border-spacing`, `border`, `margin`
+  (`auto` zentriert); `<col>`-Breiten; Zellen: `border`,
+  `background-color`, `padding`, `vertical-align`, `width`, `height`,
+  `colspan`, `rowspan`; Zeilen: `height`, `break-inside: avoid`.
+  `<thead>`-Zeilen wiederholen sich auf jeder Seite.
+- Bilder: `width` / `height` (`%` der Zeile), `display: block` mit
+  `margin: auto` zentriert.
+- Seiten: `page-break-before` / `-after` (`break-before` / `-after`);
+  `@page { size; margin }` legt die Seite von `Document::fromHtml()`
+  fest, sofern kein `$sectionTemplate` übergeben wird.
 
-**Nicht unterstützt:** externes CSS (`<link rel="stylesheet">`),
-`<style>`-Blöcke, komplexe Selektoren, `@media`, JavaScript, Floats,
-`position: absolute / fixed`, Flexbox.
+`em` und `%` beziehen sich auf die aktuelle Schriftgröße; wo keine
+gesetzt ist, auf `$baseFontSizePt` von `Document::fromHtml()`
+(Standard 12) — übergeben Sie dort die `defaultFontSizePt` der Engine.
 
-Für `<style>`-/Klassenunterstützung HTML zuvor durch einen externen
-Inliner (z. B. `pelago/emogrifier`) verarbeiten.
+**Nicht unterstützt:** externe Stylesheets (`<link rel="stylesheet">`),
+`position`, Floats, Grid, `::before` / `::after`, `:hover` und andere
+dynamische Pseudoklassen, Formulare, JavaScript.
 
 ---
 

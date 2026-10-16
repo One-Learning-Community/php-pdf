@@ -270,33 +270,53 @@ $doc->toFile('report.pdf');
   `<header>`、`<footer>`、`<nav>`、`<aside>`、`<main>`、`<figure>`、
   `<figcaption>`、`<hr>`、`<ul>` / `<ol>` / `<li>`、`<table>` /
   `<thead>` / `<tbody>` / `<tfoot>` / `<tr>` / `<td>` / `<th>` /
-  `<caption>`、`<blockquote>`、`<pre>`、`<dl>` / `<dt>` / `<dd>`。
+  `<caption>` / `<colgroup>` / `<col>`、`<blockquote>`、`<pre>`、
+  `<dl>` / `<dt>` / `<dd>`；也可以传入完整文档（`<html>`、`<head>`、`<body>`）。
 - 行内：`<b>` / `<strong>`、`<i>` / `<em>`、`<u>`、`<s>` / `<del>`、
   `<sup>` / `<sub>`、`<br>`、`<img>`、`<a>`、`<span>`、`<code>`、
   `<kbd>`、`<samp>`、`<tt>`、`<var>`、`<mark>`、`<small>`、`<big>`、
   `<ins>`、`<cite>`、`<dfn>`、`<q>`、`<abbr>`。
-- 历史遗留：`<center>`、`<font color face size>`。
+- 旧式：`<center>`、`<font color face size>`，表格属性 `border`、
+  `cellpadding`、`cellspacing`、`width`、`align`、`bgcolor`、`valign`。
 
-**支持的行内 CSS（`style` 属性）：**
+**CSS**——来自 `<style>` 块和 `style` 属性，支持层叠：
 
-- `color`、`background-color` —— hex `#rrggbb` / `#rgb`、`rgb()`、
-  21 个具名颜色。
-- `font-size`（pt、px、em、mm、cm、in）、`font-family`（取逗号分隔
-  列表中的第一个值）、`font-weight`（`bold`、`bolder`、700+）、
-  `font-style: italic`。
-- `text-decoration`（`underline`、`line-through`）、`text-transform`
-  （`uppercase`、`lowercase`、`capitalize`）、`text-align`、
-  `text-indent`。
-- `margin`、`padding` 简写（1/2/3/4 个值）、`border` 简写
-  （`solid`、`double`、`dashed`、`dotted`、`none` + 宽度 + 颜色）。
-- `line-height`（倍数或百分比）。
+- 选择器：类型、`.class`、`#id`、`*`、`[attr]` / `[attr=value]`、
+  `:first-child`、`:last-child`、`:only-child`、`:nth-child()`、`:not()`，
+  后代、`>`、`+`、`~`；优先级、`!important`。`@media print` 和 `all`
+  生效，`@media screen` 跳过。
+- 与浏览器一样继承：`color`、`font-*`、`text-decoration`、
+  `text-transform`、`letter-spacing`、`text-align`、`line-height`、
+  `text-indent`、`white-space`——设置在 `body`、`div` 或 `td` 上，
+  会作用到其中的文字。
+- 文字：`color`、`background-color`（绘制在文字下方）、`font-size`
+  （pt、px、mm、cm、in、em、rem、%、关键字）、`font-family`、
+  `font-weight`（`normal` 取消加粗）、`font-style`、`text-decoration`、
+  `text-transform`、`letter-spacing`、`vertical-align: super / sub`、
+  `white-space`（`pre`、`pre-wrap`、`pre-line`、`nowrap`）。`&nbsp;` 会保留。
+- 块：`margin`、`padding`、`border`（简写、按边、`-width`、`-style`、
+  `-color`）、`background-color`、`text-align`、`line-height`（倍数、%、
+  长度）、`text-indent`、`display: none / block / flex`。
+- 容器：包含块元素的 `div`（`section` 等）保留其中的块；其 margin 和
+  padding 形成间距与缩进，背景或边框会在外面画出框。`display: flex`
+  让子元素并排（`gap`、`width` / `flex-basis`、`align-items`）。
+- 表格：`width`、`table-layout`（`auto` 像浏览器一样按内容确定列宽）、
+  `border-collapse`、`border-spacing`、`border`、`margin`（`auto` 居中）；
+  `<col>` 宽度；单元格：`border`、`background-color`、`padding`、
+  `vertical-align`、`width`、`height`、`colspan`、`rowspan`；行：
+  `height`、`break-inside: avoid`。`<thead>` 行在每一页重复。
+- 图片：`width` / `height`（`%` 相对于行宽），`display: block` 配合
+  `margin: auto` 居中。
+- 分页：`page-break-before` / `-after`（`break-before` / `-after`）；
+  未传入 `$sectionTemplate` 时，`@page { size; margin }` 决定
+  `Document::fromHtml()` 的页面。
 
-**不支持：** 外部 CSS（`<link rel="stylesheet">`）、`<style>`
-块、复杂选择器、`@media`、JavaScript、浮动、
-`position: absolute / fixed`、Flexbox。
+`em` 和 `%` 相对于当前字号；若没有任何元素设置字号，则相对于
+`Document::fromHtml()` 的 `$baseFontSizePt`（默认 12）——请把引擎的
+`defaultFontSizePt` 传给它。
 
-如需 `<style>` / class 支持，请通过外部内联工具
-（例如 `pelago/emogrifier`）预处理 HTML。
+**不支持：** 外部样式表（`<link rel="stylesheet">`）、`position`、浮动、
+grid、`::before` / `::after`、`:hover` 等动态伪类、表单、JavaScript。
 
 ---
 

@@ -283,34 +283,61 @@ $doc->toFile('report.pdf');
   `<header>`, `<footer>`, `<nav>`, `<aside>`, `<main>`, `<figure>`,
   `<figcaption>`, `<hr>`, `<ul>` / `<ol>` / `<li>`, `<table>` /
   `<thead>` / `<tbody>` / `<tfoot>` / `<tr>` / `<td>` / `<th>` /
-  `<caption>`, `<blockquote>`, `<pre>`, `<dl>` / `<dt>` / `<dd>`.
+  `<caption>` / `<colgroup>` / `<col>`, `<blockquote>`, `<pre>`,
+  `<dl>` / `<dt>` / `<dd>`; можно передать весь документ (`<html>`,
+  `<head>`, `<body>`).
 - Строчные: `<b>` / `<strong>`, `<i>` / `<em>`, `<u>`, `<s>` / `<del>`,
   `<sup>` / `<sub>`, `<br>`, `<img>`, `<a>`, `<span>`, `<code>`,
   `<kbd>`, `<samp>`, `<tt>`, `<var>`, `<mark>`, `<small>`, `<big>`,
   `<ins>`, `<cite>`, `<dfn>`, `<q>`, `<abbr>`.
-- Устаревшие: `<center>`, `<font color face size>`.
+- Устаревшие: `<center>`, `<font color face size>`, атрибуты таблиц
+  `border`, `cellpadding`, `cellspacing`, `width`, `align`, `bgcolor`,
+  `valign`.
 
-**Поддерживаемый инлайн-CSS (атрибут `style`):**
+**CSS** — из блоков `<style>` и атрибутов `style`, с каскадом:
 
-- `color`, `background-color` — hex `#rrggbb` / `#rgb`, `rgb()`, 21
-  именованный цвет.
-- `font-size` (pt, px, em, mm, cm, in), `font-family` (первое значение
-  из списка через запятую), `font-weight` (`bold`, `bolder`, 700+),
-  `font-style: italic`.
-- `text-decoration` (`underline`, `line-through`), `text-transform`
-  (`uppercase`, `lowercase`, `capitalize`), `text-align`,
-  `text-indent`.
-- Сокращения `margin`, `padding` (1/2/3/4 значения), сокращение
-  `border` (`solid`, `double`, `dashed`, `dotted`, `none` + ширина +
-  цвет).
-- `line-height` (множитель или процент).
+- Селекторы: тег, `.class`, `#id`, `*`, `[attr]` / `[attr=value]`,
+  `:first-child`, `:last-child`, `:only-child`, `:nth-child()`, `:not()`,
+  потомок, `>`, `+`, `~`; специфичность, `!important`. `@media print` и
+  `all` применяются, `@media screen` пропускается.
+- Наследуются, как в браузере: `color`, `font-*`, `text-decoration`,
+  `text-transform`, `letter-spacing`, `text-align`, `line-height`,
+  `text-indent`, `white-space` — заданные на `body`, `div` или `td`,
+  они доходят до текста внутри.
+- Текст: `color`, `background-color` (подложка под текстом),
+  `font-size` (pt, px, mm, cm, in, em, rem, %, ключевые слова),
+  `font-family`, `font-weight` (`normal` снимает жирность),
+  `font-style`, `text-decoration`, `text-transform`, `letter-spacing`,
+  `vertical-align: super / sub`, `white-space` (`pre`, `pre-wrap`,
+  `pre-line`, `nowrap`). `&nbsp;` сохраняется.
+- Блоки: `margin`, `padding`, `border` (сокращение, по сторонам,
+  `-width`, `-style`, `-color`), `background-color`, `text-align`,
+  `line-height` (множитель, %, длина), `text-indent`,
+  `display: none / block / flex`.
+- Контейнеры: `div` (`section`, …) с блоками внутри оставляет их
+  блоками; его margin и padding дают отступы, фон или рамка — коробку
+  вокруг. `display: flex` ставит детей в ряд (`gap`, `width` /
+  `flex-basis`, `align-items`).
+- Таблицы: `width`, `table-layout` (`auto` подбирает колонки по
+  содержимому, как браузер), `border-collapse`, `border-spacing`,
+  `border`, `margin` (`auto` центрирует); ширины `<col>`; ячейки:
+  `border`, `background-color`, `padding`, `vertical-align`, `width`,
+  `height`, `colspan`, `rowspan`; строки: `height`,
+  `break-inside: avoid`. Строки `<thead>` повторяются на каждой
+  странице.
+- Картинки: `width` / `height` (`%` от строки), `display: block` с
+  `margin: auto` центрирует.
+- Страницы: `page-break-before` / `-after` (`break-before` / `-after`);
+  `@page { size; margin }` задаёт страницу `Document::fromHtml()`, если
+  не передан `$sectionTemplate`.
 
-**Не поддерживается:** внешний CSS (`<link rel="stylesheet">`), блоки
-`<style>`, сложные селекторы, `@media`, JavaScript, обтекание,
-`position: absolute / fixed`, Flexbox.
+`em` и `%` считаются от текущего размера шрифта; там, где его никто не
+задал, — от `$baseFontSizePt` у `Document::fromHtml()` (по умолчанию 12):
+передайте туда `defaultFontSizePt` движка.
 
-Для поддержки `<style>` / классов прогоните HTML через внешний
-*inliner* (например, `pelago/emogrifier`).
+**Не поддерживается:** внешние стили (`<link rel="stylesheet">`),
+`position`, обтекание (float), grid, `::before` / `::after`, `:hover` и
+другие динамические псевдоклассы, формы, JavaScript.
 
 ---
 
