@@ -116,6 +116,11 @@ final class Engine
 
     private ?PdfFontResolver $resolver = null;
 
+    /** Font ascent and descent, in em, used to place a baseline in its line. */
+    private const LINE_ASCENT = 0.905;
+
+    private const LINE_DESCENT = 0.212;
+
     public function __construct(
         public readonly ?PdfFont $defaultFont = null,
         public readonly StandardFont $fallbackStandard = StandardFont::Helvetica,
@@ -3651,7 +3656,16 @@ final class Engine
                 break;
         }
 
-        $baselineY = $ctx->cursorY - $maxSizePt * 0.8;
+        // CSS half-leading: the room a line height adds over the font's
+        // content area is split evenly above and below the glyphs, so the
+        // baseline sits at half the line height plus (ascent − content/2).
+        // Ascent 0.905 and descent 0.212 em are the Arial/Liberation hhea
+        // metrics browsers use; other text faces differ by a fraction of a
+        // point. An inline image sits on the baseline, inside its line.
+        $baselineY = $ctx->cursorY - max(
+            $textLineHeight / 2 + $maxSizePt * (self::LINE_ASCENT - (self::LINE_ASCENT + self::LINE_DESCENT) / 2),
+            $maxImageHeight + 1,
+        );
 
         // TJ-array grouping — accumulate consecutive items with the same
         // effective style/baseline/size into a single showText call. Each

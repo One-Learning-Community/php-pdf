@@ -12,6 +12,12 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   table borders now draw dashes three line widths long and round dots one
   width across, with the gaps stretched so each side starts and ends on a
   dash or a dot and the corners stay closed.
+- Text is placed in its line the way CSS places it: the extra room a line
+  height adds is split between the top and the bottom of the line
+  (half-leading). The baseline used to sit 0.8 em below the line top at
+  any line height, so text rose ~1pt above where a browser draws it and
+  touched a cell's or box's top border. Inline images stay inside their
+  line instead of rising above it.
 
 ## [1.19.0] — 2026-10-16
 
