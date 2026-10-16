@@ -511,6 +511,21 @@ final class Engine
             );
         }
 
+        $p = $this->headingParagraph($h);
+        $this->renderParagraphNoTag($p, $ctx);
+
+        if ($taggedPdf && $mcid !== null) {
+            $ctx->currentPage->endMarkedContent();
+            $ctx->pdf->addStructElement('H'.$h->level, $mcid, $ctx->currentPage);
+        }
+    }
+
+    /**
+     * The paragraph a heading is drawn as: bold, at the level's size unless
+     * a run sets its own (HTML: `h1 { font-size: … }`).
+     */
+    private function headingParagraph(Heading $h): Paragraph
+    {
         $size = $h->defaultFontSizePt();
         $paraStyle = $h->style
             ?? new \Dskripchenko\PhpPdf\Style\ParagraphStyle(
@@ -518,24 +533,17 @@ final class Engine
                 spaceAfterPt: 6.0,
             );
 
-        // Wrap children with bold + size.
-        $boldedChildren = [];
+        $children = [];
         foreach ($h->children as $child) {
             if ($child instanceof Run) {
-                $newStyle = $child->style->withBold(true)->withSizePt($size);
-                $boldedChildren[] = new Run($child->text, $newStyle);
+                $style = $child->style->withBold(true);
+                $children[] = new Run($child->text, $style->sizePt === null ? $style->withSizePt($size) : $style);
             } else {
-                $boldedChildren[] = $child;
+                $children[] = $child;
             }
         }
 
-        $p = new Paragraph($boldedChildren, $paraStyle);
-        $this->renderParagraphNoTag($p, $ctx);
-
-        if ($taggedPdf && $mcid !== null) {
-            $ctx->currentPage->endMarkedContent();
-            $ctx->pdf->addStructElement('H'.$h->level, $mcid, $ctx->currentPage);
-        }
+        return new Paragraph($children, $paraStyle);
     }
 
     /**
@@ -4193,6 +4201,8 @@ final class Engine
         };
 
         $totalRows = count($t->rows);
+        // The table's own border is drawn around what lands on each page.
+        $segmentTop = $ctx->cursorY;
         // Cross-row border priority tracking. Reset on page break
         // (repeated header rows form a fresh row sequence).
         $prevRowBottomByCol = [];
@@ -4209,7 +4219,9 @@ final class Engine
             if ($row->isHeader && $next !== null && ! $next->isHeader) {
                 $together = $rowHeight + $heights[$rowIdx + 1];
                 if ($ctx->cursorY - $rowHeight >= $ctx->bottomY && $ctx->cursorY - $together < $ctx->bottomY) {
+                    $this->closeTableSegment($t, $ctx, $tableLeftX, $tableWidth, $segmentTop);
                     $this->forcePageBreak($ctx);
+                    $segmentTop = $ctx->cursorY;
                     $prevRowBottomByCol = [];
                 }
             }
@@ -4222,7 +4234,9 @@ final class Engine
                 $groupHeight = array_sum(array_slice($heights, $rowIdx, $groupEnd - $rowIdx + 1));
                 $atPageTop = $ctx->cursorY >= $ctx->topY - 0.01;
                 if (! $atPageTop && $ctx->cursorY - $groupHeight < $ctx->bottomY && $groupHeight <= $ctx->topY - $ctx->bottomY) {
+                    $this->closeTableSegment($t, $ctx, $tableLeftX, $tableWidth, $segmentTop);
                     $this->forcePageBreak($ctx);
+                    $segmentTop = $ctx->cursorY;
                     $prevRowBottomByCol = [];
                     $repeatHeaders($prevRowBottomByCol);
                 }
@@ -4247,7 +4261,9 @@ final class Engine
                     $this->renderRow($t, $head, $colWidths, $tableLeftX, $available, $ctx, false, $prevRowBottomByCol, $cols[$rowIdx]);
                     $ctx->cursorY -= $available;
 
+                    $this->closeTableSegment($t, $ctx, $tableLeftX, $tableWidth, $segmentTop);
                     $this->forcePageBreak($ctx);
+                    $segmentTop = $ctx->cursorY;
                     $prevRowBottomByCol = [];
                     $repeatHeaders($prevRowBottomByCol);
 
@@ -4269,7 +4285,9 @@ final class Engine
                             }
                             $next = $this->splitRowForPage($t, $current, $colWidths, $room, $cols[$rowIdx]);
                             if ($next === null) {
+                                $this->closeTableSegment($t, $ctx, $tableLeftX, $tableWidth, $segmentTop);
                                 $this->forcePageBreak($ctx);
+                                $segmentTop = $ctx->cursorY;
                                 $prevRowBottomByCol = [];
                                 $this->renderRow($t, $current, $colWidths, $tableLeftX, $currentHeight, $ctx, $isLastRow, $prevRowBottomByCol, $cols[$rowIdx]);
                                 $ctx->cursorY -= $currentHeight;
@@ -4279,7 +4297,9 @@ final class Engine
                             [$nextHead, $nextTail] = $next;
                             $this->renderRow($t, $nextHead, $colWidths, $tableLeftX, $room, $ctx, false, $prevRowBottomByCol, $cols[$rowIdx]);
                             $ctx->cursorY -= $room;
+                            $this->closeTableSegment($t, $ctx, $tableLeftX, $tableWidth, $segmentTop);
                             $this->forcePageBreak($ctx);
+                            $segmentTop = $ctx->cursorY;
                             $prevRowBottomByCol = [];
                             $rowsToProcess[] = $nextTail;
                         }
@@ -4293,7 +4313,9 @@ final class Engine
                     continue;
                 }
 
+                $this->closeTableSegment($t, $ctx, $tableLeftX, $tableWidth, $segmentTop);
                 $this->forcePageBreak($ctx);
+                $segmentTop = $ctx->cursorY;
                 $prevRowBottomByCol = [];
                 if (! $row->isHeader) {
                     $repeatHeaders($prevRowBottomByCol);
@@ -4304,12 +4326,26 @@ final class Engine
             $ctx->cursorY -= $rowHeight;
         }
 
+        $this->closeTableSegment($t, $ctx, $tableLeftX, $tableWidth, $segmentTop);
         $ctx->cursorY -= $t->style->spaceAfterPt;
 
         // End /Table struct.
         if ($taggedPdf) {
             $ctx->pdf->endStructContainer();
         }
+    }
+
+    /**
+     * The table's own border (TableStyle::$borders) around the rows drawn on
+     * the current page, from `$top` down to the cursor.
+     */
+    private function closeTableSegment(Table $t, LayoutContext $ctx, float $left, float $width, float $top): void
+    {
+        $height = $top - $ctx->cursorY;
+        if ($t->style->borders === null || $height <= 0.01) {
+            return;
+        }
+        $this->drawBoxBorders($ctx->currentPage, $left, $ctx->cursorY, $width, $height, $t->style->borders);
     }
 
     /**
@@ -4435,7 +4471,10 @@ final class Engine
         $cs = $this->effectiveCellStyle($t, $cell);
         $contentWidth = $cellWidth - $cs->paddingLeftPt - $cs->paddingRightPt;
 
-        return $this->measureBlockListHeight($cell->children, $contentWidth) + $cs->paddingTopPt + $cs->paddingBottomPt;
+        return max(
+            $this->measureBlockListHeight($cell->children, $contentWidth) + $cs->paddingTopPt + $cs->paddingBottomPt,
+            $cs->minHeightPt ?? 0.0,
+        );
     }
 
     /**
@@ -4715,8 +4754,13 @@ final class Engine
             }
         }
 
-        // Minimum row height: 1 line of default text + paddings.
-        return max($maxHeight, $this->defaultFontSizePt * $this->defaultLineHeightMult, $row->minHeightPt ?? 0.0);
+        // A row asking for a height gets it (or more, for its content);
+        // otherwise at least one line of default text.
+        if ($row->minHeightPt !== null) {
+            return max($maxHeight, $row->minHeightPt);
+        }
+
+        return max($maxHeight, $this->defaultFontSizePt * $this->defaultLineHeightMult);
     }
 
     /**
@@ -5233,6 +5277,7 @@ final class Engine
     {
         return match (true) {
             $block instanceof Paragraph => $this->measureParagraphHeight($block, $contentWidth),
+            $block instanceof Heading => $this->measureParagraphHeight($this->headingParagraph($block), $contentWidth),
             $block instanceof Image => $this->measureImageHeight($block, $contentWidth),
             $block instanceof HorizontalRule => 12.0, // 6 + 0 + 6
             $block instanceof Table => $this->measureTableHeight($block, $contentWidth),

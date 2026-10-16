@@ -498,7 +498,7 @@ final class HtmlParser
             $out[] = new PageBreak;
         }
 
-        $this->enter($node, $this->currentStyle(), true);
+        $this->enter($node, $this->headingBase($node, $decl), true);
         try {
             foreach ($this->buildBlock($node, $decl) as $b) {
                 $out[] = $b;
@@ -512,6 +512,26 @@ final class HtmlParser
         }
 
         return $out;
+    }
+
+    /**
+     * A heading under a known font size is that size times the browser's
+     * factor (h1 = 2em … h6 = 0.67em); with none known the engine's heading
+     * sizes apply.
+     *
+     * @param  array<string, string>  $decl
+     */
+    private function headingBase(\DOMElement $node, array $decl): RunStyle
+    {
+        $current = $this->currentStyle();
+        $factor = [
+            'h1' => 2.0, 'h2' => 1.5, 'h3' => 1.17, 'h4' => 1.0, 'h5' => 0.83, 'h6' => 0.67,
+        ][strtolower($node->nodeName)] ?? null;
+        if ($factor === null || isset($decl['font-size']) || $current->sizePt === null) {
+            return $current;
+        }
+
+        return $current->withSizePt($current->sizePt * $factor);
     }
 
     private function isPageBreak(?string $value): bool
@@ -595,6 +615,10 @@ final class HtmlParser
         [$pt, $pr, $pb, $pl] = $this->sides($decl, 'padding');
         $borders = $this->borders($decl);
         $bg = $this->backgroundColor($decl);
+        // The background of html and body is the page itself, not a box.
+        if (in_array(strtolower($node->nodeName), ['html', 'body'], true)) {
+            $bg = null;
+        }
 
         if ($bg !== null || $borders !== null) {
             if ($blocks === []) {
@@ -652,6 +676,11 @@ final class HtmlParser
     private function flexRow(\DOMElement $node, array $decl): Table
     {
         $gap = $this->length($decl['column-gap'] ?? ($decl['gap'] ?? '')) ?? 0.0;
+        $vAlign = match (strtolower(trim($decl['align-items'] ?? ''))) {
+            'center' => VerticalAlignment::Center,
+            'flex-end', 'end' => VerticalAlignment::Bottom,
+            default => VerticalAlignment::Top,
+        };
         $children = $this->elementChildren($node);
         $count = count($children);
         $cells = [];
@@ -659,7 +688,13 @@ final class HtmlParser
             $this->enter($child, $this->currentStyle(), true);
             try {
                 $childDecl = $this->decl($child);
-                $blocks = $this->hasBlockChild($child) ? $this->walkBlocks($child) : [$this->parseParagraph($child)];
+                $tag = strtolower($child->nodeName);
+                if ($tag === 'img' || $tag === 'svg') {
+                    $image = $tag === 'img' ? $this->parseImage($child, block: true) : $this->parseInlineSvg($child);
+                    $blocks = $image !== null ? [$image] : [];
+                } else {
+                    $blocks = $this->hasBlockChild($child) ? $this->walkBlocks($child) : [$this->parseParagraph($child)];
+                }
                 [$pt, $pr, $pb, $pl] = $this->sides($childDecl, 'padding');
                 [$widthPt, $widthPercent] = $this->widthOf($childDecl['width'] ?? ($childDecl['flex-basis'] ?? null));
                 $cells[] = new Cell($blocks === [] ? [new Paragraph([])] : $blocks, new CellStyle(
@@ -669,6 +704,7 @@ final class HtmlParser
                     paddingRightPt: $pr + ($i < $count - 1 ? $gap / 2 : 0.0),
                     paddingBottomPt: $pb,
                     paddingLeftPt: $pl + ($i > 0 ? $gap / 2 : 0.0),
+                    verticalAlign: $vAlign,
                     backgroundColor: $this->backgroundColor($childDecl),
                     borders: $this->borders($childDecl),
                 ));
@@ -1136,8 +1172,8 @@ final class HtmlParser
             borders: $this->borders($decl),
             defaultCellBorder: $cellBorder,
             spaceBeforePt: $mt,
-            // Without a margin of its own a table keeps the engine's 6pt after it.
-            spaceAfterPt: isset($decl['margin-bottom']) ? $mb : 6.0,
+            // As in a browser: no room after a table unless the CSS asks.
+            spaceAfterPt: $mb,
             borderCollapse: strtolower(trim($decl['border-collapse'] ?? '')) === 'collapse',
             borderSpacingPt: $spacing,
             autoLayout: strtolower(trim($decl['table-layout'] ?? '')) !== 'fixed',
@@ -1259,10 +1295,7 @@ final class HtmlParser
                 [$pt, $pct] = $columns[$col] ?? [null, null];
                 if ($cell->columnSpan === 1 && ($pt !== null || $pct !== null) && $cell->style->widthPt === null && $cell->style->widthPercent === null) {
                     $s = $cell->style;
-                    $cells[$ci] = new Cell($cell->children, new CellStyle(
-                        $pt, $pct, $s->paddingTopPt, $s->paddingRightPt, $s->paddingBottomPt, $s->paddingLeftPt,
-                        $s->verticalAlign, $s->backgroundColor, $s->borders, $s->cornerRadiusPt,
-                    ), $cell->columnSpan, $cell->rowSpan);
+                    $cells[$ci] = new Cell($cell->children, $s->copy(widthPt: $pt, widthPercent: $pct), $cell->columnSpan, $cell->rowSpan);
                     $columns[$col] = [null, null];
                 }
                 if ($cell->rowSpan > 1) {
@@ -1337,7 +1370,8 @@ final class HtmlParser
                     $this->leave();
                 }
                 $cells[] = $cell;
-                if ($cellHeight !== null) {
+                // A merged cell's height is spread over its rows (CellStyle).
+                if ($cellHeight !== null && $cell->rowSpan === 1) {
                     $minHeight = max($minHeight ?? 0.0, $cellHeight);
                 }
             }
@@ -1381,10 +1415,13 @@ final class HtmlParser
             verticalAlign: $this->block()['vAlign'] ?? $defaults->verticalAlign,
             backgroundColor: $bg,
             borders: $this->borders($decl),
+            minHeightPt: $height,
         );
 
         $children = $this->walkBlocks($node);
-        if ($children === []) {
+        // An empty cell holds an empty line — unless a height is set for it,
+        // as for a spacer row: then it is as tall as asked.
+        if ($children === [] && $height === null) {
             $children = [new Paragraph([new Run('')], $this->inheritedParagraphStyle(), defaultRunStyle: $this->currentStyle())];
         }
 
