@@ -36,10 +36,10 @@ oder veröffentlichen zu müssen.
 | Fluent-Builder (Document → Section)    | ✅      | ❌   | ❌    | ❌     | ❌   |
 | HTML/CSS-Eingabe                       | ✅      | ✅   | ⚠️ einfach | ✅  | ❌   |
 | Inline-`style`-Attribute               | ✅      | ✅   | ⚠️    | ✅     | ❌   |
-| `<style>`-Blöcke / externes CSS        | ❌      | ✅   | ⚠️    | ✅     | ❌   |
+| `<style>`-Blöcke / externes CSS        | ⚠️ nur `<style>` | ✅   | ⚠️    | ✅     | ❌   |
 | Float-Layout                           | ❌      | ✅   | ⚠️    | ✅     | ❌   |
 
-Für komplexes HTML oder CSS (Flexbox, Multi-Column, `@media`, Floats)
+Für komplexes HTML oder CSS (Floats, Positionierung, Grid, externe Stylesheets)
 gehen `dompdf` und `mpdf` weiter. Für Geschäftsdokumente (Absätze,
 Tabellen, Listen, Inline-Styling, Überschriften) ist `php-pdf` auf
 Augenhöhe und bietet bessere Performance.
@@ -196,8 +196,8 @@ leistet — ist eingebaut und MIT-lizenziert, ohne proprietäres Add-on.
 - Sie es bereits im Stack haben und die Migration nicht gerechtfertigt
   ist.
 - Ihr Projekt GPL-kompatibel ist.
-- Sie umfangreichere CSS-Abdeckung benötigen (Flexbox, `@media`,
-  komplexe Selektoren).
+- Sie umfangreichere CSS-Abdeckung benötigen (Floats, Positionierung,
+  externe Stylesheets).
 - Sie die mpdf-Dokumentation und das Stack-Overflow-Korpus bevorzugen.
 
 ### **tecnickcom/tcpdf** wählen, wenn

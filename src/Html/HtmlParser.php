@@ -398,7 +398,16 @@ final class HtmlParser
             $this->pushParagraph($blocks, $pendingInlines);
         }
 
-        return $blocks;
+        // Breaks that meet (after one block, before the next) are one break.
+        $out = [];
+        foreach ($blocks as $b) {
+            if ($b instanceof PageBreak && $out !== [] && end($out) instanceof PageBreak) {
+                continue;
+            }
+            $out[] = $b;
+        }
+
+        return $out;
     }
 
     /**

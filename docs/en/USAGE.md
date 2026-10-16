@@ -275,33 +275,59 @@ $doc->toFile('report.pdf');
   `<header>`, `<footer>`, `<nav>`, `<aside>`, `<main>`, `<figure>`,
   `<figcaption>`, `<hr>`, `<ul>` / `<ol>` / `<li>`, `<table>` /
   `<thead>` / `<tbody>` / `<tfoot>` / `<tr>` / `<td>` / `<th>` /
-  `<caption>`, `<blockquote>`, `<pre>`, `<dl>` / `<dt>` / `<dd>`.
+  `<caption>` / `<colgroup>` / `<col>`, `<blockquote>`, `<pre>`,
+  `<dl>` / `<dt>` / `<dd>`; a whole document (`<html>`, `<head>`,
+  `<body>`) is fine.
 - Inline: `<b>` / `<strong>`, `<i>` / `<em>`, `<u>`, `<s>` / `<del>`,
   `<sup>` / `<sub>`, `<br>`, `<img>`, `<a>`, `<span>`, `<code>`,
   `<kbd>`, `<samp>`, `<tt>`, `<var>`, `<mark>`, `<small>`, `<big>`,
   `<ins>`, `<cite>`, `<dfn>`, `<q>`, `<abbr>`.
-- Legacy: `<center>`, `<font color face size>`.
+- Legacy: `<center>`, `<font color face size>`, table attributes
+  `border`, `cellpadding`, `cellspacing`, `width`, `align`, `bgcolor`,
+  `valign`.
 
-**Supported inline CSS (`style` attribute):**
+**CSS** — from `<style>` blocks and `style` attributes, with the cascade:
 
-- `color`, `background-color` — hex `#rrggbb` / `#rgb`, `rgb()`, 21
-  named colors.
-- `font-size` (pt, px, em, mm, cm, in), `font-family` (first value
-  from comma list), `font-weight` (`bold`, `bolder`, 700+),
-  `font-style: italic`.
-- `text-decoration` (`underline`, `line-through`), `text-transform`
-  (`uppercase`, `lowercase`, `capitalize`), `text-align`,
-  `text-indent`.
-- `margin`, `padding` shorthand (1/2/3/4 values), `border` shorthand
-  (`solid`, `double`, `dashed`, `dotted`, `none` + width + color).
-- `line-height` (multiplier or percentage).
+- Selectors: type, `.class`, `#id`, `*`, `[attr]` / `[attr=value]`,
+  `:first-child`, `:last-child`, `:only-child`, `:nth-child()`, `:not()`,
+  descendant, `>`, `+`, `~`; specificity, `!important`. `@media print`
+  and `all` apply, `@media screen` is skipped.
+- Inherited, as in a browser: `color`, `font-*`, `text-decoration`,
+  `text-transform`, `letter-spacing`, `text-align`, `line-height`,
+  `text-indent`, `white-space` — set on `body`, a `div` or a `td`, they
+  reach the text inside.
+- Text: `color`, `background-color` (painted under the text),
+  `font-size` (pt, px, mm, cm, in, em, rem, %, keywords), `font-family`,
+  `font-weight` (`normal` switches bold off), `font-style`,
+  `text-decoration`, `text-transform`, `letter-spacing`,
+  `vertical-align: super / sub`, `white-space` (`pre`, `pre-wrap`,
+  `pre-line`, `nowrap`). `&nbsp;` is kept.
+- Blocks: `margin`, `padding`, `border` (shorthand, per side, `-width`,
+  `-style`, `-color`), `background-color`, `text-align`, `line-height`
+  (multiplier, %, length), `text-indent`, `display: none / block / flex`.
+- Containers: a `div` (`section`, …) holding blocks keeps them as
+  blocks; its margin and padding space and indent them, a background or a
+  border draws a box around them. `display: flex` puts the children side
+  by side (`gap`, `width` / `flex-basis`, `align-items`).
+- Tables: `width`, `table-layout` (`auto` sizes columns by their content,
+  as browsers do), `border-collapse`, `border-spacing`, `border`, `margin`
+  (`auto` centres); `<col>` widths; cells: `border`, `background-color`,
+  `padding`, `vertical-align`, `width`, `height`, `colspan`, `rowspan`;
+  rows: `height`, `break-inside: avoid`. `<thead>` rows repeat on every
+  page.
+- Images: `width` / `height` (`%` of the line), `display: block` with
+  `margin: auto` centres.
+- Pages: `page-break-before` / `-after` (`break-before` / `-after`);
+  `@page { size; margin }` sets the page of `Document::fromHtml()`
+  unless a `$sectionTemplate` is given.
 
-**Not supported:** external CSS (`<link rel="stylesheet">`), `<style>`
-blocks, complex selectors, `@media`, JavaScript, floats,
-`position: absolute / fixed`, Flexbox.
+`em` and `%` refer to the current font size; where nothing sets one, to
+`$baseFontSizePt` of `Document::fromHtml()` (12 by default) — pass the
+engine's `defaultFontSizePt` there.
 
-For `<style>` / class support, preprocess HTML through an external
-inliner (e.g. `pelago/emogrifier`).
+**Not supported:** external stylesheets (`<link rel="stylesheet">`),
+`position`, floats, grid, `::before` / `::after`, `:hover` and other
+dynamic pseudo-classes, forms, JavaScript.
 
 ---
 
