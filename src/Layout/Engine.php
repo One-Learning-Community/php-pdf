@@ -3686,6 +3686,16 @@ final class Engine
 
                 return;
             }
+            $shade = $this->runShade($batchStyle);
+            if ($shade !== null) {
+                // Under the text: from the descender to the top of the line box.
+                [$r, $g, $b] = $this->hexToRgb($shade);
+                $ctx->currentPage->fillRect(
+                    $batchStartX, $batchBaselineY - $batchSizePt * 0.22,
+                    $batchEndX - $batchStartX, $batchSizePt * 1.15,
+                    $r, $g, $b,
+                );
+            }
             $this->showText($ctx->currentPage, $batchText, $batchStartX, $batchBaselineY, $batchSizePt, $batchStyle);
             if ($batchStyle->underline || $batchStyle->strikethrough) {
                 $this->drawTextDecorations(
@@ -3725,7 +3735,9 @@ final class Engine
                 && ($itemStyle->letterSpacingPt ?? 0) === ($batchStyle->letterSpacingPt ?? 0)
                 && $itemStyle->fontFamily === $batchStyle->fontFamily
                 && $itemStyle->bold === $batchStyle->bold
-                && $itemStyle->italic === $batchStyle->italic;
+                && $itemStyle->italic === $batchStyle->italic
+                && $itemStyle->backgroundColor === $batchStyle->backgroundColor
+                && $itemStyle->highlight === $batchStyle->highlight;
         };
 
         for ($i = 0; $i < $countWords; $i++) {
@@ -3908,6 +3920,28 @@ final class Engine
      * Stroke width: sizePt × 0.055 (thinner than glyphs).
      * Color: current text color (Run.style.color), default black.
      */
+    /**
+     * The colour under a run: its background, else its highlight (OOXML
+     * names: yellow, darkBlue, …, or a hex value).
+     */
+    private function runShade(RunStyle $style): ?string
+    {
+        if ($style->backgroundColor !== null) {
+            return $style->backgroundColor;
+        }
+        if ($style->highlight === null || strtolower($style->highlight) === 'none') {
+            return null;
+        }
+
+        return [
+            'yellow' => 'ffff00', 'green' => '00ff00', 'cyan' => '00ffff', 'magenta' => 'ff00ff',
+            'blue' => '0000ff', 'red' => 'ff0000', 'darkblue' => '000080', 'darkcyan' => '008080',
+            'darkgreen' => '008000', 'darkmagenta' => '800080', 'darkred' => '800000',
+            'darkyellow' => '808000', 'darkgray' => '808080', 'lightgray' => 'c0c0c0',
+            'black' => '000000', 'white' => 'ffffff',
+        ][strtolower($style->highlight)] ?? (preg_match('/^#?[0-9a-f]{6}$/i', $style->highlight) === 1 ? ltrim($style->highlight, '#') : null);
+    }
+
     private function drawTextDecorations(Page $page, float $x, float $baselineY, float $width, float $sizePt, RunStyle $style): void
     {
         $lineWidth = max(0.4, $sizePt * 0.055);
