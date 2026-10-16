@@ -3026,7 +3026,7 @@ final class Engine
             $ctx->currentPage->beginMarkedContent('Figure', $mcid);
         }
 
-        [$widthPt, $heightPt] = $img->effectiveSizePt();
+        [$widthPt, $heightPt] = $img->effectiveSizePt($ctx->contentWidth);
 
         // Scale down if image is larger than content area in any dimension.
         $maxWidth = $ctx->contentWidth;
@@ -3686,16 +3686,6 @@ final class Engine
 
                 return;
             }
-            $shade = $this->runShade($batchStyle);
-            if ($shade !== null) {
-                // Under the text: from the descender to the top of the line box.
-                [$r, $g, $b] = $this->hexToRgb($shade);
-                $ctx->currentPage->fillRect(
-                    $batchStartX, $batchBaselineY - $batchSizePt * 0.22,
-                    $batchEndX - $batchStartX, $batchSizePt * 1.15,
-                    $r, $g, $b,
-                );
-            }
             $this->showText($ctx->currentPage, $batchText, $batchStartX, $batchBaselineY, $batchSizePt, $batchStyle);
             if ($batchStyle->underline || $batchStyle->strikethrough) {
                 $this->drawTextDecorations(
@@ -3966,6 +3956,13 @@ final class Engine
      */
     private function showText(Page $page, string $text, float $x, float $baselineY, float $sizePt, RunStyle $style): void
     {
+        $shade = $this->runShade($style);
+        if ($shade !== null && $text !== '') {
+            // Under the text: from the descender to the top of the line box.
+            [$r, $g, $b] = $this->hexToRgb($shade);
+            $page->fillRect($x, $baselineY - $sizePt * 0.22, $this->measureWidth($text, $style), $sizePt * 1.15, $r, $g, $b);
+        }
+
         // SHY (U+00AD) — invisible soft hyphen marker, strip before
         // drawing (visually it must not render except at the wrap point —
         // already handled via '-' append in the split helper).
@@ -4178,9 +4175,10 @@ final class Engine
         }
 
         [$cols, $columnCount] = $this->tableGrid($t);
-        $tableWidth = $this->computeTableWidth($t->style, $ctx->contentWidth);
+        $inner = $ctx->contentWidth - $t->style->indentLeftPt - $t->style->indentRightPt;
+        $tableWidth = $this->computeTableWidth($t->style, $inner);
         $colWidths = $this->computeColumnWidths($t, $tableWidth, $columnCount, $cols);
-        $tableLeftX = $this->computeTableLeftX($t->style->alignment, $ctx, $tableWidth);
+        $tableLeftX = $this->computeTableLeftX($t->style->alignment, $ctx, $tableWidth, $t->style->indentLeftPt, $inner);
         $heights = $this->rowHeights($t, $colWidths, $cols);
 
         /** @var array<int, Row> $headerRows */
@@ -4682,12 +4680,15 @@ final class Engine
         return [$min + $extra + max(0.0, $p->style->indentFirstLinePt), $max + $extra + max(0.0, $p->style->indentFirstLinePt)];
     }
 
-    private function computeTableLeftX(Alignment $align, LayoutContext $ctx, float $tableWidth): float
+    private function computeTableLeftX(Alignment $align, LayoutContext $ctx, float $tableWidth, float $indentLeft = 0.0, ?float $inner = null): float
     {
+        $left = $ctx->leftX + $indentLeft;
+        $inner ??= $ctx->contentWidth;
+
         return match ($align) {
-            Alignment::Center => $ctx->leftX + ($ctx->contentWidth - $tableWidth) / 2,
-            Alignment::End => $ctx->leftX + $ctx->contentWidth - $tableWidth,
-            default => $ctx->leftX,
+            Alignment::Center => $left + ($inner - $tableWidth) / 2,
+            Alignment::End => $left + $inner - $tableWidth,
+            default => $left,
         };
     }
 
@@ -4715,7 +4716,7 @@ final class Engine
         }
 
         // Minimum row height: 1 line of default text + paddings.
-        return max($maxHeight, $this->defaultFontSizePt * $this->defaultLineHeightMult);
+        return max($maxHeight, $this->defaultFontSizePt * $this->defaultLineHeightMult, $row->minHeightPt ?? 0.0);
     }
 
     /**
@@ -4755,7 +4756,7 @@ final class Engine
     private function splitRowForPage(Table $t, Row $row, array $colWidths, float $available, ?array $starts = null): ?array
     {
         $starts ??= $this->sequentialColumns($row);
-        if ($row->isHeader || $available <= 0.0) {
+        if ($row->isHeader || $row->cantSplit || $available <= 0.0) {
             return null;
         }
 
@@ -5355,7 +5356,7 @@ final class Engine
             return 0.0;
         }
 
-        [$w, $h] = $img->effectiveSizePt();
+        [$w, $h] = $img->effectiveSizePt($contentWidth);
         if ($w > $contentWidth) {
             $h *= $contentWidth / $w;
         }
@@ -5391,7 +5392,7 @@ final class Engine
             return 0;
         }
         [$cols, $columnCount] = $this->tableGrid($t);
-        $tableWidth = $this->computeTableWidth($t->style, $contentWidth);
+        $tableWidth = $this->computeTableWidth($t->style, $contentWidth - $t->style->indentLeftPt - $t->style->indentRightPt);
         $colWidths = $this->computeColumnWidths($t, $tableWidth, $columnCount, $cols);
 
         $total = $t->style->spaceBeforePt + array_sum($this->rowHeights($t, $colWidths, $cols));

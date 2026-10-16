@@ -18,6 +18,8 @@ use Dskripchenko\PhpPdf\Style\Alignment;
  *  - Both widthPt and heightPt set: used as-is.
  *  - Only one set: the other derived from native aspect ratio.
  *  - Both null: native dimensions at 72 DPI (1 px = 1 pt).
+ *  - `widthPercent`: a share of the width it is laid out in (CSS
+ *    `width: 100%`), the height by the aspect ratio unless `heightPt` is set.
  *
  * `$altText` populates the /Alt entry on the surrounding struct element
  * in Tagged PDF / PDF/UA mode.
@@ -42,6 +44,7 @@ final readonly class Image implements BlockElement, InlineElement
          * policy an extra page.
          */
         public bool $outOfFlow = false,
+        public ?float $widthPercent = null,
     ) {}
 
     public static function fromPath(
@@ -94,8 +97,15 @@ final readonly class Image implements BlockElement, InlineElement
      *
      * @return array{0: float, 1: float} [widthPt, heightPt]
      */
-    public function effectiveSizePt(): array
+    public function effectiveSizePt(?float $availableWidthPt = null): array
     {
+        if ($this->widthPercent !== null && $availableWidthPt !== null) {
+            $width = $availableWidthPt * $this->widthPercent / 100;
+            $height = $this->heightPt ?? $width * (float) $this->source->heightPx / max((float) $this->source->widthPx, 1.0);
+
+            return [$width, $height];
+        }
+
         $nativeW = (float) $this->source->widthPx;
         $nativeH = (float) $this->source->heightPx;
 

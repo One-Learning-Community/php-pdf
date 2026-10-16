@@ -31,10 +31,14 @@ final class RunShadeTest extends TestCase
     {
         $pdf = self::render(new RunStyle(backgroundColor: 'ffcc00'));
 
+        // The word, and at most the space after it (drawn in the word's style).
         $fills = PdfGeometry::fills($pdf, 'ffcc00');
-        self::assertCount(1, $fills);
+        self::assertNotEmpty($fills);
         $word = PdfGeometry::word($pdf, 'shaded');
         self::assertEqualsWithDelta($word['xMin'], $fills[0]['x'], 0.5);
+        // Standard-font metrics are approximate: within 10% of what poppler measures.
+        self::assertEqualsWithDelta($word['xMax'] - $word['xMin'], $fills[0]['w'], ($word['xMax'] - $word['xMin']) * 0.1);
+        self::assertLessThan(PdfGeometry::words($pdf)[2]['xMin'] + 0.5, max(array_map(static fn (array $f): float => $f['x'] + $f['w'], $fills)));
         self::assertLessThanOrEqual($word['yMin'] + 0.5, $fills[0]['top']);
         self::assertGreaterThanOrEqual($word['yMax'] - 0.5, $fills[0]['bottom']);
     }
@@ -42,6 +46,6 @@ final class RunShadeTest extends TestCase
     #[Test]
     public function a_named_highlight_is_painted_too(): void
     {
-        self::assertCount(1, PdfGeometry::fills(self::render(new RunStyle(highlight: 'yellow')), 'ffff00'));
+        self::assertNotEmpty(PdfGeometry::fills(self::render(new RunStyle(highlight: 'yellow')), 'ffff00'));
     }
 }

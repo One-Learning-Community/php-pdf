@@ -21,6 +21,9 @@ namespace Dskripchenko\PhpPdf\Style;
  * of the cells (`CellStyle::$widthPt` / `$widthPercent`). Columns left
  * without one share the rest equally — or, with `autoLayout: true`, by
  * their content, as a browser lays out `table-layout: auto`.
+ *
+ * `indentLeftPt` / `indentRightPt` narrow the room the table is laid out in
+ * (the padding of an HTML container around it).
  */
 final readonly class TableStyle
 {
@@ -36,6 +39,8 @@ final readonly class TableStyle
         public bool $borderCollapse = false,
         public float $borderSpacingPt = 0,
         public bool $autoLayout = false,
+        public float $indentLeftPt = 0,
+        public float $indentRightPt = 0,
     ) {}
 
     public function copy(
@@ -50,6 +55,8 @@ final readonly class TableStyle
         ?bool $borderCollapse = null,
         ?float $borderSpacingPt = null,
         ?bool $autoLayout = null,
+        ?float $indentLeftPt = null,
+        ?float $indentRightPt = null,
     ): self {
         return new self(
             widthPt: $widthPt ?? $this->widthPt,
@@ -63,6 +70,8 @@ final readonly class TableStyle
             borderCollapse: $borderCollapse ?? $this->borderCollapse,
             borderSpacingPt: $borderSpacingPt ?? $this->borderSpacingPt,
             autoLayout: $autoLayout ?? $this->autoLayout,
+            indentLeftPt: $indentLeftPt ?? $this->indentLeftPt,
+            indentRightPt: $indentRightPt ?? $this->indentRightPt,
         );
     }
 }
