@@ -13,6 +13,7 @@ PAdES B-T 级别。签名字段可以显示**签章**：一个包含文字、图
 - [时间戳](#时间戳)
 - [GOST R 34.10-2012](#gost-r-3410-2012)
 - [签名大小](#签名大小)
+- [通过返回 CMS 的软件使用密钥](#通过返回-cms-的软件使用密钥)
 - [在服务器之外签名](#在服务器之外签名)
 - [签署已有 PDF](#签署已有-pdf)
 - [认证签名与锁定字段](#认证签名与锁定字段)
@@ -129,6 +130,40 @@ OpenSSL 和 CryptoPro 所用的标识符。PHP 必须加载 OpenSSL 的
 `/Contents` 中的签名空间在签名生成之前就已预留。库根据证书、密钥大小以及是否请求
 时间戳来估算所需空间。如果签署人嵌入的内容超出预期，签名会失败，并给出所需大小的提示；
 可设置 `contentsReserveBytes` 来覆盖估算值。
+
+## 通过返回 CMS 的软件使用密钥
+
+有些密钥只能通过返回完整 CMS（而不是单纯签名值）的软件使用：服务器上的
+CryptoPro CSP（`CadesSignedData.SignHash`、`cryptcp`）、签名服务、HSM 前端。
+实现 `CmsSigner`，即可像使用进程内密钥一样一次调用完成签名，无需手动
+prepare 和 complete：
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\Signer\{Certificate, CmsSigner, DigestAlgorithm};
+
+final class CryptcpSigner implements CmsSigner
+{
+    public function __construct(private string $certificatePem, private string $thumbprint) {}
+
+    public function certificate(): Certificate { return Certificate::fromPem($this->certificatePem); }
+    public function chain(): array { return []; }
+    public function digestAlgorithm(): DigestAlgorithm { return DigestAlgorithm::defaultFor($this->certificate()); }
+
+    public function signCms(string $content, string $digest): string
+    {
+        // 调用签名工具或 CSP API，返回 CMS
+    }
+}
+
+$doc->sign(new SignatureConfig(signer: new CryptcpSigner($certPem, $thumbprint)));
+```
+
+`signCms()` 接收签名覆盖的字节及其按 `digestAlgorithm()` 计算的哈希，返回
+DER 或 BER 编码的 CMS SignedData，可分离也可附加。嵌入前库会像
+`complete()`（见下文）一样检查：它恰好覆盖本文档、由 `certificate()` 签发、
+签名有效；缺少的证书从 `chain()` 补充，配置中的 `timestampAuthority` 会为其
+加时间戳。证书会显示在印章上。适用于 `Pdf\Document::sign()`、排版文档的
+`signature:` 以及 `PdfSigner::sign()`。
 
 ## 在服务器之外签名
 

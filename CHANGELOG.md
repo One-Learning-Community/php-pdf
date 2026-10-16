@@ -4,6 +4,20 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `CmsSigner` — a key behind software that returns a whole CMS rather than a
+  bare signature value: CryptoPro CSP on the server (`CadesSignedData`,
+  `cryptcp`), a signing service, an HSM front end. Passed as
+  `SignatureConfig::$signer`, it signs in one call — `Pdf\Document::sign()`,
+  a laid-out document's `signature:`, `PdfSigner::sign()` — with no
+  `prepare()`/`complete()` by hand. Its CMS (DER or BER, detached or
+  attached) is checked the way `PreparedSignature::complete()` checks one:
+  it covers this document, it was made with the signer's certificate, it
+  verifies; missing certificates are added and the config's timestamp
+  authority timestamps it.
+
 ## [1.17.0] — 2026-10-14
 
 ### Added

@@ -16,6 +16,7 @@ Signieren des Dokuments aus dem Zertifikat befüllt wird.
 - [Zeitstempel](#zeitstempel)
 - [GOST R 34.10-2012](#gost-r-3410-2012)
 - [Signaturgröße](#signaturgröße)
+- [Schlüssel hinter CMS-Software](#schlüssel-hinter-cms-software)
 - [Signieren außerhalb des Servers](#signieren-außerhalb-des-servers)
 - [Bestehende PDF signieren](#bestehende-pdf-signieren)
 - [Zertifizierung und gesperrte Felder](#zertifizierung-und-gesperrte-felder)
@@ -146,6 +147,44 @@ Schlüsselgröße und danach, ob ein Zeitstempel angefordert wird. Bettet ein
 Signer mehr ein als erwartet, schlägt das Signieren mit einer Meldung fehl,
 die die benötigte Größe nennt; mit `contentsReserveBytes` lässt sich die
 Schätzung überschreiben.
+
+## Schlüssel hinter CMS-Software
+
+Manche Schlüssel sind nur über Software erreichbar, die eine ganze CMS
+statt eines nackten Signaturwerts liefert: CryptoPro CSP auf dem Server
+(`CadesSignedData.SignHash`, `cryptcp`), ein Signaturdienst, ein HSM-Frontend.
+Implementieren Sie `CmsSigner` und signieren Sie in einem Aufruf wie mit
+einem Schlüssel im Prozess — ohne manuelles Vorbereiten und Abschließen:
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Signature\Signer\{Certificate, CmsSigner, DigestAlgorithm};
+
+final class CryptcpSigner implements CmsSigner
+{
+    public function __construct(private string $certificatePem, private string $thumbprint) {}
+
+    public function certificate(): Certificate { return Certificate::fromPem($this->certificatePem); }
+    public function chain(): array { return []; }
+    public function digestAlgorithm(): DigestAlgorithm { return DigestAlgorithm::defaultFor($this->certificate()); }
+
+    public function signCms(string $content, string $digest): string
+    {
+        // Signaturwerkzeug oder CSP-API aufrufen, CMS zurückgeben
+    }
+}
+
+$doc->sign(new SignatureConfig(signer: new CryptcpSigner($certPem, $thumbprint)));
+```
+
+`signCms()` erhält die signierten Bytes und ihren Hash nach
+`digestAlgorithm()` und liefert eine CMS SignedData in DER oder BER,
+abgelöst oder eingebettet. Vor dem Einbetten prüft die Bibliothek sie wie
+`complete()` (unten): sie deckt genau dieses Dokument ab, wurde mit
+`certificate()` erstellt, ihre Signatur ist gültig; fehlende Zertifikate
+kommen aus `chain()`, und eine `timestampAuthority` in der Konfiguration
+versieht sie mit einem Zeitstempel. Das Zertifikat erscheint im Stempel.
+Funktioniert mit `Pdf\Document::sign()`, `signature:` eines gesetzten
+Dokuments und `PdfSigner::sign()`.
 
 ## Signieren außerhalb des Servers
 
