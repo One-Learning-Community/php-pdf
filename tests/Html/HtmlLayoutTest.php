@@ -82,4 +82,18 @@ final class HtmlLayoutTest extends TestCase
         // The image is drawn by a `cm` scaling it to the content width.
         self::assertMatchesRegularExpression('/555\.28 0 0 555\.28 20 /', $pdf);
     }
+
+    #[Test]
+    public function a_full_width_image_keeps_the_container_padding(): void
+    {
+        // The policy header (width: 100%) inside a section with padding was
+        // as wide as the page content, wider than the text under it.
+        $png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+        $pdf = self::render('<style>@page { size: A4; margin: 20pt }</style>'
+            .'<section style="padding: 0 30pt 0 40pt"><img src="'.$png.'" style="width: 100%"><p>Body</p></section>');
+
+        // 595.28 − 2×20 − 40 − 30 = 485.28, starting at 20 + 40.
+        self::assertMatchesRegularExpression('/485\.28 0 0 485\.28 60 /', $pdf);
+        self::assertEqualsWithDelta(60.0, PdfGeometry::word($pdf, 'Body')['xMin'], 0.5);
+    }
 }

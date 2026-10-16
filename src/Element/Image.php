@@ -45,6 +45,9 @@ final readonly class Image implements BlockElement, InlineElement
          */
         public bool $outOfFlow = false,
         public ?float $widthPercent = null,
+        /** Room kept free on the left and right of a block image (an HTML container's padding). */
+        public float $indentLeftPt = 0,
+        public float $indentRightPt = 0,
     ) {}
 
     public static function fromPath(

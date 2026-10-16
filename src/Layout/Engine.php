@@ -3034,10 +3034,13 @@ final class Engine
             $ctx->currentPage->beginMarkedContent('Figure', $mcid);
         }
 
-        [$widthPt, $heightPt] = $img->effectiveSizePt($ctx->contentWidth);
+        // A block image lays out in the line less its indents.
+        $areaX = $ctx->leftX + $img->indentLeftPt;
+        $areaW = $ctx->contentWidth - $img->indentLeftPt - $img->indentRightPt;
+        [$widthPt, $heightPt] = $img->effectiveSizePt($areaW);
 
         // Scale down if image is larger than content area in any dimension.
-        $maxWidth = $ctx->contentWidth;
+        $maxWidth = $areaW;
         if ($widthPt > $maxWidth) {
             $ratio = $maxWidth / $widthPt;
             $widthPt *= $ratio;
@@ -3058,9 +3061,9 @@ final class Engine
 
         // X-position by alignment.
         $x = match ($img->alignment) {
-            Alignment::Center => $ctx->leftX + ($ctx->contentWidth - $widthPt) / 2,
-            Alignment::End => $ctx->leftX + $ctx->contentWidth - $widthPt,
-            default => $ctx->leftX,
+            Alignment::Center => $areaX + ($areaW - $widthPt) / 2,
+            Alignment::End => $areaX + $areaW - $widthPt,
+            default => $areaX,
         };
 
         // PDF coords: drawImage takes (x, y, w, h), where y is the
@@ -5405,6 +5408,7 @@ final class Engine
             return 0.0;
         }
 
+        $contentWidth -= $img->indentLeftPt + $img->indentRightPt;
         [$w, $h] = $img->effectiveSizePt($contentWidth);
         if ($w > $contentWidth) {
             $h *= $contentWidth / $w;

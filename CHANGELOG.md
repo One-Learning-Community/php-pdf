@@ -51,7 +51,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Padding and border now count in the measured height.
 - `ParagraphStyle::$borders` were parsed from HTML but never drawn. The
   paragraph's background and border now stay inside its left/right
-  indents (an HTML container's padding).
+  indents (an HTML container's padding), and so does a block image
+  (`Image::$indentLeftPt` / `$indentRightPt`): a `width: 100%` header in
+  a padded section was as wide as the page.
 - A heading inside a table cell measured zero height; a heading's runs
   lost their own font size to the level's default.
 - HTML: the cells of the row after a `rowspan` slid under the merged
