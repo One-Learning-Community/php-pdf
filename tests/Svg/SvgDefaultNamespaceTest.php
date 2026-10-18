@@ -8,6 +8,7 @@ use Dskripchenko\PhpPdf\Document;
 use Dskripchenko\PhpPdf\Element\SvgElement;
 use Dskripchenko\PhpPdf\Layout\Engine;
 use Dskripchenko\PhpPdf\Section;
+use Dskripchenko\PhpPdf\Tests\Support\PdfBytes;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -54,6 +55,6 @@ final class SvgDefaultNamespaceTest extends TestCase
         $namespaced = $this->render(sprintf(self::GRADIENT_SVG, 'xmlns="http://www.w3.org/2000/svg"'));
         $plain = $this->render(sprintf(self::GRADIENT_SVG, ''));
 
-        self::assertSame($plain, $namespaced);
+        self::assertSame(PdfBytes::stable($plain), PdfBytes::stable($namespaced));
     }
 }

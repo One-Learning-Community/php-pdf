@@ -14,6 +14,7 @@ use Dskripchenko\PhpPdf\Image\PdfImage;
 use Dskripchenko\PhpPdf\Layout\Engine;
 use Dskripchenko\PhpPdf\Pdf\PdfFont;
 use Dskripchenko\PhpPdf\Section;
+use Dskripchenko\PhpPdf\Tests\Support\PdfBytes;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -111,7 +112,7 @@ final class InlineImageTest extends TestCase
         // The Y coordinate of 'Following paragraph' has to be lower (a smaller
         // Y) in docWith because of the taller line. Just check that the outputs
         // differ.
-        self::assertNotSame($bytesWith, $bytesWithout);
+        self::assertNotSame(PdfBytes::stable($bytesWith), PdfBytes::stable($bytesWithout));
     }
 
     #[Test]

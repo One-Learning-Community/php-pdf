@@ -13,6 +13,7 @@ use Dskripchenko\PhpPdf\Pdf\PdfFont;
 use Dskripchenko\PhpPdf\Section;
 use Dskripchenko\PhpPdf\Style\Alignment;
 use Dskripchenko\PhpPdf\Style\ParagraphStyle;
+use Dskripchenko\PhpPdf\Tests\Support\PdfBytes;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -87,7 +88,7 @@ final class JustifyAlignmentTest extends TestCase
         // The justified output has to be longer in bytes (more Tj positions for
         // the wider space gaps). The same number of glyphs, different Td X
         // coordinates, different bytes.
-        self::assertNotSame($startBytes, $bothBytes);
+        self::assertNotSame(PdfBytes::stable($startBytes), PdfBytes::stable($bothBytes));
     }
 
     #[Test]

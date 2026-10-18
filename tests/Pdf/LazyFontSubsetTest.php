@@ -7,6 +7,7 @@ namespace Dskripchenko\PhpPdf\Tests\Pdf;
 use Dskripchenko\PhpPdf\Font\Ttf\TtfFile;
 use Dskripchenko\PhpPdf\Pdf\Document as PdfDocument;
 use Dskripchenko\PhpPdf\Pdf\PdfFont;
+use Dskripchenko\PhpPdf\Tests\Support\PdfBytes;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -47,7 +48,7 @@ final class LazyFontSubsetTest extends TestCase
         self::assertStringContainsString('/Type /Font /Subtype /Type0', $bytes2);
 
         // Both should be valid distinct PDFs.
-        self::assertNotSame($bytes1, $bytes2);
+        self::assertNotSame(PdfBytes::stable($bytes1), PdfBytes::stable($bytes2));
     }
 
     #[Test]

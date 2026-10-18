@@ -8,6 +8,7 @@ use Dskripchenko\PhpPdf\Font\Ttf\TtfFile;
 use Dskripchenko\PhpPdf\Font\Ttf\VariableInstance;
 use Dskripchenko\PhpPdf\Pdf\Document;
 use Dskripchenko\PhpPdf\Pdf\PdfFont;
+use Dskripchenko\PhpPdf\Tests\Support\PdfBytes;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -91,7 +92,7 @@ final class VariableFontInstanceTest extends TestCase
         $b1000 = $pdf1000->toBytes();
 
         // Differing axis values have to produce different FontFile2 contents.
-        self::assertNotSame($b400, $b1000);
+        self::assertNotSame(PdfBytes::stable($b400), PdfBytes::stable($b1000));
     }
 
     #[Test]

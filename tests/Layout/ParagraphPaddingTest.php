@@ -12,6 +12,7 @@ use Dskripchenko\PhpPdf\Layout\Engine;
 use Dskripchenko\PhpPdf\Pdf\PdfFont;
 use Dskripchenko\PhpPdf\Section;
 use Dskripchenko\PhpPdf\Style\ParagraphStyle;
+use Dskripchenko\PhpPdf\Tests\Support\PdfBytes;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -64,7 +65,7 @@ final class ParagraphPaddingTest extends TestCase
         ]));
         $b1 = $docPlain->toBytes(new Engine(compressStreams: false, defaultFont: $this->font()));
         $b2 = $docPadded->toBytes(new Engine(compressStreams: false, defaultFont: $this->font()));
-        self::assertNotSame($b1, $b2);
+        self::assertNotSame(PdfBytes::stable($b1), PdfBytes::stable($b2));
     }
 
     #[Test]

@@ -9,6 +9,7 @@ use Dskripchenko\PhpPdf\Element\Paragraph;
 use Dskripchenko\PhpPdf\Element\Run;
 use Dskripchenko\PhpPdf\Layout\Engine;
 use Dskripchenko\PhpPdf\Section;
+use Dskripchenko\PhpPdf\Tests\Support\PdfBytes;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -54,7 +55,7 @@ final class DocumentStreamTest extends TestCase
         $bytesStream = stream_get_contents($mem);
         fclose($mem);
 
-        self::assertSame($bytesDirect, $bytesStream);
+        self::assertSame(PdfBytes::stable($bytesDirect), PdfBytes::stable($bytesStream));
     }
 
     #[Test]
@@ -86,7 +87,7 @@ final class DocumentStreamTest extends TestCase
         try {
             $doc->toFile($tmp, $engine);
             $actual = file_get_contents($tmp);
-            self::assertSame($expected, $actual);
+            self::assertSame(PdfBytes::stable($expected), PdfBytes::stable($actual));
         } finally {
             @unlink($tmp);
         }

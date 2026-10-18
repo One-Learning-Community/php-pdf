@@ -13,6 +13,7 @@ use Dskripchenko\PhpPdf\Pdf\PdfFont;
 use Dskripchenko\PhpPdf\Section;
 use Dskripchenko\PhpPdf\Style\ParagraphStyle;
 use Dskripchenko\PhpPdf\Style\RunStyle;
+use Dskripchenko\PhpPdf\Tests\Support\PdfBytes;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -98,7 +99,7 @@ final class LetterSpacingTest extends TestCase
             defaultFont: $this->font(),
         ));
         // Different line-heights → different cursorY positions → different output.
-        self::assertNotSame($b1, $b2);
+        self::assertNotSame(PdfBytes::stable($b1), PdfBytes::stable($b2));
     }
 
     #[Test]
