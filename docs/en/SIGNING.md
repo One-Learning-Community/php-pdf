@@ -453,7 +453,11 @@ $p7s = DetachedSignature::addTimestamp($cmsFromCryptoPro, $tsa);  // CAdES-BES â
 
 `sign()` writes CAdES-BES: `content-type`, `message-digest`, `signing-time`
 and `signing-certificate-v2`, the signer's certificate and chain embedded;
-with a timestamp authority it is CAdES-T. `verify()` returns the same
+with a timestamp authority it is CAdES-T. `$signer` may also be a
+`CmsSigner` â€” CryptoPro CSP on the server, a signing service: its CMS is
+checked as for a PDF (it covers exactly these bytes, it was made with the
+signer's certificate, it verifies) and comes back detached, with the chain
+and the timestamp added. `verify()` returns the same
 `SignatureReport` as the PDF validator: digest and signature value, the
 certificate binding, the timestamp, the chain (judged at the timestamped
 time) and, given a `RevocationSource`, revocation. It takes DER, BER,

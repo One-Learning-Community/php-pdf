@@ -394,7 +394,9 @@ $p7s = DetachedSignature::addTimestamp($cmsFromCryptoPro, $tsa);  // CAdES-BES �
 
 `sign()` 生成 CAdES-BES：`content-type`、`message-digest`、`signing-time`
 和 `signing-certificate-v2`，并嵌入签名者证书及证书链；配合时间戳服务即为
-CAdES-T。`verify()` 返回与 PDF 验证相同的 `SignatureReport`：摘要与签名值、
+CAdES-T。`$signer` 也可以是 `CmsSigner`（服务器上的 CryptoPro CSP、签名服务）：
+其 CMS 按 PDF 的方式检查（恰好覆盖这些字节、由签名者证书生成、签名有效），
+并以分离式返回，附带证书链和时间戳。`verify()` 返回与 PDF 验证相同的 `SignatureReport`：摘要与签名值、
 证书绑定、时间戳、证书链（按时间戳时刻判断），以及在提供
 `RevocationSource` 时的吊销状态。接受 DER、BER、base64 和 PEM；附加式签名
 必须恰好携带所给内容；没有签名属性的签名（`openssl cms -noattr`）也可验证，

@@ -13,6 +13,7 @@ use Dskripchenko\PhpPdf\Pdf\Signature\Ltv\OnlineRevocationSource;
 use Dskripchenko\PhpPdf\Pdf\Signature\Tsa\TsaClient;
 use Dskripchenko\PhpPdf\Pdf\Signature\Validation\RevocationStatus;
 use Dskripchenko\PhpPdf\Pdf\Signature\Validation\TrustStore;
+use Dskripchenko\PhpPdf\Tests\Pdf\Signature\Support\FakeCmsSigner;
 use Dskripchenko\PhpPdf\Tests\Pdf\Signature\Support\OfflinePkiTransport;
 use Dskripchenko\PhpPdf\Tests\Pdf\Signature\Support\OpenSslTsaTransport;
 use Dskripchenko\PhpPdf\Tests\Pdf\Signature\Support\Pki;
@@ -237,5 +238,27 @@ final class DetachedSignatureTest extends TestCase
         self::assertTrue($report->isValid(), implode('; ', $report->errors));
         self::assertSame(RevocationStatus::Good, $report->revocation);
         self::assertSame('fetched', $report->revocationSource);
+    }
+
+    #[Test]
+    public function a_cms_signer_makes_a_detached_signature_too(): void
+    {
+        foreach (['hash', 'file'] as $how) {
+            // 'file' signs attached, as a file-signing tool does; it comes back detached.
+            $signer = new FakeCmsSigner($how);
+            $p7s = DetachedSignature::sign('invoice bytes', $signer, self::tsa());
+
+            $report = DetachedSignature::verify('invoice bytes', $p7s, self::trust());
+            self::assertTrue($report->isValid(), $how.': '.implode('; ', $report->errors));
+            self::assertNotNull($report->timestampTime, $how);
+            self::assertSame([['invoice bytes', hash('sha256', 'invoice bytes', true)]], $signer->calls);
+        }
+    }
+
+    #[Test]
+    public function a_cms_signer_signing_other_bytes_is_refused(): void
+    {
+        $this->expectExceptionMessage('signs different data');
+        DetachedSignature::sign('invoice bytes', new FakeCmsSigner(tamper: 'something else'));
     }
 }

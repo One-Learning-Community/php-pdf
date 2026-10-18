@@ -6,6 +6,7 @@ namespace Dskripchenko\PhpPdf\Pdf\Signature\Cms;
 
 use Dskripchenko\PhpPdf\Pdf\Signature\Asn1\Oid;
 use Dskripchenko\PhpPdf\Pdf\Signature\Ltv\RevocationSource;
+use Dskripchenko\PhpPdf\Pdf\Signature\Signer\CmsSigner;
 use Dskripchenko\PhpPdf\Pdf\Signature\Signer\Signer;
 use Dskripchenko\PhpPdf\Pdf\Signature\Tsa\TsaClient;
 use Dskripchenko\PhpPdf\Pdf\Signature\Validation\CmsChecks;
@@ -32,11 +33,23 @@ final class DetachedSignature
     /**
      * Signs `$content`. Returns the CMS as DER.
      *
+     * A `CmsSigner` (CryptoPro CSP, a signing service) makes the CMS itself;
+     * it is checked as for a PDF — it covers exactly `$content`, it was made
+     * with the signer's certificate, it verifies — and comes back detached,
+     * with the chain and the timestamp added. Its `signing-time` is the
+     * signer's own; `$signingTime` applies to a `Signer` only.
+     *
      * @param  ?TsaClient  $timestampAuthority  Adds a signature timestamp (CAdES-T).
      * @param  ?\DateTimeInterface  $signingTime  The `signing-time` attribute; defaults to now.
      */
-    public static function sign(string $content, Signer $signer, ?TsaClient $timestampAuthority = null, ?\DateTimeInterface $signingTime = null): string
+    public static function sign(string $content, Signer|CmsSigner $signer, ?TsaClient $timestampAuthority = null, ?\DateTimeInterface $signingTime = null): string
     {
+        if ($signer instanceof CmsSigner) {
+            $cms = $signer->signCms($content, $signer->digestAlgorithm()->digest($content));
+
+            return OutsideCms::accept($cms, $content, $signer->certificate(), $signer->chain(), $timestampAuthority, true, 'the CmsSigner');
+        }
+
         $builder = new CmsBuilder(
             $signer->certificate(),
             $signer->chain(),
