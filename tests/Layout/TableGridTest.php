@@ -56,6 +56,32 @@ final class TableGridTest extends TestCase
     }
 
     #[Test]
+    public function a_row_carried_to_a_new_page_still_splits(): void
+    {
+        // The page is nearly full, and the row's first paragraph does not fit
+        // what is left: nothing of it can stay, so it moves to the next page —
+        // where, taller than a whole page, it has to split again. It used to be
+        // drawn whole there and ran past the bottom, its text lost.
+        $filler = [];
+        for ($i = 1; $i <= 50; $i++) {
+            $filler[] = new Paragraph([new Run("Filler$i")]);
+        }
+        $tall = [new Paragraph([new Run(str_repeat('opening words ', 30))])];
+        for ($i = 1; $i <= 90; $i++) {
+            $tall[] = new Paragraph([new Run("Line$i")]);
+        }
+        $pdf = self::render([...$filler, new Table([new Row([new Cell($tall), new Cell([new Paragraph([new Run('Side')])])])])]);
+
+        $words = PdfGeometry::words($pdf) ?? self::markTestSkipped('pdftotext is not available');
+        foreach (['Line1', 'Line45', 'Line90'] as $needle) {
+            self::assertNotSame([], array_filter($words, static fn (array $w): bool => $w['text'] === $needle), "$needle is lost");
+        }
+        foreach ($words as $w) {
+            self::assertLessThan(841.89, $w['yMax'], "\"{$w['text']}\" runs past the bottom of page {$w['page']}");
+        }
+    }
+
+    #[Test]
     public function rows_after_a_merge_has_run_out_lay_out(): void
     {
         // Once the merge is over, every column is free again; the third row
