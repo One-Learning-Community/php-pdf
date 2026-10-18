@@ -4,6 +4,54 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.21.0] — 2026-10-18
+
+### Added
+- HTML: `display: grid` — `grid-template-columns` (lengths, `%`, `fr`,
+  `auto`, `repeat()`, `minmax()`), `grid-column: span n` / `a / b`, `gap`.
+- HTML: `display: flex` wraps into lines with `flex-wrap: wrap` (items keep
+  their widths, a short line keeps its empty room) and stacks with
+  `flex-direction: column`.
+- HTML: `float: left / right` with `clear` — the float and the content
+  after it side by side (text does not run on under a float that ends).
+- HTML: `position: absolute` and `fixed` through a new out-of-flow
+  `Element\Positioned` block — offsets from the page area, or from the
+  padding edge of a positioned ancestor; a fixed element repeats on every
+  page of the section.
+- HTML: `break-inside: avoid` on any block; one taller than a page still
+  splits.
+- HTML: `::before` / `::after` with `content` — strings with CSS escapes,
+  `attr()`, `open-quote` / `close-quote`.
+- HTML: `<link rel="stylesheet">` to local files and `data:` URLs, applied
+  in document order with `<style>`; remote sheets are not fetched.
+- HTML: `font-family` lists — the first family the font provider has;
+  generic names choose the base-14 face.
+- OpenType fonts with CFF outlines (`.otf` with a `CFF ` table), embedded
+  whole as `/FontFile3 /CIDFontType0C` (PDF/A-1 compatible); CID-keyed
+  fonts map CIDs through the CFF charset. GPOS extension lookups are
+  followed, so such fonts keep their kerning. CFF2 is refused clearly.
+- PNG: palette images (1–8 bit, with tRNS transparency), 16-bit images
+  (with 16-bit alpha) and interlaced (Adam7) images.
+- `scripts/viewer-matrix/run.sh` — renders the torture set with pdf.js,
+  PDFium (Chrome's engine) and Quartz; a torture document for HTML/CSS.
+
+### Changed
+- Text without an embedded font is set in the base-14 face that matches
+  the run — bold, italic, Times for serif, Courier for monospace — and
+  measured with the fonts' real widths (it was always `fallbackStandard`,
+  at half an em per letter), so centring, right alignment, justification,
+  wrapping and chart labels are right.
+- PNG images without alpha are embedded with their compressed data as it
+  is (they were decoded and recompressed): a 640×480 RGB image takes
+  225 KB instead of 699 KB and 0.3 ms instead of 98 ms.
+- `<th>` is centred unless styled otherwise, as in a browser.
+
+### Fixed
+- A flex or grid item's background and border were drawn twice (on the
+  cell and on the text inside), with the gap inside the border.
+- Duplicate-image detection now compares palettes and masks, and
+  `ImageStamper` handles palette images.
+
 ## [1.20.0] — 2026-10-18
 
 ### Added
