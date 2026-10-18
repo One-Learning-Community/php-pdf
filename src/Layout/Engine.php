@@ -35,6 +35,7 @@ use Dskripchenko\PhpPdf\Element\ListItem;
 use Dskripchenko\PhpPdf\Element\ListNode;
 use Dskripchenko\PhpPdf\Element\PageBreak;
 use Dskripchenko\PhpPdf\Element\Paragraph;
+use Dskripchenko\PhpPdf\Element\Positioned;
 use Dskripchenko\PhpPdf\Element\Row;
 use Dskripchenko\PhpPdf\Element\Run;
 use Dskripchenko\PhpPdf\Element\Table;
@@ -116,6 +117,14 @@ final class Engine
      */
     private ?Section $currentSection = null;
 
+    /**
+     * `position: fixed` blocks met so far in the current section, drawn
+     * again on each new page.
+     *
+     * @var list<Positioned>
+     */
+    private array $fixedPositioned = [];
+
     private ?PdfFontResolver $resolver = null;
 
     /** Font ascent and descent, in em, used to place a baseline in its line. */
@@ -186,13 +195,13 @@ final class Engine
     private function resolveEmbeddedFont(RunStyle $style, ?string $text = null): ?PdfFont
     {
         if ($style->fontFamily !== null && $this->resolver !== null) {
-            $resolved = $this->resolver->resolve(
-                $style->fontFamily,
-                $style->bold,
-                $style->italic,
-            );
-            if ($resolved !== null) {
-                return $this->applyFallbackChain($resolved, $text);
+            // A CSS list ("Brand, Arial, sans-serif"): the first family the
+            // provider has.
+            foreach (self::families($style->fontFamily) as $family) {
+                $resolved = $this->resolver->resolve($family, $style->bold, $style->italic);
+                if ($resolved !== null) {
+                    return $this->applyFallbackChain($resolved, $text);
+                }
             }
         }
 
@@ -362,6 +371,7 @@ final class Engine
         $sectionPageRanges = [];
         foreach ($sections as $idx => $section) {
             $this->currentSection = $section;
+            $this->fixedPositioned = [];
             if ($idx > 0) {
                 // Section break — force new page with new PageSetup.
                 $context->pageSetup = $section->pageSetup;
@@ -454,8 +464,68 @@ final class Engine
             $block instanceof SvgElement => $this->renderSvgElement($block, $ctx),
             $block instanceof Heading => $this->renderHeading($block, $ctx),
             $block instanceof MathExpression => $this->renderMathExpression($block, $ctx),
+            $block instanceof Positioned => $this->renderPositioned($block, $ctx),
             default => null,
         };
+    }
+
+    /**
+     * Out-of-flow blocks (CSS `position: absolute | fixed`): drawn at their
+     * offsets, the cursor untouched. A fixed one comes back on every new
+     * page of the section.
+     */
+    private function renderPositioned(Positioned $p, LayoutContext $ctx): void
+    {
+        if ($p->fixed) {
+            $this->fixedPositioned[] = $p;
+        }
+        $this->drawPositioned($p, $ctx);
+    }
+
+    private function drawPositioned(Positioned $p, LayoutContext $ctx): void
+    {
+        $setup = $ctx->pageSetup;
+        [, $pageHeight] = $setup->dimensions();
+        if ($p->inFlow) {
+            $areaX = $ctx->leftX;
+            $areaTop = $ctx->cursorY;
+            $areaW = $ctx->contentWidth;
+            $areaBottom = $ctx->bottomY;
+        } else {
+            $areaX = $setup->margins->leftPt;
+            $areaTop = $pageHeight - $setup->margins->topPt;
+            $areaW = $setup->contentWidthPt();
+            $areaBottom = $setup->margins->bottomPt;
+        }
+        $width = max(1.0, $p->widthPt ?? ($areaW - ($p->leftPt ?? 0.0) - ($p->rightPt ?? 0.0)));
+        $height = $this->measureBlockListHeight($p->children, $width);
+        $x = match (true) {
+            $p->leftPt !== null => $areaX + $p->leftPt,
+            $p->rightPt !== null => $areaX + $areaW - $p->rightPt - $width,
+            default => $areaX,
+        };
+        $top = match (true) {
+            $p->topPt !== null => $areaTop - $p->topPt,
+            $p->bottomPt !== null => $areaBottom + $p->bottomPt + $height,
+            default => $areaTop,
+        };
+
+        $inner = new LayoutContext(
+            pdf: $ctx->pdf,
+            currentPage: $ctx->currentPage,
+            cursorY: $top,
+            leftX: $x,
+            contentWidth: $width,
+            bottomY: $top - max($height, 1.0) - 1.0,
+            topY: $top,
+            pageSetup: $setup,
+            skipParagraphTag: $ctx->skipParagraphTag,
+            // No page breaks out of here: what does not fit is cut.
+            inHeaderFooterRender: true,
+        );
+        foreach ($p->children as $child) {
+            $this->renderBlock($child, $inner);
+        }
     }
 
     /**
@@ -2190,6 +2260,9 @@ final class Engine
     {
         if ($this->currentSection === null) {
             return;
+        }
+        foreach ($this->fixedPositioned as $fixed) {
+            $this->drawPositioned($fixed, $ctx);
         }
         $section = $this->currentSection;
 
@@ -4001,14 +4074,20 @@ final class Engine
      */
     private function standardFontFor(RunStyle $style): StandardFont
     {
-        $family = strtolower((string) $style->fontFamily);
-        $base = match (true) {
-            $family === '' => self::standardFamily($this->fallbackStandard),
-            str_contains($family, 'mono') || str_contains($family, 'courier') || str_contains($family, 'consol') => 'courier',
-            str_contains($family, 'sans') || str_contains($family, 'helvetica') || str_contains($family, 'arial') => 'helvetica',
-            str_contains($family, 'serif') || str_contains($family, 'times') || str_contains($family, 'georgia') => 'times',
-            default => self::standardFamily($this->fallbackStandard),
-        };
+        $base = self::standardFamily($this->fallbackStandard);
+        foreach (self::families((string) $style->fontFamily) as $family) {
+            $family = strtolower($family);
+            $named = match (true) {
+                str_contains($family, 'mono') || str_contains($family, 'courier') || str_contains($family, 'consol') => 'courier',
+                str_contains($family, 'sans') || str_contains($family, 'helvetica') || str_contains($family, 'arial') => 'helvetica',
+                str_contains($family, 'serif') || str_contains($family, 'times') || str_contains($family, 'georgia') => 'times',
+                default => null,
+            };
+            if ($named !== null) {
+                $base = $named;
+                break;
+            }
+        }
         if ($base === null) {
             // Symbol or ZapfDingbats as the fallback: no faces to choose.
             return $this->fallbackStandard;
@@ -4028,6 +4107,16 @@ final class Engine
             'courier-i' => StandardFont::CourierOblique,
             default => StandardFont::CourierBoldOblique,
         };
+    }
+
+    /**
+     * The families of a `fontFamily` that may be a CSS list.
+     *
+     * @return list<string>
+     */
+    private static function families(string $fontFamily): array
+    {
+        return array_values(array_filter(array_map('trim', explode(',', $fontFamily)), static fn (string $f): bool => $f !== ''));
     }
 
     private static function standardFamily(StandardFont $font): ?string
@@ -4276,6 +4365,12 @@ final class Engine
                 // pulled two more documents out of shape. Word's rule here is
                 // more than a single condition.
                 $available = $ctx->cursorY - $ctx->bottomY;
+                // A row kept together that is taller than a whole page splits
+                // after all, as in a browser — carried over, it would not fit
+                // on the next page either.
+                if ($row->cantSplit && $rowHeight > $ctx->topY - $ctx->bottomY) {
+                    $row = new Row($row->cells, $row->isHeader, $row->heightPt, $row->minHeightPt);
+                }
                 $split = $this->splitRowForPage($t, $row, $colWidths, $available, $cols[$rowIdx]);
 
                 if ($split !== null) {

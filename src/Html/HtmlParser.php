@@ -16,6 +16,7 @@ use Dskripchenko\PhpPdf\Element\ListItem;
 use Dskripchenko\PhpPdf\Element\ListNode;
 use Dskripchenko\PhpPdf\Element\PageBreak;
 use Dskripchenko\PhpPdf\Element\Paragraph;
+use Dskripchenko\PhpPdf\Element\Positioned;
 use Dskripchenko\PhpPdf\Element\Row;
 use Dskripchenko\PhpPdf\Element\Run;
 use Dskripchenko\PhpPdf\Element\Table;
@@ -142,10 +143,19 @@ final class HtmlParser
         if (! $root instanceof \DOMNode) {
             return [];
         }
-        foreach (iterator_to_array($dom->getElementsByTagName('style')) as $style) {
-            $media = strtolower($style->getAttribute('media'));
-            if ($media === '' || str_contains($media, 'print') || str_contains($media, 'all')) {
-                $this->css->add($style->textContent);
+        // <style> blocks and <link rel="stylesheet"> in document order, as a
+        // browser applies them; screen-only sheets are skipped.
+        foreach ((new \DOMXPath($dom))->query('//style | //link') ?: [] as $sheet) {
+            if (! $sheet instanceof \DOMElement) {
+                continue;
+            }
+            $media = strtolower($sheet->getAttribute('media'));
+            if ($media !== '' && ! str_contains($media, 'print') && ! str_contains($media, 'all')) {
+                continue;
+            }
+            $css = strtolower($sheet->nodeName) === 'style' ? $sheet->textContent : $this->linkedStyleSheet($sheet);
+            if ($css !== null) {
+                $this->css->add($css);
             }
         }
         $this->styleStack = [new RunStyle];
@@ -188,6 +198,31 @@ final class HtmlParser
         return new \Dskripchenko\PhpPdf\Document(
             $setup !== null ? new \Dskripchenko\PhpPdf\Section($blocks, $setup) : new \Dskripchenko\PhpPdf\Section($blocks),
         );
+    }
+
+    /**
+     * The CSS a `<link rel="stylesheet">` points at: a `data:` URL or a
+     * readable local file, like `<img src>`. Remote sheets are not fetched —
+     * the parser makes no network requests.
+     */
+    private function linkedStyleSheet(\DOMElement $link): ?string
+    {
+        $rel = ' '.strtolower(preg_replace('/\s+/', ' ', $link->getAttribute('rel')) ?? '').' ';
+        $href = trim($link->getAttribute('href'));
+        if (! str_contains($rel, ' stylesheet ') || str_contains($rel, ' alternate ') || $href === '') {
+            return null;
+        }
+        if (preg_match('#^data:text/css(;charset=[^;,]+)?(;base64)?,(.*)$#is', $href, $m) === 1) {
+            $css = $m[2] !== '' ? base64_decode($m[3], true) : rawurldecode($m[3]);
+
+            return $css === false ? null : $css;
+        }
+        if (preg_match('#^[a-z][a-z0-9+.-]*://#i', $href) === 1 && ! str_starts_with(strtolower($href), 'file://')) {
+            return null;
+        }
+        $path = str_starts_with(strtolower($href), 'file://') ? substr($href, 7) : $href;
+
+        return is_file($path) && is_readable($path) ? (string) file_get_contents($path) : null;
     }
 
     private function loadDom(string $html): \DOMDocument
@@ -354,11 +389,57 @@ final class HtmlParser
      */
     private function walkBlocks(\DOMNode $parent): array
     {
-        $blocks = [];
-        $pendingInlines = [];
+        return $this->walkNodes(iterator_to_array($parent->childNodes), $parent instanceof \DOMElement ? $parent : null);
+    }
 
-        foreach ($parent->childNodes as $node) {
+    /**
+     * The blocks of a run of sibling nodes. `$owner` is the element they
+     * belong to (for its `::before` / `::after`), when they are all of it.
+     *
+     * @param  list<\DOMNode>  $nodes
+     * @return list<BlockElement>
+     */
+    private function walkNodes(array $nodes, ?\DOMElement $owner): array
+    {
+        $blocks = [];
+        // Absolutely placed children go first: their offsets count from
+        // where their box starts.
+        $placed = [];
+        $pendingInlines = $owner !== null ? $this->generated($owner, 'before') : [];
+
+        $count = count($nodes);
+        for ($i = 0; $i < $count; $i++) {
+            $node = $nodes[$i];
             if ($this->isHidden($node)) {
+                continue;
+            }
+            if ($node instanceof \DOMElement && ($position = $this->positioned($node)) !== null) {
+                if ($position->fixed || ! $position->inFlow) {
+                    $blocks[] = $position;
+                } else {
+                    $placed[] = $position;
+                }
+
+                continue;
+            }
+            if ($node instanceof \DOMElement && ($side = $this->floatSide($node)) !== null) {
+                if ($pendingInlines !== []) {
+                    $this->pushParagraph($blocks, $pendingInlines);
+                    $pendingInlines = [];
+                }
+                // The float and what follows it, up to an element that clears.
+                $rest = [];
+                for ($j = $i + 1; $j < $count; $j++) {
+                    if ($nodes[$j] instanceof \DOMElement && $this->clears($nodes[$j])) {
+                        break;
+                    }
+                    $rest[] = $nodes[$j];
+                }
+                foreach ($this->floated($node, $side, $rest) as $b) {
+                    $blocks[] = $b;
+                }
+                $i = $j - 1;
+
                 continue;
             }
             if ($node instanceof \DOMElement && $this->isBlockTag($node)) {
@@ -394,9 +475,13 @@ final class HtmlParser
             }
         }
 
+        if ($owner !== null) {
+            $pendingInlines = array_merge($pendingInlines, $this->generated($owner, 'after'));
+        }
         if ($pendingInlines !== []) {
             $this->pushParagraph($blocks, $pendingInlines);
         }
+        $blocks = array_merge($placed, $blocks);
 
         // Breaks that meet (after one block, before the next) are one break.
         $out = [];
@@ -408,6 +493,122 @@ final class HtmlParser
         }
 
         return $out;
+    }
+
+    /**
+     * `position: absolute | fixed` as an out-of-flow block; null for other
+     * positions. An absolute element inside a positioned ancestor is placed
+     * from where that ancestor's content starts; otherwise from the page
+     * area. `fixed` repeats on every page.
+     */
+    private function positioned(\DOMElement $node): ?Positioned
+    {
+        $decl = $this->decl($node);
+        $position = strtolower(trim($decl['position'] ?? ''));
+        if ($position !== 'absolute' && $position !== 'fixed') {
+            return null;
+        }
+        $inFlow = false;
+        if ($position === 'absolute') {
+            for ($a = $node->parentNode; $a instanceof \DOMElement && $a->getAttribute('id') !== '_phppdf_root'; $a = $a->parentNode) {
+                if (in_array(strtolower(trim($this->decl($a)['position'] ?? '')), ['relative', 'absolute', 'fixed', 'sticky'], true)) {
+                    $inFlow = true;
+                    break;
+                }
+            }
+        }
+        $offset = fn (string $side): ?float => isset($decl[$side]) && strtolower(trim($decl[$side])) !== 'auto'
+            ? $this->length($decl[$side], $this->contentWidth())
+            : null;
+        [$widthPt, $widthPercent] = $this->widthOf($decl['width'] ?? null);
+        $tag = strtolower($node->nodeName);
+        if ($tag === 'img') {
+            $this->enter($node, $this->currentStyle(), true);
+            try {
+                $image = $this->parseImage($node, block: true);
+            } finally {
+                $this->leave();
+            }
+            $children = $image !== null ? [$image] : [];
+            $widthPt ??= $image?->effectiveSizePt(null)[0];
+        } else {
+            $children = $this->blockElements($node);
+        }
+        if ($children === []) {
+            return null;
+        }
+
+        return new Positioned(
+            $children,
+            topPt: $offset('top'),
+            rightPt: $offset('right'),
+            bottomPt: $offset('bottom'),
+            leftPt: $offset('left'),
+            widthPt: $widthPt ?? ($widthPercent !== null ? $this->contentWidth() * $widthPercent / 100 : null),
+            fixed: $position === 'fixed',
+            inFlow: $inFlow,
+        );
+    }
+
+    /** 'left' or 'right' for a floated element. */
+    private function floatSide(\DOMElement $node): ?string
+    {
+        $float = strtolower(trim($this->decl($node)['float'] ?? ''));
+
+        return in_array($float, ['left', 'right'], true) ? $float : null;
+    }
+
+    private function clears(\DOMElement $node): bool
+    {
+        return in_array(strtolower(trim($this->decl($node)['clear'] ?? '')), ['left', 'right', 'both'], true);
+    }
+
+    /**
+     * A float and the content after it, side by side in a borderless row:
+     * the float in a column of its own width, the rest beside it. Text does
+     * not run on under a float that ends early — the one approximation.
+     *
+     * @param  'left'|'right'  $side
+     * @param  list<\DOMNode>  $rest
+     * @return list<BlockElement>
+     */
+    private function floated(\DOMElement $node, string $side, array $rest): array
+    {
+        $decl = $this->decl($node);
+        [$mt, $mr, $mb, $ml] = $this->sides($decl, 'margin');
+        [$widthPt, $widthPercent] = $this->widthOf($decl['width'] ?? null);
+        if (strtolower($node->nodeName) === 'img') {
+            $this->enter($node, $this->currentStyle(), true);
+            try {
+                $image = $this->parseImage($node, block: true);
+            } finally {
+                $this->leave();
+            }
+            $floatBlocks = $image !== null ? [$image] : [];
+            if ($widthPt === null && $widthPercent === null && $image !== null) {
+                $widthPt = $image->effectiveSizePt(null)[0];
+            }
+        } else {
+            $floatBlocks = $this->blockElements($node);
+        }
+        $restBlocks = $this->walkNodes($rest, null);
+        if ($floatBlocks === []) {
+            return $restBlocks;
+        }
+
+        $zero = static fn (float $top, float $right, float $bottom, float $left, ?float $w = null, ?float $wp = null): CellStyle => new CellStyle(
+            widthPt: $w, widthPercent: $wp,
+            paddingTopPt: $top, paddingRightPt: $right, paddingBottomPt: $bottom, paddingLeftPt: $left,
+        );
+        $floatCell = new Cell($floatBlocks, $side === 'left'
+            ? $zero($mt, $mr, $mb, $ml, $widthPt !== null ? $widthPt + $ml + $mr : null, $widthPercent)
+            : $zero($mt, $mr, $mb, $ml, $widthPt !== null ? $widthPt + $ml + $mr : null, $widthPercent));
+        $restCell = new Cell($restBlocks === [] ? [new Paragraph([])] : $restBlocks, $zero(0, 0, 0, 0));
+
+        return [new Table(
+            [new Row($side === 'left' ? [$floatCell, $restCell] : [$restCell, $floatCell])],
+            new TableStyle(widthPercent: 100, borderCollapse: true),
+        )];
     }
 
     /**
@@ -509,11 +710,16 @@ final class HtmlParser
 
         $this->enter($node, $this->headingBase($node, $decl), true);
         try {
-            foreach ($this->buildBlock($node, $decl) as $b) {
-                $out[] = $b;
-            }
+            $built = $this->buildBlock($node, $decl);
         } finally {
             $this->leave();
+        }
+        $avoid = strtolower(trim($decl['break-inside'] ?? ($decl['page-break-inside'] ?? '')));
+        if (in_array($avoid, ['avoid', 'avoid-page'], true) && $built !== []) {
+            $built = [$this->keptTogether($built)];
+        }
+        foreach ($built as $b) {
+            $out[] = $b;
         }
 
         if ($this->isPageBreak($decl['page-break-after'] ?? null)) {
@@ -557,8 +763,11 @@ final class HtmlParser
         $tag = strtolower($node->nodeName);
         $display = strtolower(trim($decl['display'] ?? ''));
 
-        if ($display === 'flex' && $this->elementChildren($node) !== []) {
-            return [$this->flexRow($node, $decl)];
+        if (in_array($display, ['flex', 'inline-flex'], true) && $this->elementChildren($node) !== []) {
+            return $this->flexBox($node, $decl);
+        }
+        if (in_array($display, ['grid', 'inline-grid'], true) && $this->elementChildren($node) !== []) {
+            return $this->gridBox($node, $decl);
         }
 
         return match (true) {
@@ -676,61 +885,353 @@ final class HtmlParser
     }
 
     /**
-     * `display: flex` — the children side by side in a one-row table; each
-     * keeps its own box, `gap` goes between them, `width`/`flex-basis` set a
-     * column, the rest share equally (`flex: 1`).
+     * `display: flex`. A row (the default) puts the children side by side
+     * in a one-row table: each keeps its own box, `gap` goes between them,
+     * `width` / `flex-basis` set a column, the rest share equally
+     * (`flex: 1`). With `flex-wrap: wrap` the children go into as many rows
+     * as their widths need. `flex-direction: column` stacks them.
      *
      * @param  array<string, string>  $decl
+     * @return list<BlockElement>
      */
-    private function flexRow(\DOMElement $node, array $decl): Table
+    private function flexBox(\DOMElement $node, array $decl): array
     {
+        $direction = strtolower(trim($decl['flex-direction'] ?? ''));
+        if (str_starts_with($direction, 'column')) {
+            return $this->container($node, $decl);
+        }
         $gap = $this->length($decl['column-gap'] ?? ($decl['gap'] ?? '')) ?? 0.0;
+        $rowGap = $this->length($decl['row-gap'] ?? ($decl['gap'] ?? '')) ?? 0.0;
         $vAlign = match (strtolower(trim($decl['align-items'] ?? ''))) {
             'center' => VerticalAlignment::Center,
             'flex-end', 'end' => VerticalAlignment::Bottom,
             default => VerticalAlignment::Top,
         };
         $children = $this->elementChildren($node);
-        $count = count($children);
-        $cells = [];
-        foreach ($children as $i => $child) {
-            $this->enter($child, $this->currentStyle(), true);
-            try {
-                $childDecl = $this->decl($child);
-                $tag = strtolower($child->nodeName);
-                if ($tag === 'img' || $tag === 'svg') {
-                    $image = $tag === 'img' ? $this->parseImage($child, block: true) : $this->parseInlineSvg($child);
-                    $blocks = $image !== null ? [$image] : [];
-                } else {
-                    $blocks = $this->hasBlockChild($child) ? $this->walkBlocks($child) : [$this->parseParagraph($child)];
-                }
-                [$pt, $pr, $pb, $pl] = $this->sides($childDecl, 'padding');
-                [$widthPt, $widthPercent] = $this->widthOf($childDecl['width'] ?? ($childDecl['flex-basis'] ?? null));
-                $cells[] = new Cell($blocks === [] ? [new Paragraph([])] : $blocks, new CellStyle(
-                    widthPt: $widthPt,
-                    widthPercent: $widthPercent,
-                    paddingTopPt: $pt,
-                    paddingRightPt: $pr + ($i < $count - 1 ? $gap / 2 : 0.0),
-                    paddingBottomPt: $pb,
-                    paddingLeftPt: $pl + ($i > 0 ? $gap / 2 : 0.0),
-                    verticalAlign: $vAlign,
-                    backgroundColor: $this->backgroundColor($childDecl),
-                    borders: $this->borders($childDecl),
-                ));
-            } finally {
-                $this->leave();
+        $wrap = in_array(strtolower(trim($decl['flex-wrap'] ?? '')), ['wrap', 'wrap-reverse'], true);
+        $lines = $wrap ? $this->wrapLines($children, $node, $decl, $gap) : [$children];
+
+        $rows = [];
+        $lineCount = count($lines);
+        foreach ($lines as $l => $line) {
+            $count = count($line);
+            $cells = [];
+            foreach ($line as $i => $child) {
+                $cells[] = $this->itemCell($child, $vAlign, [
+                    'left' => $i > 0 ? $gap / 2 : 0.0,
+                    'right' => $i < $count - 1 ? $gap / 2 : 0.0,
+                    'top' => $l > 0 ? $rowGap / 2 : 0.0,
+                    'bottom' => $l < $lineCount - 1 ? $rowGap / 2 : 0.0,
+                ]);
             }
+            $rows[] = $cells;
+        }
+
+        // Each line its own table: the lines of a wrapped flex box do not
+        // share columns.
+        $tables = array_map(fn (array $cells): Table => new Table([new Row($cells)], new TableStyle(borderCollapse: true)), $rows);
+
+        return $this->boxed($tables, $decl);
+    }
+
+    /**
+     * `display: grid` — a table with the columns of `grid-template-columns`
+     * (lengths, percentages, `fr`, `auto`, `repeat()`, `minmax()`); the
+     * children fill it row by row, `grid-column: span n` (or `a / b`)
+     * spans columns, `gap` goes between the cells.
+     *
+     * @param  array<string, string>  $decl
+     * @return list<BlockElement>
+     */
+    private function gridBox(\DOMElement $node, array $decl): array
+    {
+        $tracks = $this->gridTracks($decl['grid-template-columns'] ?? '');
+        $columns = max(1, count($tracks));
+        $gap = $this->length($decl['column-gap'] ?? ($decl['gap'] ?? '')) ?? 0.0;
+        $rowGap = $this->length($decl['row-gap'] ?? ($decl['gap'] ?? '')) ?? 0.0;
+        $vAlign = match (strtolower(trim($decl['align-items'] ?? ''))) {
+            'center' => VerticalAlignment::Center,
+            'end', 'flex-end' => VerticalAlignment::Bottom,
+            default => VerticalAlignment::Top,
+        };
+
+        // Place the children: rows of `$columns` slots.
+        $placed = [];
+        $row = [];
+        $used = 0;
+        foreach ($this->elementChildren($node) as $child) {
+            $span = min($columns, $this->gridSpan($this->decl($child)['grid-column'] ?? ''));
+            if ($used + $span > $columns) {
+                $placed[] = $row;
+                $row = [];
+                $used = 0;
+            }
+            $row[] = [$child, $span, $used];
+            $used += $span;
+        }
+        if ($row !== []) {
+            $placed[] = $row;
+        }
+
+        $rows = [];
+        $rowCount = count($placed);
+        foreach ($placed as $r => $items) {
+            $cells = [];
+            $end = 0;
+            foreach ($items as [$child, $span, $start]) {
+                $end = $start + $span;
+                $cell = $this->itemCell($child, $vAlign, [
+                    'left' => $start > 0 ? $gap / 2 : 0.0,
+                    'right' => $end < $columns ? $gap / 2 : 0.0,
+                    'top' => $r > 0 ? $rowGap / 2 : 0.0,
+                    'bottom' => $r < $rowCount - 1 ? $rowGap / 2 : 0.0,
+                ], $span === 1 ? $tracks[$start] ?? null : null);
+                $cells[] = new Cell($cell->children, $cell->style, columnSpan: $span);
+            }
+            if ($end < $columns) {
+                // An incomplete last row: the rest of it stays empty.
+                $cells[] = new Cell([new Paragraph([])], new CellStyle(paddingTopPt: 0, paddingRightPt: 0, paddingBottomPt: 0, paddingLeftPt: 0), columnSpan: $columns - $end);
+            }
+            $rows[] = new Row($cells);
+        }
+        if ($rows === []) {
+            return [];
+        }
+
+        // Fixed tracks keep their width, `fr` share the percentage of the
+        // rest; with only fractions, the columns are their share of 100%.
+        $percents = null;
+        $frTotal = array_sum(array_map(static fn (array $t): float => $t['fr'] ?? 0.0, $tracks));
+        $hasFixed = array_filter($tracks, static fn (array $t): bool => isset($t['pt'])) !== [];
+        if ($tracks !== [] && ! $hasFixed) {
+            $fixedPercent = array_sum(array_map(static fn (array $t): float => $t['percent'] ?? 0.0, $tracks));
+            $percents = array_map(static fn (array $t): ?float => $t['percent'] ?? ($frTotal > 0 && isset($t['fr']) ? $t['fr'] / $frTotal * max(0.0, 100 - $fixedPercent) : null), $tracks);
+        }
+        if ($percents !== null) {
+            foreach ($rows as $ri => $r) {
+                $start = 0;
+                $cells = [];
+                foreach ($r->cells as $cell) {
+                    $share = array_sum(array_slice(array_map(static fn (?float $p): float => $p ?? 0.0, $percents), $start, $cell->columnSpan));
+                    $cells[] = new Cell($cell->children, $this->styleWithPercent($cell->style, $share > 0 ? $share : null), $cell->columnSpan);
+                    $start += $cell->columnSpan;
+                }
+                $rows[$ri] = new Row($cells);
+            }
+        }
+
+        return $this->boxed([new Table($rows, new TableStyle(widthPercent: 100, borderCollapse: true))], $decl);
+    }
+
+    /**
+     * The tracks of `grid-template-columns`: `pt`, `percent` or `fr` each.
+     *
+     * @return list<array{pt?: float, percent?: float, fr?: float}>
+     */
+    private function gridTracks(string $css): array
+    {
+        $css = trim($css);
+        // repeat(n, tracks) → the tracks n times.
+        $css = (string) preg_replace_callback(
+            '/repeat\(\s*(\d+)\s*,\s*((?:[^()]|\([^()]*\))*)\)/i',
+            static fn (array $m): string => trim(str_repeat($m[2].' ', (int) $m[1])),
+            $css,
+        );
+        // minmax(min, max) → max (or min when max is a fraction of nothing).
+        $css = (string) preg_replace('/minmax\(\s*[^,]+,\s*([^)]+)\)/i', '$1', $css);
+        $tracks = [];
+        foreach (preg_split('/\s+/', $css) ?: [] as $token) {
+            $token = strtolower(trim($token));
+            if ($token === '' || $token === 'none') {
+                continue;
+            }
+            if (preg_match('/^([\d.]+)fr$/', $token, $m) === 1) {
+                $tracks[] = ['fr' => (float) $m[1]];
+            } elseif (preg_match('/^([\d.]+)%$/', $token, $m) === 1) {
+                $tracks[] = ['percent' => (float) $m[1]];
+            } elseif (($pt = $this->length($token)) !== null) {
+                $tracks[] = ['pt' => $pt];
+            } else {
+                // auto, min-content, max-content: an equal share.
+                $tracks[] = ['fr' => 1.0];
+            }
+        }
+
+        return $tracks;
+    }
+
+    /** Columns a grid item spans: `span n`, or `a / b` with line numbers. */
+    private function gridSpan(string $css): int
+    {
+        $css = strtolower(trim($css));
+        if (preg_match('/span\s+(\d+)/', $css, $m) === 1) {
+            return max(1, (int) $m[1]);
+        }
+        if (preg_match('/^(\d+)\s*\/\s*(\d+)$/', $css, $m) === 1) {
+            return max(1, (int) $m[2] - (int) $m[1]);
+        }
+
+        return 1;
+    }
+
+    /**
+     * The lines of a wrapping flex box: children by their declared widths
+     * (points, or percentages of the box), as many to a line as fit.
+     * Children without a width take a line each when the line already holds
+     * one, and share the line otherwise.
+     *
+     * @param  list<\DOMElement>  $children
+     * @param  array<string, string>  $decl
+     * @return list<list<\DOMElement>>
+     */
+    private function wrapLines(array $children, \DOMElement $node, array $decl, float $gap): array
+    {
+        [, $mr, , $ml] = $this->sides($decl, 'margin');
+        [, $pr, , $pl] = $this->sides($decl, 'padding');
+        $available = max(1.0, $this->contentWidth() - $ml - $mr - $pl - $pr);
+        $lines = [];
+        $line = [];
+        $used = 0.0;
+        foreach ($children as $child) {
+            $childDecl = $this->decl($child);
+            [$widthPt, $widthPercent] = $this->widthOf($childDecl['width'] ?? ($childDecl['flex-basis'] ?? null));
+            $width = $widthPt ?? ($widthPercent !== null ? $available * $widthPercent / 100 : null);
+            $needed = ($width ?? $available) + ($line !== [] ? $gap : 0.0);
+            if ($line !== [] && $used + $needed > $available + 0.5) {
+                $lines[] = $line;
+                $line = [];
+                $used = 0.0;
+                $needed = $width ?? $available;
+            }
+            $line[] = $child;
+            $used += $needed;
+        }
+        if ($line !== []) {
+            $lines[] = $line;
+        }
+
+        return $lines;
+    }
+
+    /** The width of the page content area: `@page`, or A4 with the default margins. */
+    private function contentWidth(): float
+    {
+        $setup = $this->css->pageSetup() ?? new \Dskripchenko\PhpPdf\Style\PageSetup;
+
+        return $setup->contentWidthPt();
+    }
+
+    /**
+     * One flex or grid item as a cell: its blocks (or image), its own
+     * padding, background and border, plus the gaps around it.
+     *
+     * @param  array{left: float, right: float, top: float, bottom: float}  $gaps
+     * @param  ?array{pt?: float, percent?: float, fr?: float}  $track  The grid column it sits in.
+     */
+    private function itemCell(\DOMElement $child, VerticalAlignment $vAlign, array $gaps, ?array $track = null): Cell
+    {
+        $this->enter($child, $this->currentStyle(), true);
+        try {
+            $childDecl = $this->decl($child);
+            $tag = strtolower($child->nodeName);
+            if ($tag === 'img' || $tag === 'svg') {
+                $image = $tag === 'img' ? $this->parseImage($child, block: true) : $this->parseInlineSvg($child);
+                $blocks = $image !== null ? [$image] : [];
+            } else {
+                $blocks = $this->hasBlockChild($child) ? $this->walkBlocks($child) : [$this->parseParagraph($child)];
+            }
+            [$pt, $pr, $pb, $pl] = $this->sides($childDecl, 'padding');
+            [$widthPt, $widthPercent] = $this->widthOf($childDecl['width'] ?? ($childDecl['flex-basis'] ?? null));
+            $widthPt ??= $track['pt'] ?? null;
+
+            return new Cell($blocks === [] ? [new Paragraph([])] : $blocks, new CellStyle(
+                widthPt: $widthPt,
+                widthPercent: $widthPercent,
+                paddingTopPt: $pt + $gaps['top'],
+                paddingRightPt: $pr + $gaps['right'],
+                paddingBottomPt: $pb + $gaps['bottom'],
+                paddingLeftPt: $pl + $gaps['left'],
+                verticalAlign: $vAlign,
+                backgroundColor: $this->backgroundColor($childDecl),
+                borders: $this->borders($childDecl),
+            ));
+        } finally {
+            $this->leave();
+        }
+    }
+
+    private function styleWithPercent(CellStyle $style, ?float $percent): CellStyle
+    {
+        return new CellStyle(
+            widthPt: $style->widthPt, widthPercent: $style->widthPercent ?? $percent,
+            paddingTopPt: $style->paddingTopPt, paddingRightPt: $style->paddingRightPt,
+            paddingBottomPt: $style->paddingBottomPt, paddingLeftPt: $style->paddingLeftPt,
+            verticalAlign: $style->verticalAlign, backgroundColor: $style->backgroundColor,
+            borders: $style->borders, cornerRadiusPt: $style->cornerRadiusPt, minHeightPt: $style->minHeightPt,
+        );
+    }
+
+    /**
+     * A flex or grid box's own margin and padding around its tables; with a
+     * background or border, a one-cell box around them.
+     *
+     * @param  list<BlockElement>  $blocks
+     * @param  array<string, string>  $decl
+     * @return list<BlockElement>
+     */
+    private function boxed(array $blocks, array $decl): array
+    {
+        if ($blocks === []) {
+            return [];
         }
         [$mt, $mr, $mb, $ml] = $this->sides($decl, 'margin');
         [$pt, $pr, $pb, $pl] = $this->sides($decl, 'padding');
+        $bg = $this->backgroundColor($decl);
+        $borders = $this->borders($decl);
+        if ($bg !== null || $borders !== null) {
+            return [new Table(
+                [new Row([new Cell($blocks, new CellStyle(
+                    paddingTopPt: $pt, paddingRightPt: $pr, paddingBottomPt: $pb, paddingLeftPt: $pl,
+                    backgroundColor: $bg, borders: $borders,
+                ))])],
+                new TableStyle(spaceBeforePt: $mt, spaceAfterPt: $mb, borderCollapse: true, indentLeftPt: $ml, indentRightPt: $mr),
+            )];
+        }
+        $left = $ml + $pl;
+        $right = $mr + $pr;
+        if ($left > 0 || $right > 0) {
+            $blocks = array_map(fn (BlockElement $b): BlockElement => $this->indentBy($b, $left, $right), $blocks);
+        }
+        if ($mt + $pt > 0) {
+            $blocks[0] = $this->addSpace($blocks[0], $mt + $pt, 0.0);
+        }
+        if ($mb + $pb > 0) {
+            $last = count($blocks) - 1;
+            $blocks[$last] = $this->addSpace($blocks[$last], 0.0, $mb + $pb);
+        }
 
-        return new Table([new Row($cells)], new TableStyle(
-            spaceBeforePt: $mt + $pt,
-            spaceAfterPt: $mb + $pb,
-            borderCollapse: true,
-            indentLeftPt: $ml + $pl,
-            indentRightPt: $mr + $pr,
-        ));
+        return $blocks;
+    }
+
+    /**
+     * `break-inside: avoid` — the blocks in one borderless row that does not
+     * split across pages (unless it is taller than a page).
+     *
+     * @param  list<BlockElement>  $blocks
+     */
+    private function keptTogether(array $blocks): Table
+    {
+        if (count($blocks) === 1 && $blocks[0] instanceof Table && count($blocks[0]->rows) === 1) {
+            $t = $blocks[0];
+            $r = $t->rows[0];
+
+            return new Table([new Row($r->cells, $r->isHeader, $r->heightPt, $r->minHeightPt, cantSplit: true)], $t->style, $t->columnWidthsPt, $t->caption);
+        }
+
+        return new Table(
+            [new Row([new Cell($blocks, new CellStyle(paddingTopPt: 0, paddingRightPt: 0, paddingBottomPt: 0, paddingLeftPt: 0))], cantSplit: true)],
+            new TableStyle(widthPercent: 100, borderCollapse: true),
+        );
     }
 
     private function indentBy(BlockElement $block, float $left, float $right): BlockElement
@@ -921,20 +1422,22 @@ final class HtmlParser
     /** Inline content of a block element, with the element's box. */
     private function parseParagraph(\DOMElement $node): Paragraph
     {
-        $inlines = [];
+        $inlines = $this->generated($node, 'before');
         foreach ($node->childNodes as $child) {
             $inlines = array_merge($inlines, $this->walkInlines($child));
         }
+        $inlines = array_merge($inlines, $this->generated($node, 'after'));
 
         return new Paragraph($this->trimInlines($inlines), style: $this->parseBlockCssStyle($node), defaultRunStyle: $this->currentStyle());
     }
 
     private function parseHeading(\DOMElement $node, int $level): Heading
     {
-        $inlines = [];
+        $inlines = $this->generated($node, 'before');
         foreach ($node->childNodes as $child) {
             $inlines = array_merge($inlines, $this->walkInlines($child));
         }
+        $inlines = array_merge($inlines, $this->generated($node, 'after'));
 
         // Heading anchor from id attribute if set
         // (for linkability via <a href="#anchor-id">).
@@ -1113,7 +1616,7 @@ final class HtmlParser
     {
         // Separate inline content from nested list.
         $blocks = [];
-        $pendingInlines = [];
+        $pendingInlines = $this->generated($node, 'before');
         $nestedList = null;
         foreach ($node->childNodes as $child) {
             if ($this->isHidden($child)) {
@@ -1141,6 +1644,7 @@ final class HtmlParser
             $inlines = $this->walkInlines($child);
             $pendingInlines = array_merge($pendingInlines, $inlines);
         }
+        $pendingInlines = array_merge($pendingInlines, $this->generated($node, 'after'));
         if ($pendingInlines !== []) {
             $this->pushParagraph($blocks, $pendingInlines);
         }
@@ -1509,10 +2013,11 @@ final class HtmlParser
         // breaks the line.
         $this->enter($node, $this->styleForTag($this->currentStyle(), $tag), false);
         try {
-            $result = [];
+            $result = $this->generated($node, 'before');
             foreach ($node->childNodes as $child) {
                 $result = array_merge($result, $this->walkInlines($child));
             }
+            $result = array_merge($result, $this->generated($node, 'after'));
             if ($this->isBlockTag($node) && $result !== []) {
                 $result[] = new LineBreak;
             }
@@ -1699,7 +2204,7 @@ final class HtmlParser
 
         $attrFace = $node->getAttribute('face');
         if ($attrFace !== '') {
-            $fontFamily = trim(explode(',', $attrFace)[0], " \"'");
+            $fontFamily = self::fontFamilies($attrFace);
         }
 
         $attrSize = $node->getAttribute('size');
@@ -1753,12 +2258,12 @@ final class HtmlParser
             // Empty <a> — treat as span.
             $this->enter($node, $this->currentStyle(), false);
             try {
-                $result = [];
+                $result = $this->generated($node, 'before');
                 foreach ($node->childNodes as $child) {
                     $result = array_merge($result, $this->walkInlines($child));
                 }
 
-                return $result;
+                return array_merge($result, $this->generated($node, 'after'));
             } finally {
                 $this->leave();
             }
@@ -1793,6 +2298,7 @@ final class HtmlParser
             if ($children === []) {
                 $children = [new Run($href, $this->currentStyle())];
             }
+            $children = array_merge($this->generated($node, 'before'), $children, $this->generated($node, 'after'));
         } finally {
             $this->leave();
             $this->linkHref = $previous;
@@ -1991,9 +2497,12 @@ final class HtmlParser
      * The text style of an element from its CSS. A block's background is
      * its box, not the background of its text.
      */
-    private function applyInlineCssStyle(RunStyle $current, \DOMElement $node, bool $isBlock = false): RunStyle
+    /**
+     * @param  ?array<string, string>  $decl  Declarations to apply instead of the element's own (a pseudo-element's).
+     */
+    private function applyInlineCssStyle(RunStyle $current, \DOMElement $node, bool $isBlock = false, ?array $decl = null): RunStyle
     {
-        $decl = $this->decl($node);
+        $decl ??= $this->decl($node);
         if ($decl === []) {
             return $current;
         }
@@ -2016,7 +2525,7 @@ final class HtmlParser
 
         $fontFamily = $current->fontFamily;
         if (isset($decl['font-family'])) {
-            $fontFamily = trim(explode(',', $decl['font-family'])[0], " \"'");
+            $fontFamily = self::fontFamilies($decl['font-family']);
         }
 
         $bold = $current->bold;
@@ -2080,6 +2589,97 @@ final class HtmlParser
             highlight: $current->highlight,
             letterSpacingPt: $letterSpacing,
         );
+    }
+
+    /**
+     * The text a `::before` or `::after` rule generates for an element, as a
+     * run in its style; nothing without a `content` that yields text.
+     *
+     * @param  'before'|'after'  $which
+     * @return list<InlineElement>
+     */
+    private function generated(\DOMElement $node, string $which): array
+    {
+        if ($node->getAttribute('id') === '_phppdf_root') {
+            return [];
+        }
+        $decl = $this->css->pseudoDeclarationsFor($node, $which);
+        if (! isset($decl['content']) || strtolower(trim($decl['display'] ?? '')) === 'none') {
+            return [];
+        }
+        $text = self::contentText($decl['content'], $node);
+        if ($text === null || $text === '') {
+            return [];
+        }
+        $style = $this->applyInlineCssStyle($this->currentStyle(), $node, false, $decl);
+
+        return [new Run($text, $style)];
+    }
+
+    /**
+     * The text of a CSS `content` value: strings (with CSS escapes),
+     * `attr(name)`, `open-quote` / `close-quote`. `none`, `normal` and
+     * counters give nothing.
+     */
+    private static function contentText(string $value, \DOMElement $node): ?string
+    {
+        $value = trim($value);
+        if (in_array(strtolower($value), ['none', 'normal', ''], true)) {
+            return null;
+        }
+        $out = '';
+        $offset = 0;
+        $pattern = '/\G\s*(?:"((?:[^"\\\\]|\\\\.)*)"|\'((?:[^\'\\\\]|\\\\.)*)\'|attr\(\s*([\w-]+)\s*\)|(open-quote|close-quote|no-open-quote|no-close-quote)|[a-z-]+\([^)]*\))/i';
+        while ($offset < strlen($value) && preg_match($pattern, $value, $m, 0, $offset) === 1) {
+            $offset += strlen($m[0]);
+            if (($m[1] ?? '') !== '' || (isset($m[1]) && str_starts_with(ltrim($m[0]), '"'))) {
+                $out .= self::unescape($m[1]);
+            } elseif (($m[2] ?? '') !== '' || (isset($m[2]) && str_starts_with(ltrim($m[0]), "'"))) {
+                $out .= self::unescape($m[2]);
+            } elseif (($m[3] ?? '') !== '') {
+                $out .= $node->getAttribute($m[3]);
+            } elseif (($m[4] ?? '') !== '') {
+                $out .= match (strtolower($m[4])) {
+                    'open-quote' => "\u{201C}",
+                    'close-quote' => "\u{201D}",
+                    default => '',
+                };
+            }
+        }
+
+        return $out;
+    }
+
+    /** CSS string escapes: `\201C`, `\"`, `\A`. */
+    private static function unescape(string $text): string
+    {
+        return (string) preg_replace_callback(
+            '/\\\\([0-9a-f]{1,6})\s?|\\\\(.)/i',
+            static function (array $m): string {
+                if ($m[1] !== '') {
+                    $cp = (int) hexdec($m[1]);
+
+                    return $cp === 0x0A ? "\n" : (mb_chr($cp, 'UTF-8') ?: '');
+                }
+
+                return $m[2];
+            },
+            $text,
+        );
+    }
+
+    /**
+     * A `font-family` list as php-pdf keeps it: the families in order,
+     * unquoted, comma-separated — the engine takes the first it can use.
+     */
+    private static function fontFamilies(string $css): ?string
+    {
+        $families = array_values(array_filter(array_map(
+            static fn (string $f): string => trim($f, " \t\n\"'"),
+            explode(',', $css),
+        ), static fn (string $f): bool => $f !== ''));
+
+        return $families === [] ? null : implode(', ', $families);
     }
 
     private function normalizeWhitespace(string $text): string

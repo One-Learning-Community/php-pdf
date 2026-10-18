@@ -352,11 +352,11 @@ final class HtmlParserTest extends TestCase
     }
 
     #[Test]
-    public function inline_font_family_first_choice(): void
+    public function inline_font_family_keeps_the_list(): void
     {
-        $blocks = $this->parse('<p><span style="font-family: Arial, sans-serif">A</span></p>');
+        $blocks = $this->parse('<p><span style="font-family: \'Open Sans\', Arial, sans-serif">A</span></p>');
         $run = $blocks[0]->children[0];
-        self::assertSame('Arial', $run->style->fontFamily);
+        self::assertSame('Open Sans, Arial, sans-serif', $run->style->fontFamily);
     }
 
     #[Test]

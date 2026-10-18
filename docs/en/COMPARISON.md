@@ -36,14 +36,17 @@ publishing your own.
 | Fluent builders (Document → Section)   | ✅      | ❌   | ❌    | ❌     | ❌   |
 | HTML/CSS input                         | ✅      | ✅   | ⚠️ basic | ✅  | ❌   |
 | Inline `style` attributes              | ✅      | ✅   | ⚠️    | ✅     | ❌   |
-| `<style>` blocks / external CSS        | ✅ `<style>` with cascade (no external `<link>`) | ✅   | ⚠️    | ✅     | ❌   |
+| `<style>` blocks / external CSS        | ✅ `<style>` with cascade, local `<link>` (no remote) | ✅   | ⚠️    | ✅     | ❌   |
 | CSS selectors and specificity, `@media print` | ✅ | ✅  | ⚠️    | ✅     | ❌   |
 | `@page` size and margins               | ✅      | ✅   | ⚠️    | ✅     | ❌   |
-| Flexbox                                | ⚠️ one row | ❌ | ❌    | ❌     | ❌   |
-| Float layout                           | ❌      | ✅   | ⚠️    | ✅     | ❌   |
+| Flexbox                                | ✅ rows, wrap, column | ❌ | ❌    | ❌     | ❌   |
+| CSS grid                               | ✅ columns, spans (no areas) | ❌ | ❌ | ❌  | ❌   |
+| Float layout                           | ⚠️ side by side, no run-under | ✅ | ⚠️ | ✅ | ❌   |
+| `position: absolute / fixed`           | ✅      | ✅   | ⚠️    | ✅     | ❌   |
+| `::before` / `::after`                 | ✅ text content | ⚠️ | ❌ | ✅    | ❌   |
 
-For complex HTML or CSS (floats, positioning, grid, external stylesheets),
-`dompdf` and `mpdf` go further. For business documents (paragraphs,
+For browser-grade CSS — text running around floats, `position: relative`
+offsets, remote style sheets — `dompdf` and `mpdf` go further. For business documents (paragraphs,
 tables, lists, stylesheets (`<style>` with cascade), headings), `php-pdf` is on par with
 better performance.
 
@@ -201,7 +204,7 @@ built in and MIT-licensed, with no proprietary add-on.
 ### Choose **mpdf/mpdf** when
 - You already have it in your stack and migration cost isn't justified.
 - Your project is GPL-compatible.
-- You need richer CSS coverage (floats, positioning, external stylesheets).
+- You need browser-grade CSS (text running around floats, remote style sheets).
 - You prefer mpdf's documentation and Stack Overflow corpus.
 
 ### Choose **tecnickcom/tcpdf** when
