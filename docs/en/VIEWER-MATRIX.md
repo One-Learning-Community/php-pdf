@@ -3,34 +3,40 @@
 The torture set (`examples/torture/generate.php`) is a suite of documents
 exercising the hardest rendering paths: complex tables, Cyrillic + Greek,
 Arabic shaping/bidi, CJK, five barcode symbologies, charts, SVG, AcroForm
-fields, a digital signature, PDF/A-2u, and read/merge/stamp output.
+fields, a digital signature, PDF/A-2u, read/merge/stamp output, and HTML
+with CSS (grid, wrapping flex, float, fixed and absolute positioning,
+generated content, a table over pages).
 
-Four columns are automated: every push renders each document with
-**poppler** and **Ghostscript** in CI (`torture-smoke` job); the
-**pdf.js** column is the actual Firefox engine driven headless
-(`pdfjs-dist` + node canvas, `disableFontFace: true`), and the
-**Quartz** column is Apple's PDFKit renderer via Quick Look — the same
-engine macOS Preview uses. Acrobat Reader and Chrome (PDFium) have no
-scriptable render path and stay manual.
+Five columns are automated: every push renders each document with
+**poppler** and **Ghostscript** in CI (`torture-smoke` job);
+`scripts/viewer-matrix/run.sh` renders them with **pdf.js** — the actual
+Firefox engine driven headless (`pdfjs-dist` + node canvas,
+`disableFontFace: true`) — with **PDFium**, the engine inside Chrome,
+through `pypdfium2`, and on macOS with **Quartz**, Apple's PDFKit renderer
+via Quick Look — the same engine Preview uses. Each reports load errors,
+warnings and blank pages, and leaves the renders to compare. Acrobat
+Reader has no scriptable render path and stays manual.
 
 Legend: ✅ verified · ☐ pending · ✗ broken (file an issue)
 
-Last automated pass: **2026-07-17** — poppler 26.06 / Ghostscript 10.07 /
-pdf.js 6.1.200 / Quartz on macOS 15 (Darwin 25.5).
+Last automated pass: **2026-10-18** (php-pdf 1.20 with the HTML/CSS
+layout work) — poppler 26.09 / Ghostscript 10.08 / pdf.js 6.4.299 /
+PDFium 156.0.8076 / Quartz on macOS 27.0.1.
 
 | Document | Exercises | poppler (CI) | Ghostscript (CI) | pdf.js / Firefox | Quartz / Preview | Acrobat Reader | Chrome (PDFium) |
 |---|---|---|---|---|---|---|---|
-| t01-tables | column/row spans, wrapping | ✅ | ✅ | ✅ | ✅ | ☐ | ☐ |
-| t02-multilingual | Cyrillic, Greek, ligatures, styles | ✅ | ✅ | ✅ | ✅ | ☐ | ☐ |
-| t03-arabic-bidi | Arabic shaping, bidi runs | ✅ | ✅ | ✅ | ✅ | ☐ | ☐ |
-| t04-cjk | CJK ideographs, kana | ✅ | ✅ | ✅ | ✅ | ☐ | ☐ |
-| t05-barcodes | Code128, EAN-13, QR, DataMatrix (rectangular), PDF417 | ✅ | ✅ | ✅ | ✅ | ☐ | ☐ |
-| t06-charts | pie, bar, line, area | ✅ | ✅ | ✅ | ✅ | ☐ | ☐ |
-| t07-svg | gradients, paths, rounded rects | ✅ | ✅ | ✅ | ✅ | ☐ | ☐ |
-| t08-forms | text, checkbox, multiline fields | ✅ | ✅ | ✅ | ✅ | ☐ | ☐ |
-| t09-pdfa-2u | archival profile with real content | ✅ | ✅ | ✅ | ✅ | ☐ | ☐ |
-| t10-signed | PAdES detached signature | ✅ | ✅ | ✅ | ✅ | ☐ | ☐ |
-| t11-merged | append + stamp via reader/merger | ✅ | ✅ | ✅ | ✅ | ☐ | ☐ |
+| t01-tables | column/row spans, wrapping | ✅ | ✅ | ✅ | ✅ | ☐ | ✅ |
+| t02-multilingual | Cyrillic, Greek, ligatures, styles | ✅ | ✅ | ✅ | ✅ | ☐ | ✅ |
+| t03-arabic-bidi | Arabic shaping, bidi runs | ✅ | ✅ | ✅ | ✅ | ☐ | ✅ |
+| t04-cjk | CJK ideographs, kana | ✅ | ✅ | ✅ | ✅ | ☐ | ✅ |
+| t05-barcodes | Code128, EAN-13, QR, DataMatrix (rectangular), PDF417 | ✅ | ✅ | ✅ | ✅ | ☐ | ✅ |
+| t06-charts | pie, bar, line, area | ✅ | ✅ | ✅ | ✅ | ☐ | ✅ |
+| t07-svg | gradients, paths, rounded rects | ✅ | ✅ | ✅ | ✅ | ☐ | ✅ |
+| t08-forms | text, checkbox, multiline fields | ✅ | ✅ | ✅ | ✅ | ☐ | ✅ |
+| t09-pdfa-2u | archival profile with real content | ✅ | ✅ | ✅ | ✅ | ☐ | ✅ |
+| t10-signed | PAdES detached signature | ✅ | ✅ | ✅ | ✅ | ☐ | ✅ |
+| t11-merged | append + stamp via reader/merger | ✅ | ✅ | ✅ | ✅ | ☐ | ✅ |
+| t12-html-css | grid, wrapping flex, float, fixed/absolute, `::before`/`::after`, dashed/dotted/double borders, `<thead>` over pages | ✅ | ✅ | ✅ | ✅ | ☐ | ✅ |
 
 ## Machine decodability (beyond rendering)
 
@@ -39,7 +45,7 @@ not just by looking at them:
 
 | Symbol | Decoder | Result |
 |---|---|---|
-| QR | zbar **and** ZXing | ✅ round-trips (incl. UTF-8 payloads) |
+| QR | zbar **and** ZXing | ✅ round-trips (incl. UTF-8 payloads; zbar re-checked 2026-10-18) |
 | DataMatrix (rectangular 12×26) | libdmtx (`dmtxread`) | ✅ round-trips |
 | EAN-13, Code 128 | zbar | ✅ round-trips |
 | Signatures (PAdES, timestamps, LTV) | OpenSSL CLI (`cms`/`ts -verify`), pyHanko, Acrobat Reader | ✅ (test suite, CI; Acrobat by hand) |
@@ -49,7 +55,7 @@ format-information bits being written in reverse — every viewer rendered
 the symbol, no scanner could read it. Fixed; guarded by
 `tests/Barcode/QrFormatInfoTest.php`.
 
-## Manual checklist (Acrobat Reader, Chrome)
+## Manual checklist (Acrobat Reader)
 
 1. Generate: `bash scripts/fetch-fonts.sh && php examples/torture/generate.php`
    (or download the `torture-set` artifact from the latest conformance run).
@@ -68,9 +74,16 @@ the symbol, no scanner could read it. Fixed; guarded by
 
 ## Known anomalies
 
-- **t04 (Quartz, pdf.js, all viewers)**: the Korean sample line renders
-  as boxes — expected: DroidSansFallback carries no Hangul, and the doc
-  says so; it is a fallback-coverage illustration, not a defect.
+- **t04 (all viewers)**: the Korean sample line renders as boxes —
+  expected: the line is set in Liberation Sans, which has no Hangul
+  (neither has DroidSansFallback), and the doc says so; it is a
+  fallback-coverage illustration, not a defect.
+- **t08 (pdf.js under Node)**: a warning that OffscreenCanvas is missing
+  while drawing the field appearances — a limit of the headless harness,
+  not of the document; Firefox itself has OffscreenCanvas.
+- **t12 against Chrome's own HTML print** (2026-10-18): same structure on
+  both pages; `counter()` in `content` is not supported (Chrome prints the
+  counter value), and vertical spacing of paragraphs differs slightly.
 - **Fixed during the 2026-07-17 pass** (both found by this checklist):
   QR format information written LSB-first (unreadable by any scanner);
   SVG default-namespace lookups dropping gradients/`<style>`/`<use>`
