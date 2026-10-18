@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Dskripchenko\PhpPdf\Pdf;
 
 use Dskripchenko\PhpPdf\Image\PdfImage;
+use Dskripchenko\PhpPdf\Pdf\Forms\Appearance\WinAnsi;
 use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\AppearanceResources;
 use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\SignatureAppearance;
 use Dskripchenko\PhpPdf\Style\Orientation;
@@ -355,7 +356,7 @@ final class Page implements AppearanceResources
         float $letterSpacingPt = 0,
     ): self {
         $resourceName = $this->registerStandardFont($font);
-        $this->stream->text($resourceName, $sizePt, $x, $y, $text, $r, $g, $b, $letterSpacingPt);
+        $this->stream->text($resourceName, $sizePt, $x, $y, self::standardFontBytes($font, $text), $r, $g, $b, $letterSpacingPt);
 
         return $this;
     }
@@ -476,7 +477,7 @@ final class Page implements AppearanceResources
         if ($gsName !== null) {
             $this->stream->pushGraphicsStateWithGs($gsName);
         }
-        $this->stream->rotatedText($resourceName, $sizePt, $cx, $cy, $angleRad, $text, $r, $g, $b);
+        $this->stream->rotatedText($resourceName, $sizePt, $cx, $cy, $angleRad, self::standardFontBytes($font, $text), $r, $g, $b);
         if ($gsName !== null) {
             $this->stream->popGraphicsState();
         }
@@ -1620,6 +1621,18 @@ final class Page implements AppearanceResources
     public function fontResource(PdfFont $font): string
     {
         return $this->registerEmbeddedFont($font);
+    }
+
+    /**
+     * The bytes a base-14 font shows for UTF-8 text: WinAnsi codes, `?` for
+     * a character outside WinAnsi. Symbol and ZapfDingbats have their own
+     * built-in encodings and take the caller's codes as they are.
+     */
+    private static function standardFontBytes(StandardFont $font, string $text): string
+    {
+        return $font === StandardFont::Symbol || $font === StandardFont::ZapfDingbats
+            ? $text
+            : WinAnsi::encodeLossy($text);
     }
 
     /** @internal */
