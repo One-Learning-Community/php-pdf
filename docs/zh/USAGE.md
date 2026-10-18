@@ -14,6 +14,7 @@ HTML 转 PDF 一直深入到最底层的页面发射。每个章节都是自包�
   - [列表](#列表)
   - [图片](#图片)
   - [页眉、页脚、水印](#页眉页脚水印)
+  - [脚注](#脚注)
   - [页面设置与分节符](#页面设置与分节符)
 - [HTML / CSS 输入](#html--css-输入)
 - [自定义字体](#自定义字体)
@@ -221,6 +222,23 @@ DocumentBuilder::new()
 `->watermarkImage($image)` 接受一个 `PdfImage`。两种水印都可以通过
 `watermarkTextOpacity()` / `watermarkImageOpacity()` 控制不透明度。
 
+### 脚注
+
+段落中的 `new Footnote('文本')` 会在行内放置编号标记，并把文本放到该页底部。
+页底部的位置由分节决定：
+
+```php
+use Dskripchenko\PhpPdf\Section;
+
+new Section($body, footnotesAtPageFoot: true);   // 页面脚注需要多少空间就占多少
+new Section($body, footnoteBottomReservedPt: 60); // 每页固定区域
+new Section($body);                               // 分节结束后的尾注
+```
+
+使用 `footnotesAtPageFoot` 时，没有脚注的页面不会损失空间；而当某行的脚注
+在本页放不下时，该行会连同脚注一起移到下一页——与文字处理软件的排版方式
+相同。
+
 ### 页面设置与分节符
 
 ```php
@@ -290,9 +308,12 @@ $doc->toFile('report.pdf');
 **CSS**——来自 `<style>` 块和 `style` 属性，支持层叠：
 
 - 选择器：类型、`.class`、`#id`、`*`、`[attr]` / `[attr=value]`、
-  `:first-child`、`:last-child`、`:only-child`、`:nth-child()`、`:not()`，
+  `:root`、`:first-child`、`:last-child`、`:only-child`、`:nth-child()`、`:not()`，
   后代、`>`、`+`、`~`；优先级、`!important`。`@media print` 和 `all`
   生效，`@media screen` 跳过。
+- 自定义属性：`--name` 声明会被继承，`var(--name, 备用值)` 可在任何值
+  （包括简写属性）中替换它们；变量缺失且没有备用值的属性会被丢弃，与浏览器
+  一致。
 - 与浏览器一样继承：`color`、`font-*`、`text-decoration`、
   `text-transform`、`letter-spacing`、`text-align`、`line-height`、
   `text-indent`、`white-space`——设置在 `body`、`div` 或 `td` 上，
@@ -326,7 +347,7 @@ $doc->toFile('report.pdf');
   `close-quote`，以及页码计数器 `counter(page)` / `counter(pages)`
   （页码、总页数）——由其自身的规则设置样式；不支持其他计数器。
 - 样式表：`<style>` 与 `<link rel="stylesheet">` 按文档顺序生效；链接可
-  指向本地文件或 `data:text/css` URL——不获取远程样式表（解析器不发起
+  指向本地文件（除非设置 `localFiles: false`）或 `data:text/css` URL——不获取远程样式表（解析器不发起
   网络请求）。
 - 表格：`width`、`table-layout`（`auto` 像浏览器一样按内容确定列宽）、
   `border-collapse`、`border-spacing`、`border`、`margin`（`auto` 居中）；
@@ -334,7 +355,8 @@ $doc->toFile('report.pdf');
   `vertical-align`、`width`、`height`、`colspan`、`rowspan`；行：
   `height`、`break-inside: avoid`。`<thead>` 行在每一页重复。
 - 图片：`width` / `height`（`%` 相对于行宽），`display: block` 配合
-  `margin: auto` 居中。
+  `margin: auto` 居中。文字行中的 `<svg>` 作为独立的块绘制：段落在其周围
+  拆分，它沿用文字的对齐方式。
 - 分页：`page-break-before` / `-after`（`break-before` / `-after`）；
   未传入 `$sectionTemplate` 时，`@page { size; margin }` 决定
   `Document::fromHtml()` 的页面。
@@ -383,6 +405,15 @@ $doc = Document::fromHtml($html,
 `$context->blocks($element)` 按解析器的方式读取其内容，处理器可以将其
 包装。`imageSource` 最先收到每个 `src`；返回 null 时回退到 `data:` URL
 和可读的本地文件。
+
+处理器为文字行中的元素返回的块——例如为 `<p>` 内的 `<img>` 返回签名域——
+会在该处拆分段落：其前后的文字各自成为段落，第一个保留上方间距，最后一个
+保留下方间距。`$context->alignment` 是当前生效的文字对齐方式，用于放置这样
+的块。
+
+对于来自不受信任作者的 HTML，请传入 `localFiles: false`：此时
+`<img src>` 与 `<link href>` 不会从磁盘读取任何内容——只读取 `data:` URL
+和 `imageSource`。
 
 页码无需处理器：在 `::before` / `::after` 中使用 `content: counter(page)`
 和 `counter(pages)` 即可输出页码和总页数——

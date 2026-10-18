@@ -4,6 +4,34 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `Section::$footnotesAtPageFoot` — footnotes at the foot of the page that
+  references them, with as much room as they take: a page without notes
+  loses nothing, and a line (or a table row) whose notes do not fit moves on
+  with them. The fixed `footnoteBottomReservedPt` area cost a seven-page form
+  three extra pages.
+- HTML: CSS custom properties — `--name` declarations are inherited and
+  `var(--name, fallback)` is substituted in any value, shorthands included;
+  an unresolved one drops the property, as in a browser. `:root` selector.
+- HTML: a block an `ElementHandler` returns for an element in a line of text
+  (a signature field for an `<img>` in `<p>`) splits the paragraph there
+  instead of being dropped; `HtmlContext::$alignment` gives the text-align in
+  effect to place it.
+- HTML: `localFiles: false` on `HtmlParser` / `Document::fromHtml()` — for
+  HTML from untrusted authors `<img src>` and `<link href>` read nothing from
+  the disk, only `data:` URLs and the image source.
+
+### Fixed
+- HTML: an `<svg>` inside a paragraph was kept as a child of the paragraph,
+  where the engine does not draw it — a QR code in `<p>` printed as nothing.
+  It is now a block of its own with the paragraph's alignment, and CSS
+  `width` / `height` on it win over its attributes.
+- `Document::fromHtml()` with a `$sectionTemplate` dropped the template's
+  footnote area (`footnoteBottomReservedPt`); every field but the body is
+  kept now.
+
 ## [1.22.0] — 2026-10-18
 
 ### Added

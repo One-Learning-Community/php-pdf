@@ -410,4 +410,39 @@ final class HtmlCssTest extends TestCase
         self::assertSame(2, $blocks[0]->rows[0]->cells[0]->rowSpan);
         self::assertCount(1, $blocks[0]->rows[1]->cells);
     }
+
+    #[Test]
+    public function custom_properties_are_inherited_and_substituted(): void
+    {
+        $blocks = self::parse('<style>
+            :root { --brand: #123456; --size: 9pt; --pad: 3pt }
+            .box { --brand: #654321 }
+            p { color: var(--brand); font-size: var(--size) }
+            .padded { padding: var(--pad) 6pt }
+            .fallback { color: var(--missing, #0000aa) }
+            .broken { color: var(--missing); font-size: 8pt }
+            .chain { --a: var(--brand); color: var(--a) }
+        </style>
+        <p>Root</p><div class="box"><p>Box</p></div><p class="padded">Pad</p>
+        <p class="fallback">F</p><p class="broken">B</p><p class="chain">C</p>');
+
+        self::assertSame('123456', self::firstRun($blocks[0])->style->color);
+        self::assertSame(9.0, self::firstRun($blocks[0])->style->sizePt);
+        self::assertSame('654321', self::firstRun($blocks[1])->style->color);   // the nearer declaration wins
+        self::assertInstanceOf(Paragraph::class, $blocks[2]);
+        self::assertSame(3.0, $blocks[2]->style->paddingTopPt);                  // a shorthand expanded after substitution
+        self::assertSame(6.0, $blocks[2]->style->paddingLeftPt);
+        self::assertSame('0000aa', self::firstRun($blocks[3])->style->color);
+        self::assertNotSame('0000aa', self::firstRun($blocks[4])->style->color); // unresolved: the property is dropped
+        self::assertSame(8.0, self::firstRun($blocks[4])->style->sizePt);
+        self::assertSame('123456', self::firstRun($blocks[5])->style->color);
+    }
+
+    #[Test]
+    public function a_variable_cycle_drops_the_property(): void
+    {
+        $blocks = self::parse('<style>p { --a: var(--b); --b: var(--a); color: var(--a); font-size: 7pt }</style><p>T</p>');
+
+        self::assertSame(7.0, self::firstRun($blocks[0])->style->sizePt);
+    }
 }

@@ -125,17 +125,19 @@ final class HtmlParser
      * @param  float  $baseFontSizePt  The font size `em`, `rem` and `%` refer to
      *                                 outside any element that sets one — the
      *                                 engine's default size.
-     */
-    /**
      * @param  list<ElementHandler>  $elementHandlers  Asked first about every element (see {@see ElementHandler}).
      * @param  ?\Closure(string): ?string  $imageSource  The bytes of an image by its `src` — from storage,
      *                                                    a database, an allow-listed host; null falls back
      *                                                    to `data:` URLs and readable local files.
+     * @param  bool  $localFiles  Whether `<img src>` and `<link href>` may name local files. Turn it off
+     *                            for HTML from untrusted authors: only `data:` URLs and the image
+     *                            source are read then.
      */
     public function __construct(
         private readonly float $baseFontSizePt = 12.0,
         private readonly array $elementHandlers = [],
         private readonly ?\Closure $imageSource = null,
+        private readonly bool $localFiles = true,
     )
     {
         $this->css = new StyleSheet;
@@ -235,6 +237,9 @@ final class HtmlParser
             return $css === false ? null : $css;
         }
         if (preg_match('#^[a-z][a-z0-9+.-]*://#i', $href) === 1 && ! str_starts_with(strtolower($href), 'file://')) {
+            return null;
+        }
+        if (! $this->localFiles) {
             return null;
         }
         $path = str_starts_with(strtolower($href), 'file://') ? substr($href, 7) : $href;
@@ -551,7 +556,7 @@ final class HtmlParser
                 try {
                     $out = [];
                     foreach ($element->childNodes as $child) {
-                        $out = array_merge($out, $this->walkInlines($child));
+                        $out = array_merge($out, self::inlineOnly($this->walkInlines($child)));
                     }
 
                     return $out;
@@ -567,6 +572,7 @@ final class HtmlParser
                     $this->leave();
                 }
             },
+            ($inline ? null : $this->alignment($this->decl($node)['text-align'] ?? '')) ?? $this->block()['align'],
         );
         foreach ($this->elementHandlers as $handler) {
             $result = $handler->handle($node, $context);
@@ -714,11 +720,70 @@ final class HtmlParser
      */
     private function pushParagraph(array &$blocks, array $inlines): void
     {
-        $inlines = $this->trimInlines($inlines);
-        if ($inlines === []) {
-            return;
+        foreach ($this->flowParagraphs($inlines, $this->inheritedParagraphStyle()) as $block) {
+            $blocks[] = $block;
         }
-        $blocks[] = new Paragraph($inlines, $this->inheritedParagraphStyle(), defaultRunStyle: $this->currentStyle());
+    }
+
+    /**
+     * A line of text as paragraphs: one, or several split around the blocks
+     * a handler placed in it. The first part keeps the space before, the
+     * last the space after; parts that are only whitespace are dropped.
+     *
+     * @param  list<InlineElement>  $inlines
+     * @return list<BlockElement>
+     */
+    private function flowParagraphs(array $inlines, ParagraphStyle $style, bool $keepEmpty = false): array
+    {
+        $parts = [[]];
+        foreach ($inlines as $inline) {
+            if ($inline instanceof FlowBlocks) {
+                $parts[] = $inline;
+                $parts[] = [];
+            } else {
+                $parts[count($parts) - 1][] = $inline;
+            }
+        }
+        if (count($parts) === 1) {
+            $text = $this->trimInlines($parts[0]);
+
+            return $text !== [] || $keepEmpty ? [new Paragraph($text, $style, defaultRunStyle: $this->currentStyle())] : [];
+        }
+
+        $out = [];
+        $last = count($parts) - 1;
+        foreach ($parts as $i => $part) {
+            if ($part instanceof FlowBlocks) {
+                foreach ($part->blocks as $block) {
+                    $out[] = $block;
+                }
+
+                continue;
+            }
+            $text = $this->trimInlines($part);
+            if ($text === []) {
+                continue;
+            }
+            $out[] = new Paragraph($text, $this->styleCopy(
+                $style,
+                spaceBefore: $i === 0 ? null : 0.0,
+                spaceAfter: $i === $last ? null : 0.0,
+            ), defaultRunStyle: $this->currentStyle());
+        }
+
+        return $out;
+    }
+
+    /**
+     * Inline content where it cannot split: blocks a handler placed in it
+     * are left out.
+     *
+     * @param  list<InlineElement>  $inlines
+     * @return list<InlineElement>
+     */
+    private static function inlineOnly(array $inlines): array
+    {
+        return array_values(array_filter($inlines, static fn (InlineElement $i): bool => ! $i instanceof FlowBlocks));
     }
 
     private function inheritedParagraphStyle(): ParagraphStyle
@@ -884,7 +949,13 @@ final class HtmlParser
      */
     private function paragraphOrNothing(\DOMElement $node): array
     {
-        $p = $this->parseParagraph($node);
+        $inlines = $this->paragraphInlines($node);
+        foreach ($inlines as $inline) {
+            if ($inline instanceof FlowBlocks) {
+                return $this->flowParagraphs($inlines, $this->parseBlockCssStyle($node));
+            }
+        }
+        $p = new Paragraph($this->trimInlines($inlines), style: $this->parseBlockCssStyle($node), defaultRunStyle: $this->currentStyle());
         $box = $p->style->backgroundColor !== null || $p->style->borders !== null
             || $p->style->spaceBeforePt > 0 || $p->style->spaceAfterPt > 0
             || $p->style->paddingTopPt > 0 || $p->style->paddingBottomPt > 0;
@@ -1500,7 +1571,7 @@ final class HtmlParser
                 $summaryFound = true;
                 $inlines = [];
                 foreach ($child->childNodes as $inner) {
-                    $inlines = array_merge($inlines, $this->walkInlines($inner));
+                    $inlines = array_merge($inlines, self::inlineOnly($this->walkInlines($inner)));
                 }
                 $bolded = array_map(
                     fn ($i) => $i instanceof Run
@@ -1571,7 +1642,7 @@ final class HtmlParser
             try {
                 $inlines = [];
                 foreach ($child->childNodes as $inner) {
-                    $inlines = array_merge($inlines, $this->walkInlines($inner));
+                    $inlines = array_merge($inlines, self::inlineOnly($this->walkInlines($inner)));
                 }
                 $inlines = $this->trimInlines($inlines);
                 if ($tag === 'dt') {
@@ -1593,20 +1664,27 @@ final class HtmlParser
     /** Inline content of a block element, with the element's box. */
     private function parseParagraph(\DOMElement $node): Paragraph
     {
+        return new Paragraph($this->trimInlines(self::inlineOnly($this->paragraphInlines($node))), style: $this->parseBlockCssStyle($node), defaultRunStyle: $this->currentStyle());
+    }
+
+    /**
+     * @return list<InlineElement>
+     */
+    private function paragraphInlines(\DOMElement $node): array
+    {
         $inlines = $this->generated($node, 'before');
         foreach ($node->childNodes as $child) {
             $inlines = array_merge($inlines, $this->walkInlines($child));
         }
-        $inlines = array_merge($inlines, $this->generated($node, 'after'));
 
-        return new Paragraph($this->trimInlines($inlines), style: $this->parseBlockCssStyle($node), defaultRunStyle: $this->currentStyle());
+        return array_merge($inlines, $this->generated($node, 'after'));
     }
 
     private function parseHeading(\DOMElement $node, int $level): Heading
     {
         $inlines = $this->generated($node, 'before');
         foreach ($node->childNodes as $child) {
-            $inlines = array_merge($inlines, $this->walkInlines($child));
+            $inlines = array_merge($inlines, self::inlineOnly($this->walkInlines($child)));
         }
         $inlines = array_merge($inlines, $this->generated($node, 'after'));
 
@@ -2021,7 +2099,7 @@ final class HtmlParser
             if ($child instanceof \DOMElement && strtolower($child->nodeName) === 'caption') {
                 $inlines = [];
                 foreach ($child->childNodes as $inner) {
-                    $inlines = array_merge($inlines, $this->walkInlines($inner));
+                    $inlines = array_merge($inlines, self::inlineOnly($this->walkInlines($inner)));
                 }
                 // Bold + centered.
                 $boldedInlines = array_map(
@@ -2139,7 +2217,24 @@ final class HtmlParser
             return [];
         }
         if (($handled = $this->handled($node, inline: true)) !== null) {
-            return array_values(array_filter($handled, static fn (object $e): bool => $e instanceof InlineElement));
+            $out = [];
+            $blocks = [];
+            foreach ($handled as $element) {
+                if ($element instanceof InlineElement) {
+                    if ($blocks !== []) {
+                        $out[] = new FlowBlocks($blocks);
+                        $blocks = [];
+                    }
+                    $out[] = $element;
+                } else {
+                    $blocks[] = $element;
+                }
+            }
+            if ($blocks !== []) {
+                $out[] = new FlowBlocks($blocks);
+            }
+
+            return $out;
         }
 
         $tag = strtolower($node->nodeName);
@@ -2166,11 +2261,12 @@ final class HtmlParser
 
             return $img !== null ? [$img] : [];
         }
-        // Inline <svg> — extract outerHTML and wrap in SvgElement.
+        // An <svg> in a line of text is drawn as a block of its own: the
+        // paragraph splits around it, as around a handler's block.
         if ($tag === 'svg') {
             $svg = $this->parseInlineSvg($node);
 
-            return $svg !== null ? [$svg] : [];
+            return $svg !== null ? [new FlowBlocks([$svg])] : [];
         }
 
         // Anchor — wraps inner inlines.
@@ -2467,7 +2563,7 @@ final class HtmlParser
         try {
             $children = [];
             foreach ($node->childNodes as $child) {
-                $children = array_merge($children, $this->walkInlines($child));
+                $children = array_merge($children, self::inlineOnly($this->walkInlines($child)));
             }
             if ($children === []) {
                 $children = [new Run($href, $this->currentStyle())];
@@ -2497,14 +2593,19 @@ final class HtmlParser
         }
         // Width/height from attributes. Per SVG-in-HTML spec, unitless
         // values treated as px (we convert to pt: 1px = 0.75pt @ 96 DPI).
-        $widthPt = $this->parseSvgDimension($node->getAttribute('width')) ?? 100.0;
-        $heightPt = $this->parseSvgDimension($node->getAttribute('height')) ?? 100.0;
+        // CSS width/height win over the attributes.
+        $decl = $this->decl($node);
+        $css = static fn (string $v): string => str_contains($v, '%') || strtolower(trim($v)) === 'auto' ? '' : $v;
+        $widthPt = $this->parseSvgDimension($css($decl['width'] ?? '')) ?? $this->parseSvgDimension($node->getAttribute('width')) ?? 100.0;
+        $heightPt = $this->parseSvgDimension($css($decl['height'] ?? '')) ?? $this->parseSvgDimension($node->getAttribute('height')) ?? 100.0;
 
         try {
             return new \Dskripchenko\PhpPdf\Element\SvgElement(
                 svgXml: $svgXml,
                 widthPt: $widthPt,
                 heightPt: $heightPt,
+                // The text-align around it, as for an image.
+                alignment: $this->block()['align'],
             );
         } catch (\Throwable) {
             return null;
@@ -2590,7 +2691,7 @@ final class HtmlParser
                 $pdfImg = PdfImage::fromBytes($bytes);
             } elseif (str_starts_with($src, 'data:')) {
                 $pdfImg = $this->parseDataUrl($src);
-            } elseif (is_readable($src)) {
+            } elseif ($this->localFiles && is_readable($src)) {
                 $pdfImg = PdfImage::fromPath($src);
             } else {
                 return null; // Cannot load image — skip.

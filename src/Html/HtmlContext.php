@@ -6,6 +6,7 @@ namespace Dskripchenko\PhpPdf\Html;
 
 use Dskripchenko\PhpPdf\Element\BlockElement;
 use Dskripchenko\PhpPdf\Element\InlineElement;
+use Dskripchenko\PhpPdf\Style\Alignment;
 use Dskripchenko\PhpPdf\Style\RunStyle;
 
 /**
@@ -25,6 +26,11 @@ final class HtmlContext
         public readonly bool $inline,
         private readonly \Closure $inlines,
         private readonly \Closure $blocks,
+        /**
+         * The text alignment in effect: the element's own `text-align` for a
+         * block, the enclosing block's for an element in a line of text.
+         */
+        public readonly Alignment $alignment = Alignment::Start,
     ) {}
 
     /**

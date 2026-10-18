@@ -38,6 +38,12 @@ final class Declarations
                 $important = true;
                 $value = trim(substr($value, 0, -strlen($m[0])));
             }
+            // A value with var() is expanded once the variables are known.
+            if (stripos($value, 'var(') !== false) {
+                $result[$name] = [$value, $important];
+
+                continue;
+            }
             foreach (self::expand($name, $value) as $longhand => $v) {
                 $result[$longhand] = [$v, $important];
             }

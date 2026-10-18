@@ -15,6 +15,7 @@ the feature you need.
   - [Lists](#lists)
   - [Images](#images)
   - [Headers, footers, watermarks](#headers-footers-watermarks)
+  - [Footnotes](#footnotes)
   - [Page setup and section breaks](#page-setup-and-section-breaks)
 - [HTML / CSS input](#html--css-input)
 - [Custom fonts](#custom-fonts)
@@ -226,6 +227,23 @@ DocumentBuilder::new()
 `->watermarkImage($image)` accepts a `PdfImage`. Both watermarks have
 opacity controls via `watermarkTextOpacity()` / `watermarkImageOpacity()`.
 
+### Footnotes
+
+`new Footnote('text')` in a paragraph puts a numbered mark in the line and
+the text at the foot of its page. Where that foot is, the section decides:
+
+```php
+use Dskripchenko\PhpPdf\Section;
+
+new Section($body, footnotesAtPageFoot: true);   // as much room as the page's notes take
+new Section($body, footnoteBottomReservedPt: 60); // a fixed area on every page
+new Section($body);                               // endnotes after the section
+```
+
+With `footnotesAtPageFoot` a page without notes loses nothing, and a line
+whose notes do not fit on its page moves on with them — the way a word
+processor places them.
+
 ### Page setup and section breaks
 
 ```php
@@ -297,9 +315,13 @@ $doc->toFile('report.pdf');
 **CSS** — from `<style>` blocks and `style` attributes, with the cascade:
 
 - Selectors: type, `.class`, `#id`, `*`, `[attr]` / `[attr=value]`,
-  `:first-child`, `:last-child`, `:only-child`, `:nth-child()`, `:not()`,
+  `:root`, `:first-child`, `:last-child`, `:only-child`, `:nth-child()`, `:not()`,
   descendant, `>`, `+`, `~`; specificity, `!important`. `@media print`
   and `all` apply, `@media screen` is skipped.
+- Custom properties: `--name` declarations are inherited, and
+  `var(--name, fallback)` substitutes them in any value, shorthands
+  included; a property whose variable is missing and has no fallback is
+  dropped, as in a browser.
 - Inherited, as in a browser: `color`, `font-*`, `text-decoration`,
   `text-transform`, `letter-spacing`, `text-align`, `line-height`,
   `text-indent`, `white-space` — set on `body`, a `div` or a `td`, they
@@ -338,7 +360,8 @@ $doc->toFile('report.pdf');
   (page number, page count) — styled by their own rules; other counters
   are not supported.
 - Style sheets: `<style>` and `<link rel="stylesheet">` in document order;
-  a link may point to a local file or a `data:text/css` URL — remote style
+  a link may point to a local file (unless `localFiles: false`) or a
+  `data:text/css` URL — remote style
   sheets are not fetched (the parser makes no network requests).
 - Tables: `width`, `table-layout` (`auto` sizes columns by their content,
   as browsers do), `border-collapse`, `border-spacing`, `border`, `margin`
@@ -347,7 +370,8 @@ $doc->toFile('report.pdf');
   rows: `height`, `break-inside: avoid`. `<thead>` rows repeat on every
   page.
 - Images: `width` / `height` (`%` of the line), `display: block` with
-  `margin: auto` centres.
+  `margin: auto` centres. An `<svg>` in a line of text is drawn as a block
+  of its own: the paragraph splits around it, and it takes the text-align.
 - Pages: `page-break-before` / `-after` (`break-before` / `-after`);
   `@page { size; margin }` sets the page of `Document::fromHtml()`
   unless a `$sectionTemplate` is given.
@@ -399,6 +423,16 @@ and `$context->inlines($element)` / `$context->blocks($element)` read its
 content as the parser would, so a handler can wrap it. `imageSource` gets
 each `src` first; returning null falls back to `data:` URLs and readable
 local files.
+
+A block returned for an element in a line of text — a signature field
+for an `<img>` inside `<p>` — splits the paragraph there: the text before
+and after it become paragraphs of their own, the first keeping the space
+above, the last the space below. `$context->alignment` is the text-align
+in effect, for placing such a block.
+
+For HTML from untrusted authors, pass `localFiles: false`: `<img src>`
+and `<link href>` then read nothing from the disk — only `data:` URLs and
+`imageSource`.
 
 Page numbers need no handler: `content: counter(page)` and
 `counter(pages)` in `::before` / `::after` print the page number and the
