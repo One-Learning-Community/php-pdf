@@ -320,11 +320,36 @@ $doc->toFile('report.pdf');
   `pre-line`, `nowrap`). `&nbsp;` bleibt erhalten.
 - Blöcke: `margin`, `padding`, `border` (Kurzform, je Seite, `-width`,
   `-style`, `-color`), `background-color`, `text-align`, `line-height`
-  (Faktor, %, Länge), `text-indent`, `display: none / block / flex`.
+  (Faktor, %, Länge), `text-indent`, `display: none / block / flex /
+  grid`.
 - Container: ein `div` (`section`, …) mit Blöcken behält sie als Blöcke;
   Margin und Padding rücken sie ein und ab, Hintergrund oder Rahmen
   zeichnen einen Kasten darum. `display: flex` stellt die Kinder
-  nebeneinander (`gap`, `width` / `flex-basis`, `align-items`).
+  nebeneinander (`gap`, `width` / `flex-basis`, `align-items`); mit
+  `flex-wrap: wrap` verteilen sie sich auf so viele Zeilen, wie ihre
+  Breiten verlangen, `flex-direction: column` stapelt sie. `display: grid`
+  ordnet die Kinder Zeile für Zeile in die Spalten von
+  `grid-template-columns` ein (Längen, `%`, `fr`, `auto`, `repeat()`,
+  `minmax()`), `grid-column: span n` (oder `a / b`) überspannt Spalten,
+  `gap` / `row-gap` / `column-gap` trennen sie.
+- Floats und Positionierung: `float: left / right` stellt das Element und
+  den nachfolgenden Inhalt nebeneinander, bis zu einem Element mit
+  `clear`; unter einem früher endenden Float läuft der Text nicht weiter.
+  `position: absolute` platziert das Element über `top` / `right` /
+  `bottom` / `left` im Seitenbereich — oder ab dem Anfang eines
+  positionierten (`relative`, …) Vorfahren —, ohne Platz zu belegen;
+  `position: fixed` tut dasselbe ab dort auf jeder Seite. Die Versätze von
+  `position: relative` selbst werden nicht angewandt.
+- `break-inside: avoid` (`page-break-inside`) an einem beliebigen Block
+  hält ihn auf einer Seite; ein Block, der höher als eine Seite ist, wird
+  trotzdem geteilt.
+- Generierter Inhalt: `::before` / `::after` (auch `:before` / `:after`)
+  mit `content` — Strings mit CSS-Escapes, `attr(name)`, `open-quote` /
+  `close-quote` —, gestaltet über eigene Regeln.
+- Stylesheets: `<style>` und `<link rel="stylesheet">` in
+  Dokumentreihenfolge; ein Link darf auf eine lokale Datei oder eine
+  `data:text/css`-URL zeigen — entfernte Stylesheets werden nicht geladen
+  (der Parser stellt keine Netzwerkanfragen).
 - Tabellen: `width`, `table-layout` (`auto` bemisst Spalten nach Inhalt
   wie Browser), `border-collapse`, `border-spacing`, `border`, `margin`
   (`auto` zentriert); `<col>`-Breiten; Zellen: `border`,
@@ -341,9 +366,10 @@ $doc->toFile('report.pdf');
 gesetzt ist, auf `$baseFontSizePt` von `Document::fromHtml()`
 (Standard 12) — übergeben Sie dort die `defaultFontSizePt` der Engine.
 
-**Nicht unterstützt:** externe Stylesheets (`<link rel="stylesheet">`),
-`position`, Floats, Grid, `::before` / `::after`, `:hover` und andere
-dynamische Pseudoklassen, Formulare, JavaScript.
+**Nicht unterstützt:** entfernte Stylesheets und `@import`,
+`grid-template-areas` und explizite Grid-Zeilenplatzierung, Versätze von
+`position: relative`, Text, der unter einem Float weiterläuft, `:hover`
+und andere dynamische Pseudoklassen, Formulare, JavaScript.
 
 ---
 
@@ -380,7 +406,9 @@ seine Glyphen besitzt.
 
 Ein `FontProvider` bedient Text, der eine Schriftfamilie benennt — ein
 `RunStyle(fontFamily: ...)` eines Runs oder CSS-`font-family` (die erste
-Familie der Liste). Die Standardschrift ändert er nicht:
+Familie der Liste, die der Provider hat; ohne eingebettete Schrift wählen
+generische Namen die Base-14-Schrift — `serif` Times, `monospace`
+Courier). Die Standardschrift ändert er nicht:
 
 ```php
 use Dskripchenko\PhpPdf\Document;
