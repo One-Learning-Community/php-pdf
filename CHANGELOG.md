@@ -6,6 +6,12 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `DetachedSignature::sign()` takes a `CmsSigner` too — CryptoPro CSP on
+  the server, a signing service. Its CMS is checked as for a PDF (it covers
+  exactly the content, it was made with the signer's certificate, it
+  verifies) and returned detached, with the chain and the timestamp.
+
 ### Fixed
 - Text in the base-14 fonts (no embedded font) came out garbled outside
   ASCII: the fonts are declared with `/WinAnsiEncoding`, but the UTF-8
