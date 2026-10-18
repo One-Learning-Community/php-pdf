@@ -192,9 +192,9 @@ DocumentBuilder::new()
     ->toFile('with-image.pdf');
 ```
 
-支持的格式：JPEG（灰度、RGB、CMYK）与 PNG —— 8 位
-灰度、灰度 + alpha、RGB 与 RGBA（alpha 通过 SMask）；不支持调色板、16 位
-与隔行扫描的 PNG。同一张图片在文档中被使用 N 次时，仅以单个 XObject
+支持的格式：JPEG（灰度、RGB、CMYK）与 PNG —— 灰度
+（1–16 位）、灰度 + alpha、RGB 与 RGBA（8/16 位，alpha 通过 SMask）以及调色板
+（1–8 位，tRNS 透明度通过 SMask），隔行扫描（Adam7）与否均可。同一张图片在文档中被使用 N 次时，仅以单个 XObject
 嵌入（通过内容哈希去重）。
 
 ### 页眉、页脚、水印

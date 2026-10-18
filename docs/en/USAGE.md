@@ -197,9 +197,9 @@ DocumentBuilder::new()
     ->toFile('with-image.pdf');
 ```
 
-Supported formats: JPEG (grayscale, RGB, CMYK) and PNG — 8-bit
-grayscale, gray + alpha, RGB and RGBA (alpha via SMask); palette, 16-bit
-and interlaced PNGs are not supported. The same image used N times across a document is
+Supported formats: JPEG (grayscale, RGB, CMYK) and PNG — grayscale
+(1–16 bit), gray + alpha, RGB and RGBA (8/16 bit, alpha via SMask) and palette
+(1–8 bit, tRNS transparency via SMask), interlaced (Adam7) or not. The same image used N times across a document is
 embedded as a single XObject (content-hash dedup).
 
 ### Headers, footers, watermarks

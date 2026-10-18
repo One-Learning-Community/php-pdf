@@ -203,9 +203,9 @@ DocumentBuilder::new()
     ->toFile('with-image.pdf');
 ```
 
-Unterstützte Formate: JPEG (Graustufen, RGB, CMYK) und PNG — 8-Bit
-Graustufen, Grau + Alpha, RGB und RGBA (Alpha über SMask); Paletten-,
-16-Bit- und Interlaced-PNGs werden nicht unterstützt. Dasselbe Bild, das N-mal in einem Dokument
+Unterstützte Formate: JPEG (Graustufen, RGB, CMYK) und PNG — Graustufen
+(1–16 Bit), Grau + Alpha, RGB und RGBA (8/16 Bit, Alpha über SMask) und Palette
+(1–8 Bit, tRNS-Transparenz über SMask), mit oder ohne Interlacing (Adam7). Dasselbe Bild, das N-mal in einem Dokument
 verwendet wird, wird als ein einziges XObject eingebettet (Deduplizierung
 per Inhalts-Hash).
 
