@@ -223,6 +223,50 @@ $docs['t08-forms'] = new Document(new Section([
     new FormField('comment', FormField::TYPE_TEXT_MULTILINE, heightPt: 60),
 ]));
 
+// t12 — HTML with CSS: grid, wrapping flex, float, fixed and absolute
+// positioning, generated content, borders, a table over pages.
+$docs['t12-html-css'] = Document::fromHtml(<<<'HTML'
+<style>
+@page { size: A4; margin: 36pt 40pt }
+body { font-size: 10pt; color: #222; line-height: 1.3 }
+h1 { font-size: 18pt; border-bottom: 2pt double #1f4e79; padding-bottom: 4pt }
+h2 { font-size: 13pt; color: #1f4e79; margin: 10pt 0 4pt }
+h2::before { content: counter(x) "§ " }
+.stamp { position: fixed; top: -24pt; right: 0; width: 120pt; font-size: 7pt; color: #888; text-align: right }
+.grid { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 6pt }
+.grid > div { background: #eef4fb; border: 0.75pt solid #9db7d5; padding: 4pt }
+.wide { grid-column: span 2 }
+.cards { display: flex; flex-wrap: wrap; gap: 6pt }
+.card { width: 30%; border: 1pt dashed #c0504d; padding: 4pt }
+.note { float: right; width: 140pt; border: 1pt dotted #555; padding: 4pt; margin-left: 8pt; background: #fff8e1 }
+.box { position: relative; border: 1pt solid #999; padding: 6pt; margin-top: 8pt }
+.badge { position: absolute; top: 0; right: 0; width: 60pt; background: #c0504d; color: #fff; text-align: center; font-size: 7pt }
+.req::after { content: " *"; color: #c00 }
+q::before { content: open-quote } q::after { content: close-quote }
+a[href]::after { content: " (" attr(href) ")"; font-size: 8pt; color: #666 }
+table { border-collapse: collapse; width: 100% }
+th, td { border: 0.75pt solid #777; padding: 3pt 5pt }
+thead th { background: #1f4e79; color: #fff }
+tr:nth-child(even) td { background: #f2f2f2 }
+.keep { break-inside: avoid; border: 1pt solid #1f4e79; padding: 6pt; margin-top: 8pt }
+</style>
+<div class="stamp">php-pdf torture · t12</div>
+<h1>HTML + CSS layout — Вёрстка из HTML</h1>
+<p>Stylesheet cascade, inheritance, <span class="req">required field</span>, <q>quoted text</q>, a link to <a href="https://github.com/dskripchenko/php-pdf">php-pdf</a>, Кириллица и ελληνικά.</p>
+<h2>Grid</h2>
+<div class="grid"><div>2fr column</div><div>1fr</div><div>1fr</div><div class="wide">spans two columns</div><div>last</div></div>
+<h2>Wrapping flex</h2>
+<div class="cards"><div class="card">Card one</div><div class="card">Card two</div><div class="card">Card three</div><div class="card">Card four</div><div class="card">Card five</div></div>
+<h2>Float and positioning</h2>
+<div class="note">A note floated right, with a dotted border and a background.</div>
+<p>Text beside the float. Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.</p>
+<p style="clear: both">Cleared paragraph below the float.</p>
+<div class="box"><div class="badge">NEW</div><p>A box with an absolutely placed badge in its corner.</p></div>
+<h2>Table across pages</h2>
+<table><thead><tr><th>#</th><th>Item</th><th>Qty</th><th>Price</th></tr></thead><tbody><tr><td>1</td><td>Item 1 — позиция</td><td style="text-align:right">3</td><td style="text-align:right">7.50</td></tr><tr><td>2</td><td>Item 2 — позиция</td><td style="text-align:right">6</td><td style="text-align:right">14.50</td></tr><tr><td>3</td><td>Item 3 — позиция</td><td style="text-align:right">9</td><td style="text-align:right">21.50</td></tr><tr><td>4</td><td>Item 4 — позиция</td><td style="text-align:right">12</td><td style="text-align:right">28.50</td></tr><tr><td>5</td><td>Item 5 — позиция</td><td style="text-align:right">15</td><td style="text-align:right">35.50</td></tr><tr><td>6</td><td>Item 6 — позиция</td><td style="text-align:right">18</td><td style="text-align:right">42.50</td></tr><tr><td>7</td><td>Item 7 — позиция</td><td style="text-align:right">21</td><td style="text-align:right">49.50</td></tr><tr><td>8</td><td>Item 8 — позиция</td><td style="text-align:right">24</td><td style="text-align:right">56.50</td></tr><tr><td>9</td><td>Item 9 — позиция</td><td style="text-align:right">27</td><td style="text-align:right">63.50</td></tr><tr><td>10</td><td>Item 10 — позиция</td><td style="text-align:right">30</td><td style="text-align:right">70.50</td></tr><tr><td>11</td><td>Item 11 — позиция</td><td style="text-align:right">33</td><td style="text-align:right">77.50</td></tr><tr><td>12</td><td>Item 12 — позиция</td><td style="text-align:right">36</td><td style="text-align:right">84.50</td></tr><tr><td>13</td><td>Item 13 — позиция</td><td style="text-align:right">39</td><td style="text-align:right">91.50</td></tr><tr><td>14</td><td>Item 14 — позиция</td><td style="text-align:right">42</td><td style="text-align:right">98.50</td></tr><tr><td>15</td><td>Item 15 — позиция</td><td style="text-align:right">45</td><td style="text-align:right">105.50</td></tr><tr><td>16</td><td>Item 16 — позиция</td><td style="text-align:right">48</td><td style="text-align:right">112.50</td></tr><tr><td>17</td><td>Item 17 — позиция</td><td style="text-align:right">51</td><td style="text-align:right">119.50</td></tr><tr><td>18</td><td>Item 18 — позиция</td><td style="text-align:right">54</td><td style="text-align:right">126.50</td></tr><tr><td>19</td><td>Item 19 — позиция</td><td style="text-align:right">57</td><td style="text-align:right">133.50</td></tr><tr><td>20</td><td>Item 20 — позиция</td><td style="text-align:right">60</td><td style="text-align:right">140.50</td></tr><tr><td>21</td><td>Item 21 — позиция</td><td style="text-align:right">63</td><td style="text-align:right">147.50</td></tr><tr><td>22</td><td>Item 22 — позиция</td><td style="text-align:right">66</td><td style="text-align:right">154.50</td></tr><tr><td>23</td><td>Item 23 — позиция</td><td style="text-align:right">69</td><td style="text-align:right">161.50</td></tr><tr><td>24</td><td>Item 24 — позиция</td><td style="text-align:right">72</td><td style="text-align:right">168.50</td></tr><tr><td>25</td><td>Item 25 — позиция</td><td style="text-align:right">75</td><td style="text-align:right">175.50</td></tr><tr><td>26</td><td>Item 26 — позиция</td><td style="text-align:right">78</td><td style="text-align:right">182.50</td></tr><tr><td>27</td><td>Item 27 — позиция</td><td style="text-align:right">81</td><td style="text-align:right">189.50</td></tr><tr><td>28</td><td>Item 28 — позиция</td><td style="text-align:right">84</td><td style="text-align:right">196.50</td></tr><tr><td>29</td><td>Item 29 — позиция</td><td style="text-align:right">87</td><td style="text-align:right">203.50</td></tr><tr><td>30</td><td>Item 30 — позиция</td><td style="text-align:right">90</td><td style="text-align:right">210.50</td></tr><tr><td>31</td><td>Item 31 — позиция</td><td style="text-align:right">93</td><td style="text-align:right">217.50</td></tr><tr><td>32</td><td>Item 32 — позиция</td><td style="text-align:right">96</td><td style="text-align:right">224.50</td></tr><tr><td>33</td><td>Item 33 — позиция</td><td style="text-align:right">99</td><td style="text-align:right">231.50</td></tr><tr><td>34</td><td>Item 34 — позиция</td><td style="text-align:right">102</td><td style="text-align:right">238.50</td></tr><tr><td>35</td><td>Item 35 — позиция</td><td style="text-align:right">105</td><td style="text-align:right">245.50</td></tr><tr><td>36</td><td>Item 36 — позиция</td><td style="text-align:right">108</td><td style="text-align:right">252.50</td></tr><tr><td>37</td><td>Item 37 — позиция</td><td style="text-align:right">111</td><td style="text-align:right">259.50</td></tr><tr><td>38</td><td>Item 38 — позиция</td><td style="text-align:right">114</td><td style="text-align:right">266.50</td></tr><tr><td>39</td><td>Item 39 — позиция</td><td style="text-align:right">117</td><td style="text-align:right">273.50</td></tr><tr><td>40</td><td>Item 40 — позиция</td><td style="text-align:right">120</td><td style="text-align:right">280.50</td></tr><tr><td>41</td><td>Item 41 — позиция</td><td style="text-align:right">123</td><td style="text-align:right">287.50</td></tr><tr><td>42</td><td>Item 42 — позиция</td><td style="text-align:right">126</td><td style="text-align:right">294.50</td></tr><tr><td>43</td><td>Item 43 — позиция</td><td style="text-align:right">129</td><td style="text-align:right">301.50</td></tr><tr><td>44</td><td>Item 44 — позиция</td><td style="text-align:right">132</td><td style="text-align:right">308.50</td></tr><tr><td>45</td><td>Item 45 — позиция</td><td style="text-align:right">135</td><td style="text-align:right">315.50</td></tr></tbody></table>
+<div class="keep"><h2>Kept together</h2><p>This box has break-inside: avoid and stays on one page.</p><p>Second line of the kept box.</p><p>Third line of the kept box.</p></div>
+HTML);
+
 $emitted = [];
 $failures = 0;
 foreach ($docs as $name => $document) {
