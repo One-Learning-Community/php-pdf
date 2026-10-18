@@ -58,6 +58,14 @@ final readonly class Section
          * footnotes per page → ~75 pt.
          */
         public ?float $footnoteBottomReservedPt = null,
+        /**
+         * Footnotes at the foot of the page that references them, as in a
+         * word processor: each page gives the notes it carries as much room
+         * as they take, and a line whose notes do not fit moves on with
+         * them. Pages without notes lose nothing. A fixed
+         * {@see $footnoteBottomReservedPt} takes precedence.
+         */
+        public bool $footnotesAtPageFoot = false,
     ) {}
 
     public function hasHeader(): bool

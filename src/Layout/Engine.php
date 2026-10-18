@@ -113,6 +113,14 @@ final class Engine
     private array $pageFootnotes = [];
 
     /**
+     * Footnote numbers that already have room at the foot of a page, by page
+     * (growing footnote area).
+     *
+     * @var array<int, list<int>>
+     */
+    private array $pageFootnoteRoom = [];
+
+    /**
      * Current Section during render — needed for header/footer access.
      */
     private ?Section $currentSection = null;
@@ -260,6 +268,7 @@ final class Engine
         $this->footnoteNumbers = [];
         $this->footnoteTexts = [];
         $this->pageFootnotes = [];
+        $this->pageFootnoteRoom = [];
 
         foreach ($document->sections() as $section) {
             $this->collectFootnotes($section->body);
@@ -318,6 +327,85 @@ final class Engine
         if (! in_array($number, $this->pageFootnotes[$pageId] ?? [], true)) {
             $this->pageFootnotes[$pageId][] = $number;
         }
+    }
+
+    /** A note as it is drawn at the foot of the page. */
+    private function footnoteParagraph(int $number): Paragraph
+    {
+        return new Paragraph([new Run($number.'. '.($this->footnoteTexts[$number] ?? ''))]);
+    }
+
+    /**
+     * The height the notes take at the foot of a page, with the separator
+     * above them when $withSeparator.
+     *
+     * @param  list<int>  $numbers
+     */
+    private function footnoteHeight(array $numbers, float $width, bool $withSeparator): float
+    {
+        $height = 0.0;
+        foreach ($numbers as $number) {
+            $height += $this->measureParagraphHeight($this->footnoteParagraph($number), $width);
+        }
+
+        return $height > 0 && $withSeparator ? $height + 6.0 : $height;
+    }
+
+    /**
+     * The room the notes still need on the current page: those that have
+     * none yet, plus the separator for the page's first.
+     *
+     * @param  list<int>  $numbers
+     */
+    private function footnoteRoomNeeded(LayoutContext $ctx, array $numbers): float
+    {
+        $have = $this->pageFootnoteRoom[spl_object_id($ctx->currentPage)] ?? [];
+        $new = array_values(array_diff(array_unique($numbers), $have));
+
+        return $this->footnoteHeight($new, $ctx->contentWidth, $have === []);
+    }
+
+    /**
+     * Gives the notes their room at the foot of the current page: the
+     * content bottom rises by what they take.
+     *
+     * @param  list<int>  $numbers
+     */
+    private function reserveFootnoteRoom(LayoutContext $ctx, array $numbers): void
+    {
+        if (! $ctx->footnoteGrowing || $numbers === []) {
+            return;
+        }
+        $height = $this->footnoteRoomNeeded($ctx, $numbers);
+        $pageId = spl_object_id($ctx->currentPage);
+        $this->pageFootnoteRoom[$pageId] = array_values(array_unique([...($this->pageFootnoteRoom[$pageId] ?? []), ...$numbers]));
+        $ctx->bottomY += $height;
+        $ctx->footnoteReserveBottomPt = (float) $ctx->footnoteReserveBottomPt + $height;
+    }
+
+    /**
+     * The numbers of the notes inside elements.
+     *
+     * @param  iterable<mixed>  $nodes
+     * @return list<int>
+     */
+    private function footnotesIn(iterable $nodes): array
+    {
+        $numbers = [];
+        foreach ($nodes as $node) {
+            if ($node instanceof \Dskripchenko\PhpPdf\Element\Footnote) {
+                $numbers[] = $this->footnoteNumberFor($node);
+
+                continue;
+            }
+            foreach (['children', 'body', 'rows', 'cells', 'items'] as $prop) {
+                if (isset($node->{$prop}) && is_iterable($node->{$prop})) {
+                    $numbers = [...$numbers, ...$this->footnotesIn($node->{$prop})];
+                }
+            }
+        }
+
+        return $numbers;
     }
 
     private function renderOnce(AstDocument $document): PdfDocument
@@ -388,6 +476,10 @@ final class Engine
             // Footnote per-page bottom mode. Reduce bottomY so that
             // body content shrinks upward, leaving a zone for footnotes.
             $context->footnoteReserveBottomPt = $section->footnoteBottomReservedPt;
+            $context->footnoteGrowing = $section->footnoteBottomReservedPt === null && $section->footnotesAtPageFoot;
+            if ($context->footnoteGrowing) {
+                $context->footnoteReserveBottomPt = 0.0;
+            }
             $context->pageFootnoteStart = count($context->footnotes);
             if ($section->footnoteBottomReservedPt !== null) {
                 $context->bottomY += $section->footnoteBottomReservedPt;
@@ -405,11 +497,13 @@ final class Engine
                 $this->renderBlock($block, $context);
             }
 
-            if ($section->footnoteBottomReservedPt !== null) {
+            if ($context->footnoteReserveBottomPt !== null) {
                 // Flush last page's footnotes at its bottom.
                 $this->renderPageBottomFootnotes($context);
                 // Restore bottomY (next section may not have a reservation).
-                $context->bottomY -= $section->footnoteBottomReservedPt;
+                $context->bottomY -= $context->footnoteReserveBottomPt;
+                $context->footnoteReserveBottomPt = null;
+                $context->footnoteGrowing = false;
             } elseif ($this->footnoteTexts !== []) {
                 // Emit collected endnotes per section (if any).
                 $this->renderEndnotes($context);
@@ -2130,7 +2224,7 @@ final class Engine
 
         // Per-page footnote bottom — flush current page's
         // footnotes before switching pages.
-        if ($ctx->footnoteReserveBottomPt !== null) {
+        if ($ctx->footnoteReserveBottomPt !== null && ! $ctx->footnoteGrowing) {
             $this->renderPageBottomFootnotes($ctx);
             $ctx->pageFootnoteStart = count($ctx->footnotes);
         }
@@ -2143,6 +2237,14 @@ final class Engine
             $ctx->cursorY = $ctx->topY;
 
             return;
+        }
+
+        // A growing footnote area belongs to its page: drawn, and the next
+        // page starts with none.
+        if ($ctx->footnoteGrowing) {
+            $this->renderPageBottomFootnotes($ctx);
+            $ctx->bottomY -= (float) $ctx->footnoteReserveBottomPt;
+            $ctx->footnoteReserveBottomPt = 0.0;
         }
 
         // A new page inside a section must preserve its PageSetup
@@ -2976,6 +3078,23 @@ final class Engine
         $savedCursorY = $ctx->cursorY;
         $savedBottomY = $ctx->bottomY;
 
+        if ($ctx->footnoteGrowing) {
+            // The area sits on the page's own bottom and is as tall as its
+            // notes; nothing drawn in it may start a page.
+            $pageBottom = $ctx->bottomY - (float) $ctx->footnoteReserveBottomPt;
+            $ctx->cursorY = $pageBottom + $this->footnoteHeight($numbers, $ctx->contentWidth, true);
+            $ctx->bottomY = $pageBottom - 10000;
+            $ctx->currentPage->fillRect($ctx->leftX, $ctx->cursorY, $ctx->contentWidth * 0.3, 0.5, 0.5, 0.5, 0.5);
+            $ctx->cursorY -= 6.0;
+            foreach ($numbers as $number) {
+                $this->renderBlock($this->footnoteParagraph($number), $ctx);
+            }
+            $ctx->bottomY = $savedBottomY;
+            $ctx->cursorY = $savedCursorY;
+
+            return;
+        }
+
         // Compute footnote zone top Y. bottomY shifted up by reserved size
         // earlier — so original page bottom = bottomY - reservedPt. The zone
         // spans (bottomY - reservedPt) to bottomY. Render footnotes downward
@@ -2997,9 +3116,8 @@ final class Engine
         // Numbers are the ones handed out by the pre-pass, so a reference in
         // the text and its note at the foot always carry the same figure.
         foreach ($numbers as $number) {
-            $p = new Paragraph([new Run($number.'. '.($this->footnoteTexts[$number] ?? ''))]);
             // Use renderBlock but avoid recursion on footnote rendering itself.
-            $this->renderBlock($p, $ctx);
+            $this->renderBlock($this->footnoteParagraph($number), $ctx);
         }
 
         // Restore.
@@ -3643,6 +3761,22 @@ final class Engine
         }
 
         [$lineHeight, $maxSizePt, $textLineHeight, $maxImageHeight] = $this->lineMetrics($wordItems, $p, $defaultStyle);
+
+        // A line's notes go to the foot of its page: the line moves on when
+        // it and they do not fit together. Notes in a table cell are the
+        // row's to place.
+        if ($ctx->footnoteGrowing && ! $ctx->inTableCell && ! $ctx->inHeaderFooterRender) {
+            $notes = [];
+            foreach ($wordItems as $item) {
+                if (isset($item['footnote'])) {
+                    $notes[] = (int) $item['footnote'];
+                }
+            }
+            if ($notes !== []) {
+                $this->ensureRoomFor($ctx, $lineHeight + $this->footnoteRoomNeeded($ctx, $notes));
+                $this->reserveFootnoteRoom($ctx, $notes);
+            }
+        }
 
         $this->ensureRoomFor($ctx, $lineHeight);
 
@@ -4409,7 +4543,15 @@ final class Engine
                 $rowsToProcess[] = $nextTail;
             }
         };
+        // A growing footnote area: a row's notes get their room before the
+        // row is fitted, and the notes of a row carried to a new page get it
+        // there. A nested table leaves this to the row it sits in.
+        $placeNotes = ! $ctx->inTableCell && $ctx->footnoteGrowing;
         foreach ($t->rows as $rowIdx => $row) {
+            if ($placeNotes) {
+                $this->reserveFootnoteRoom($ctx, $this->pageFootnotes[spl_object_id($ctx->currentPage)] ?? []);
+                $this->reserveFootnoteRoom($ctx, $this->footnotesIn($row->cells));
+            }
             $rowHeight = $heights[$rowIdx];
             $isLastRow = $rowIdx === $totalRows - 1;
             [$spanHeights, $spanLast] = $this->rowSpanGeometry($t, $rowIdx, $heights);
@@ -4513,6 +4655,9 @@ final class Engine
             $ctx->cursorY -= $rowHeight;
         }
 
+        if ($placeNotes) {
+            $this->reserveFootnoteRoom($ctx, $this->pageFootnotes[spl_object_id($ctx->currentPage)] ?? []);
+        }
         $this->closeTableSegment($t, $ctx, $tableLeftX, $tableWidth, $segmentTop);
         $ctx->cursorY -= $t->style->spaceAfterPt;
 

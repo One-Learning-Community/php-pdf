@@ -15,7 +15,9 @@ use Dskripchenko\PhpPdf\Style\PaperSize;
  * Rules apply by specificity, then order; `!important` wins over normal
  * declarations; the `style` attribute beats normal rules. `@media print`
  * and `@media all` apply, other media (screen) are skipped; `@page` gives
- * the page size and margins. Other at-rules are ignored.
+ * the page size and margins. Other at-rules are ignored. Custom properties
+ * (`--name`) are inherited and substituted by `var(--name, fallback)`; a
+ * property whose variable resolves to nothing is dropped, as in a browser.
  *
  * @internal
  */
@@ -157,7 +159,7 @@ final class StyleSheet
             }
         }
 
-        return $this->cache[$element] = array_merge($normal, $important);
+        return $this->cache[$element] = $this->withVariables(array_merge($normal, $important), $element, own: true);
     }
 
     /**
@@ -192,10 +194,113 @@ final class StyleSheet
             }
         }
         $cached ??= [];
-        $cached[$which] = array_merge($normal, $important);
+        $cached[$which] = $this->withVariables(array_merge($normal, $important), $element, own: false);
         $this->pseudoCache[$element] = $cached;
 
         return $cached[$which];
+    }
+
+    /**
+     * Substitutes `var()` in the declarations of an element (or of its
+     * pseudo-element, when not $own) and expands the shorthands that carried
+     * one. A variable is looked up in the same declarations first, then in
+     * the element's ancestors — custom properties are inherited. An explicit
+     * longhand is not overwritten by a shorthand expanded here.
+     *
+     * @param  array<string, string>  $decl
+     * @return array<string, string>
+     */
+    private function withVariables(array $decl, \DOMElement $element, bool $own): array
+    {
+        $pending = array_filter($decl, static fn (string $v): bool => stripos($v, 'var(') !== false);
+        if ($pending === []) {
+            return $decl;
+        }
+
+        $lookup = function (string $name, array $seen) use (&$lookup, $decl, $element, $own): ?string {
+            if (isset($decl[$name])) {
+                if (isset($seen[$name])) {
+                    return null; // a cycle
+                }
+
+                return self::substitute($decl[$name], static fn (string $n): ?string => $lookup($n, $seen + [$name => true]));
+            }
+            for ($a = $own ? $element->parentNode : $element; $a instanceof \DOMElement; $a = $a->parentNode) {
+                $inherited = $this->declarationsFor($a)[$name] ?? null;
+                if ($inherited !== null) {
+                    return $inherited;
+                }
+            }
+
+            return null;
+        };
+
+        $out = array_diff_key($decl, $pending);
+        foreach ($pending as $name => $value) {
+            $resolved = self::substitute($value, static fn (string $n): ?string => $lookup($n, [$name => true]));
+            if ($resolved === null || trim($resolved) === '') {
+                continue;
+            }
+            if (str_starts_with($name, '--')) {
+                $out[$name] = $resolved;
+
+                continue;
+            }
+            foreach (Declarations::expand($name, trim($resolved)) as $longhand => $v) {
+                if ($longhand === $name || ! isset($decl[$longhand])) {
+                    $out[$longhand] = $v;
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * `var(--name, fallback)` replaced by the variable's value, or its
+     * fallback; null when a variable has neither.
+     *
+     * @param  \Closure(string): ?string  $lookup
+     */
+    private static function substitute(string $value, \Closure $lookup): ?string
+    {
+        $out = '';
+        $pos = 0;
+        $len = strlen($value);
+        while (($at = stripos($value, 'var(', $pos)) !== false) {
+            $out .= substr($value, $pos, $at - $pos);
+            $depth = 0;
+            $end = null;
+            $comma = null;
+            for ($i = $at + 3; $i < $len; $i++) {
+                $c = $value[$i];
+                if ($c === '(') {
+                    $depth++;
+                } elseif ($c === ')') {
+                    if (--$depth === 0) {
+                        $end = $i;
+                        break;
+                    }
+                } elseif ($c === ',' && $depth === 1 && $comma === null) {
+                    $comma = $i;
+                }
+            }
+            if ($end === null) {
+                return null;
+            }
+            $name = strtolower(trim(substr($value, $at + 4, ($comma ?? $end) - $at - 4)));
+            $resolved = str_starts_with($name, '--') ? $lookup($name) : null;
+            if ($resolved === null && $comma !== null) {
+                $resolved = self::substitute(trim(substr($value, $comma + 1, $end - $comma - 1)), $lookup);
+            }
+            if ($resolved === null) {
+                return null;
+            }
+            $out .= $resolved;
+            $pos = $end + 1;
+        }
+
+        return $out.substr($value, $pos);
     }
 
     /**

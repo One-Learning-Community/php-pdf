@@ -112,6 +112,8 @@ final readonly class Document
      *                                                                          custom tags (see {@see \Dskripchenko\PhpPdf\Html\ElementHandler}).
      * @param  ?\Closure(string): ?string  $imageSource  The bytes of an image by its `src`; null falls back to `data:` URLs
      *                                                    and readable local files.
+     * @param  bool  $localFiles  Whether `<img src>` and `<link href>` may name local files; turn it off for HTML
+     *                            from untrusted authors.
      */
     public static function fromHtml(
         string $html,
@@ -128,26 +130,15 @@ final readonly class Document
         float $baseFontSizePt = 12.0,
         array $elementHandlers = [],
         ?\Closure $imageSource = null,
+        bool $localFiles = true,
     ): self {
-        $parser = new \Dskripchenko\PhpPdf\Html\HtmlParser($baseFontSizePt, $elementHandlers, $imageSource);
+        $parser = new \Dskripchenko\PhpPdf\Html\HtmlParser($baseFontSizePt, $elementHandlers, $imageSource, $localFiles);
         $blocks = $parser->parse($html);
 
         if ($sectionTemplate !== null) {
-            // Preserve template's page setup, headers, footers, watermark;
-            // replace body with parsed blocks.
-            $section = new Section(
-                body: $blocks,
-                pageSetup: $sectionTemplate->pageSetup,
-                headerBlocks: $sectionTemplate->headerBlocks,
-                footerBlocks: $sectionTemplate->footerBlocks,
-                watermarkText: $sectionTemplate->watermarkText,
-                firstPageHeaderBlocks: $sectionTemplate->firstPageHeaderBlocks,
-                firstPageFooterBlocks: $sectionTemplate->firstPageFooterBlocks,
-                watermarkImage: $sectionTemplate->watermarkImage,
-                watermarkImageWidthPt: $sectionTemplate->watermarkImageWidthPt,
-                watermarkImageOpacity: $sectionTemplate->watermarkImageOpacity,
-                watermarkTextOpacity: $sectionTemplate->watermarkTextOpacity,
-            );
+            // Everything of the template but its body: page setup, headers,
+            // footers, watermark, footnote area.
+            $section = new Section(...['body' => $blocks] + get_object_vars($sectionTemplate));
         } else {
             $pageSetup = $parser->pageSetup();
             $section = $pageSetup !== null ? new Section($blocks, $pageSetup) : new Section($blocks);

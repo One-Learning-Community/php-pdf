@@ -9,7 +9,7 @@ namespace Dskripchenko\PhpPdf\Html\Css;
  * left against DOM elements.
  *
  * Supported: type, `*`, `.class`, `#id`, `[attr]`, `[attr=value]` (also
- * `~=`, `^=`, `$=`, `*=`), `:first-child`, `:last-child`, `:only-child`,
+ * `~=`, `^=`, `$=`, `*=`), `:root`, `:first-child`, `:last-child`, `:only-child`,
  * `:nth-child(n|odd|even|an+b)`, `:not(simple)`, and the combinators
  * descendant, `>`, `+`, `~`. A trailing `::before` / `::after` (or the
  * old `:before` / `:after`) makes it a pseudo-element selector: it matches
@@ -116,7 +116,7 @@ final class Selector
                 }
                 $c['pseudos'][] = ['not', $inner];
                 $c['specificity'] += $inner['specificity'];
-            } elseif (preg_match('/^:(first-child|last-child|only-child)/i', $token, $m) === 1) {
+            } elseif (preg_match('/^:(first-child|last-child|only-child|root)/i', $token, $m) === 1) {
                 $c['pseudos'][] = [strtolower($m[1]), null];
                 $c['specificity'] += 100;
             } elseif (preg_match('/^:nth-child\(\s*([^)]*)\)/i', $token, $m) === 1) {
@@ -244,6 +244,8 @@ final class Selector
                 'first-child' => self::previousElement($el) === null,
                 'last-child' => self::nextElement($el) === null,
                 'only-child' => self::previousElement($el) === null && self::nextElement($el) === null,
+                // A fragment has no <html>: its top-level elements are the root.
+                'root' => self::parentElement($el) === null,
                 'nth-child' => self::nthMatches(self::position($el), $arg[0], $arg[1]),
                 default => false,
             };

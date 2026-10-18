@@ -63,21 +63,37 @@ final class HtmlInlineSvgTest extends TestCase
     #[Test]
     public function inline_svg_within_paragraph(): void
     {
-        // An SVG inside <p> — the parser extracts it inline or wraps it somehow.
+        // An SVG is a block to the engine: inside <p> it splits the paragraph,
+        // taking the paragraph's alignment. Kept as a child of the paragraph,
+        // it was never drawn.
         $blocks = $this->parse(
-            '<p>Before <svg width="20" height="20"></svg> after</p>'
+            '<p style="text-align:center">Before <svg width="20" height="20"></svg> after</p>'
         );
-        // Paragraph contains text + svg inline.
-        $p = $blocks[0];
-        self::assertInstanceOf(Paragraph::class, $p);
-        $hasSvg = false;
-        foreach ($p->children as $c) {
-            if ($c instanceof SvgElement) {
-                $hasSvg = true;
-                break;
-            }
-        }
-        self::assertTrue($hasSvg);
+        self::assertCount(3, $blocks);
+        self::assertInstanceOf(Paragraph::class, $blocks[0]);
+        self::assertInstanceOf(SvgElement::class, $blocks[1]);
+        self::assertSame(\Dskripchenko\PhpPdf\Style\Alignment::Center, $blocks[1]->alignment);
+        self::assertSame(15.0, $blocks[1]->widthPt);
+        self::assertInstanceOf(Paragraph::class, $blocks[2]);
+    }
+
+    #[Test]
+    public function an_svg_in_a_paragraph_is_drawn(): void
+    {
+        $svg = '<svg width="20" height="20"><rect x="0" y="0" width="5" height="5"/><rect x="10" y="10" width="5" height="5"/></svg>';
+        $pdf = \Dskripchenko\PhpPdf\Document::fromHtml('<p>'.$svg.'</p>')->toBytes(new \Dskripchenko\PhpPdf\Layout\Engine(compressStreams: false));
+
+        self::assertGreaterThanOrEqual(2, substr_count($pdf, ' re'));
+    }
+
+    #[Test]
+    public function css_size_wins_over_the_attributes(): void
+    {
+        $blocks = $this->parse('<svg width="20" height="20" style="width: 40pt; height: 30pt"></svg>');
+
+        self::assertInstanceOf(SvgElement::class, $blocks[0]);
+        self::assertSame(40.0, $blocks[0]->widthPt);
+        self::assertSame(30.0, $blocks[0]->heightPt);
     }
 
     #[Test]

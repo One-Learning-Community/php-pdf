@@ -33,7 +33,8 @@ interface ElementHandler
 {
     /**
      * @return list<BlockElement|InlineElement>|null  What the element becomes; null to leave it to the parser.
-     *                                                In a text flow (`$context->inline`) only inline elements are kept.
+     *                                                Blocks returned in a text flow (`$context->inline`) split
+     *                                                the paragraph around them.
      */
     public function handle(\DOMElement $element, HtmlContext $context): ?array;
 }

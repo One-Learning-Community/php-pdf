@@ -74,5 +74,11 @@ final class LayoutContext
          * everything after it starts on the next one.
          */
         public bool $inTableCell = false,
+        /**
+         * The footnote area grows with the notes of the page
+         * ({@see \Dskripchenko\PhpPdf\Section::$footnotesAtPageFoot});
+         * $footnoteReserveBottomPt is then the room taken so far.
+         */
+        public bool $footnoteGrowing = false,
     ) {}
 }

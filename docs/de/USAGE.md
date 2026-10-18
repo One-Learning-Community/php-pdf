@@ -15,6 +15,7 @@ einen Rundgang oder springen Sie direkt zum benötigten Feature.
   - [Listen](#listen)
   - [Bilder](#bilder)
   - [Kopf-, Fußzeilen, Wasserzeichen](#kopf--fußzeilen-wasserzeichen)
+  - [Fußnoten](#fußnoten)
   - [Seitenaufbau und Abschnittsumbrüche](#seitenaufbau-und-abschnittsumbrüche)
 - [HTML- / CSS-Eingabe](#html---css-eingabe)
 - [Eigene Schriftarten](#eigene-schriftarten)
@@ -234,6 +235,24 @@ DocumentBuilder::new()
 Wasserzeichen verfügen über Deckkraft-Steuerungen via
 `watermarkTextOpacity()` / `watermarkImageOpacity()`.
 
+### Fußnoten
+
+`new Footnote('Text')` in einem Absatz setzt eine nummerierte Marke in die
+Zeile und den Text an den Fuß ihrer Seite. Wo dieser Fuß liegt, bestimmt
+der Abschnitt:
+
+```php
+use Dskripchenko\PhpPdf\Section;
+
+new Section($body, footnotesAtPageFoot: true);   // so viel Platz, wie die Fußnoten der Seite brauchen
+new Section($body, footnoteBottomReservedPt: 60); // ein fester Bereich auf jeder Seite
+new Section($body);                               // Endnoten nach dem Abschnitt
+```
+
+Mit `footnotesAtPageFoot` verliert eine Seite ohne Fußnoten nichts, und
+eine Zeile, deren Fußnoten nicht mehr auf ihre Seite passen, wandert mit
+ihnen weiter — so, wie eine Textverarbeitung sie setzt.
+
 ### Seitenaufbau und Abschnittsumbrüche
 
 ```php
@@ -305,9 +324,13 @@ $doc->toFile('report.pdf');
 **CSS** — aus `<style>`-Blöcken und `style`-Attributen, mit Kaskade:
 
 - Selektoren: Typ, `.class`, `#id`, `*`, `[attr]` / `[attr=value]`,
-  `:first-child`, `:last-child`, `:only-child`, `:nth-child()`, `:not()`,
+  `:root`, `:first-child`, `:last-child`, `:only-child`, `:nth-child()`, `:not()`,
   Nachfahre, `>`, `+`, `~`; Spezifität, `!important`. `@media print` und
   `all` gelten, `@media screen` wird übersprungen.
+- Benutzerdefinierte Eigenschaften: `--name`-Deklarationen werden
+  vererbt, und `var(--name, Ersatz)` setzt sie in jeden Wert ein,
+  Kurzschreibweisen eingeschlossen; eine Eigenschaft, deren Variable fehlt
+  und keinen Ersatz hat, entfällt — wie im Browser.
 - Vererbt wie im Browser: `color`, `font-*`, `text-decoration`,
   `text-transform`, `letter-spacing`, `text-align`, `line-height`,
   `text-indent`, `white-space` — auf `body`, einem `div` oder `td`
@@ -349,7 +372,8 @@ $doc->toFile('report.pdf');
   (Seitenzahl, Seitenanzahl) —, gestaltet über eigene Regeln; andere
   Zähler werden nicht unterstützt.
 - Stylesheets: `<style>` und `<link rel="stylesheet">` in
-  Dokumentreihenfolge; ein Link darf auf eine lokale Datei oder eine
+  Dokumentreihenfolge; ein Link darf auf eine lokale Datei (außer bei
+  `localFiles: false`) oder eine
   `data:text/css`-URL zeigen — entfernte Stylesheets werden nicht geladen
   (der Parser stellt keine Netzwerkanfragen).
 - Tabellen: `width`, `table-layout` (`auto` bemisst Spalten nach Inhalt
@@ -359,7 +383,9 @@ $doc->toFile('report.pdf');
   `colspan`, `rowspan`; Zeilen: `height`, `break-inside: avoid`.
   `<thead>`-Zeilen wiederholen sich auf jeder Seite.
 - Bilder: `width` / `height` (`%` der Zeile), `display: block` mit
-  `margin: auto` zentriert.
+  `margin: auto` zentriert. Ein `<svg>` in einer Textzeile wird als eigener
+  Block gezeichnet: der Absatz wird um ihn geteilt, und er übernimmt die
+  Textausrichtung.
 - Seiten: `page-break-before` / `-after` (`break-before` / `-after`);
   `@page { size; margin }` legt die Seite von `Document::fromHtml()`
   fest, sofern kein `$sectionTemplate` übergeben wird.
@@ -412,6 +438,16 @@ Textstil am Element, und `$context->inlines($element)` /
 täte, damit ein Handler ihn umschließen kann. `imageSource` erhält jedes
 `src` zuerst; null fällt auf `data:`-URLs und lesbare lokale Dateien
 zurück.
+
+Ein Block, den ein Handler für ein Element in einer Textzeile liefert —
+ein Signaturfeld für ein `<img>` in `<p>` —, teilt den Absatz an dieser
+Stelle: der Text davor und danach wird zu eigenen Absätzen, der erste
+behält den Abstand oben, der letzte den unten. `$context->alignment` ist
+die geltende Textausrichtung, um einen solchen Block zu platzieren.
+
+Für HTML von nicht vertrauenswürdigen Autoren übergeben Sie
+`localFiles: false`: `<img src>` und `<link href>` lesen dann nichts von
+der Festplatte — nur `data:`-URLs und `imageSource`.
 
 Seitenzahlen brauchen keinen Handler: `content: counter(page)` und
 `counter(pages)` in `::before` / `::after` drucken Seitenzahl und
