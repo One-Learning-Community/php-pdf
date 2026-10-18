@@ -40,6 +40,13 @@ use Dskripchenko\PhpPdf\Font\Ttf\TtfFile;
  *
  * Coords for widths: PDF convention is 1000/em. TTF FUnit to PDF unit
  * conversion: `PDF_width = TTF_width * 1000 / unitsPerEm`.
+ *
+ * OpenType fonts with CFF outlines use a CIDFontType0 descendant instead
+ * (no /CIDToGIDMap) and embed the whole `CFF ` table as
+ * /FontFile3 /Subtype /CIDFontType0C (ISO 32000-1 §9.9, Table 126) — valid
+ * from PDF 1.3, so also in PDF/A-1. CFF fonts are not subset. Character
+ * codes are CIDs: equal to glyph IDs for name-keyed CFF, mapped through the
+ * CFF charset for CID-keyed CFF (§9.7.4.2, see TtfFile::cidForGlyph()).
  */
 final class PdfFont
 {
@@ -73,6 +80,7 @@ final class PdfFont
      *                        TtfSubsetter (typically from ~411KB to ~5-50KB).
      *                        If false, full TTF (backward-compat for
      *                        corner-cases where subsetting causes issues).
+     *                        CFF-based fonts are always embedded whole.
      */
     /**
      * @param  array<string, float>  $axes  Variable font axis coords
@@ -193,22 +201,31 @@ final class PdfFont
         if ($this->axes !== [] && $this->ttf->isVariable()) {
             $variableInstance = new \Dskripchenko\PhpPdf\Font\Ttf\VariableInstance($this->ttf, $this->axes);
         }
-        $fontBytes = $this->subset
-            ? (new \Dskripchenko\PhpPdf\Font\Ttf\TtfSubsetter)->subset($this->ttf, array_keys($this->usedGlyphs), $variableInstance)
-            : $this->ttf->rawBytes();
+        $isCff = $this->ttf->isCff();
+        if ($isCff) {
+            // FontFile3 carries /Subtype instead of /Length1 (Table 127).
+            $fontBytes = $this->ttf->cffTableBytes();
+            $streamKeys = '/Subtype /CIDFontType0C';
+        } else {
+            $fontBytes = $this->subset
+                ? (new \Dskripchenko\PhpPdf\Font\Ttf\TtfSubsetter)->subset($this->ttf, array_keys($this->usedGlyphs), $variableInstance)
+                : $this->ttf->rawBytes();
+            // Length1 = un-compressed original size (PDF spec).
+            $streamKeys = sprintf('/Length1 %d', strlen($fontBytes));
+        }
         if ($compressStreams) {
             $compressed = self::compress($fontBytes);
             $fontFileObjId = $writer->addObject(sprintf(
-                "<< /Length %d /Length1 %d /Filter /FlateDecode >>\nstream\n%s\nendstream",
+                "<< /Length %d %s /Filter /FlateDecode >>\nstream\n%s\nendstream",
                 strlen($compressed),
-                strlen($fontBytes),  // Length1 = un-compressed original size (PDF spec)
+                $streamKeys,
                 $compressed,
             ));
         } else {
             $fontFileObjId = $writer->addObject(sprintf(
-                "<< /Length %d /Length1 %d >>\nstream\n%s\nendstream",
+                "<< /Length %d %s >>\nstream\n%s\nendstream",
                 strlen($fontBytes),
-                strlen($fontBytes),
+                $streamKeys,
                 $fontBytes,
             ));
         }
@@ -217,7 +234,7 @@ final class PdfFont
         $descriptorBody = $this->buildFontDescriptor($fontFileObjId);
         $descriptorId = $writer->addObject($descriptorBody);
 
-        // 3. CIDFontType2 descendant.
+        // 3. CIDFontType2 / CIDFontType0 descendant.
         $cidFontBody = $this->buildCIDFont($descriptorId);
         $cidFontId = $writer->addObject($cidFontBody);
 
@@ -226,12 +243,13 @@ final class PdfFont
         //    streams BEFORE registerWith(). See addUsedChar().
         $toUnicodeId = $writer->addObject($this->buildToUnicodeCMap());
 
-        // 5. Top-level Type0 font dict.
+        // 5. Top-level Type0 font dict. Over a CIDFontType0 the name should
+        //    be "<CIDFont BaseFont>-<CMap name>" (Table 121).
         $type0Body = sprintf(
             '<< /Type /Font /Subtype /Type0 /BaseFont /%s '
             .'/Encoding /Identity-H /DescendantFonts [%d 0 R] '
             .'/ToUnicode %d 0 R >>',
-            $this->ttf->postScriptName(),
+            $this->ttf->postScriptName().($isCff ? '-Identity-H' : ''),
             $cidFontId,
             $toUnicodeId,
         );
@@ -648,7 +666,7 @@ final class PdfFont
     {
         $hex = '';
         foreach ($this->shapedGlyphs($utf8) as $shaped) {
-            $hex .= sprintf('%04X', $shaped['gid']);
+            $hex .= sprintf('%04X', $this->ttf->cidForGlyph($shaped['gid']));
         }
 
         return '<'.$hex.'>';
@@ -687,7 +705,7 @@ final class PdfFont
                     $currentRun = '';
                 }
             }
-            $currentRun .= sprintf('%04X', $gid);
+            $currentRun .= sprintf('%04X', $this->ttf->cidForGlyph($gid));
             $prevGid = $gid;
         }
         if ($currentRun !== '') {
@@ -759,7 +777,7 @@ final class PdfFont
             '<< /Type /FontDescriptor /FontName /%s /Flags %d '
             .'/FontBBox %s /ItalicAngle %d '
             .'/Ascent %d /Descent %d /CapHeight %d /StemV 80 '
-            .'/FontFile2 %d 0 R >>',
+            .'/%s %d 0 R >>',
             $this->ttf->postScriptName(),
             $flags,
             $bboxStr,
@@ -767,12 +785,14 @@ final class PdfFont
             $toPdf($this->ttf->ascent()),
             $toPdf($this->ttf->descent()),
             $toPdf($this->ttf->ascent()), // CapHeight ~ ascent for POC; refine later
+            $this->ttf->isCff() ? 'FontFile3' : 'FontFile2',
             $fontFileObjId,
         );
     }
 
     /**
      * CIDFontType2 descendant - contains glyph widths and link to the descriptor.
+     * CFF fonts get CIDFontType0, which has no /CIDToGIDMap (§9.7.4.2).
      *
      * Vertical writing adds /WMode 1 + /W2 array (vertical
      * advance metrics from vmtx).
@@ -784,12 +804,16 @@ final class PdfFont
             $verticalParts = '/WMode 1 /W2 '.$this->buildVerticalWidthsArray().' ';
         }
 
+        $isCff = $this->ttf->isCff();
+
         return sprintf(
-            '<< /Type /Font /Subtype /CIDFontType2 /BaseFont /%s '
+            '<< /Type /Font /Subtype /%s /BaseFont /%s '
             .'/CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> '
-            .'/CIDToGIDMap /Identity /FontDescriptor %d 0 R '
+            .'%s/FontDescriptor %d 0 R '
             .'/W %s %s>>',
+            $isCff ? 'CIDFontType0' : 'CIDFontType2',
             $this->ttf->postScriptName(),
+            $isCff ? '' : '/CIDToGIDMap /Identity ',
             $descriptorId,
             $this->buildWidthsArray(),
             $verticalParts,
@@ -814,13 +838,12 @@ final class PdfFont
         }
         $upem = $this->ttf->unitsPerEm();
         $parts = [];
-        ksort($this->usedGlyphs);
-        foreach (array_keys($this->usedGlyphs) as $gid) {
+        foreach ($this->usedCids() as $cid => $gid) {
             $advHeight = $this->ttf->advanceHeight($gid) ?? 1000;
             // PDF /W2 advance in negative thousandths (1000 unitsPerEm = 1 em).
             $w1y = -(int) round($advHeight * 1000 / $upem);
             // v_y default: 880 (PDF §9.7.4.3); v_y_origin default 500.
-            $parts[] = "$gid [880 500 $w1y]";
+            $parts[] = "$cid [880 500 $w1y]";
         }
 
         return '['.implode(' ', $parts).']';
@@ -840,14 +863,29 @@ final class PdfFont
         }
         $upem = $this->ttf->unitsPerEm();
         $parts = [];
-        // Sort by glyphId for readability and (possibly) future optimization.
-        ksort($this->usedGlyphs);
-        foreach (array_keys($this->usedGlyphs) as $gid) {
+        foreach ($this->usedCids() as $cid => $gid) {
             $pdfWidth = (int) round($this->ttf->advanceWidth($gid) * 1000 / $upem);
-            $parts[] = "$gid [$pdfWidth]";
+            $parts[] = "$cid [$pdfWidth]";
         }
 
         return '['.implode(' ', $parts).']';
+    }
+
+    /**
+     * Used glyphs keyed by the CID they are written under, sorted by CID.
+     * CID == GID except for CID-keyed CFF fonts.
+     *
+     * @return array<int, int>  CID => GID
+     */
+    private function usedCids(): array
+    {
+        $cids = [];
+        foreach (array_keys($this->usedGlyphs) as $gid) {
+            $cids[$this->ttf->cidForGlyph($gid)] = $gid;
+        }
+        ksort($cids);
+
+        return $cids;
     }
 
     /**
@@ -883,7 +921,8 @@ final class PdfFont
         $count = count($this->usedGlyphs);
         if ($count > 0) {
             $body .= "$count beginbfchar\n";
-            foreach ($this->usedGlyphs as $gid => $cps) {
+            foreach ($this->usedCids() as $cid => $gid) {
+                $cps = $this->usedGlyphs[$gid];
                 // cps - list<int>: single codepoint for regular glyph,
                 // multiple for ligature glyph (e.g., fi -> ['f','i']).
                 // PDF ToUnicode bfchar: <gid> <utf16-hex> where utf16-hex
@@ -892,7 +931,7 @@ final class PdfFont
                 foreach ($cps as $cp) {
                     $utf16 .= $this->codepointToUtf16BeHex($cp);
                 }
-                $body .= sprintf("<%04X> <%s>\n", $gid, $utf16);
+                $body .= sprintf("<%04X> <%s>\n", $cid, $utf16);
             }
             $body .= "endbfchar\n";
         }

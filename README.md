@@ -211,7 +211,8 @@ file_put_contents('hello.pdf', $doc->toBytes());
 ### Fonts
 - 14 Adobe base-14 fonts (WinAnsi).
 - TrueType-outline fonts (`.ttf`, TrueType-flavoured `.otf`) with
-  on-demand subsetting; CFF-based OpenType is not supported.
+  on-demand subsetting; CFF-based OpenType (`.otf`) embedded whole, without
+  subsetting; CFF2 (variable CFF) is not supported.
 - Kerning, basic GSUB ligatures, ToUnicode CMap.
 - Variable font instances (fvar, gvar, MVAR, HVAR, avar).
 - Bidi (UAX#9), Arabic shaping, basic Indic shaping.

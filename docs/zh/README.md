@@ -193,7 +193,8 @@ file_put_contents('hello.pdf', $doc->toBytes());
 ### 字体
 - 14 个 Adobe base-14 字体（WinAnsi）。
 - TrueType 轮廓字体（`.ttf`、TrueType 风格的 `.otf`），支持
-  按需子集化；不支持基于 CFF 的 OpenType。
+  按需子集化；基于 CFF 的 OpenType（`.otf`）整体内嵌，不做子集化；
+  不支持 CFF2（可变 CFF）。
 - 字距调整、基础 GSUB 连字、ToUnicode CMap。
 - 可变字体实例（fvar、gvar、MVAR、HVAR、avar）。
 - Bidi（UAX#9）、阿拉伯语字形整形、基础印度语系字形整形。

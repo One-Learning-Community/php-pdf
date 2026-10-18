@@ -447,11 +447,14 @@ Glyphen; der Fallback pro Glyphe ist `fallbackFonts`.
 liefert `LiberationFontProvider`: Liberation Sans, Serif und Mono, auch
 unter den Namen `Arial`, `Times New Roman` und `Courier New`.
 
-Eingebettet werden nur Schriften mit TrueType-Outlines (`.ttf`,
-TrueType-basierte `.otf`); CFF-basierte OpenType-Schriften werden
-abgelehnt. Eingebettete Schriftarten werden bedarfsgerecht als Subset
-eingebunden — nur die tatsächlich verwendeten Glyphen landen in der
-Datei. Kerning, einfache Ligaturen und ToUnicode-CMaps werden
+Schriften mit TrueType-Outlines (`.ttf`, TrueType-basierte `.otf`) werden
+bedarfsgerecht als Subset eingebunden — nur die tatsächlich verwendeten
+Glyphen landen in der Datei. CFF-basierte OpenType-Schriften (`.otf` mit
+einer `CFF `-Tabelle) werden vollständig, ohne Subsetting eingebettet, als
+CIDFontType0 mit einem `/FontFile3 /CIDFontType0C`-Programm (auch in
+PDF/A-1 zulässig); die Ausgabe enthält also die volle CFF-Größe
+(100–200 KB für eine Schrift mit Latein und Kyrillisch). Schriften mit
+CFF2 (variables CFF) werden abgelehnt. Kerning, einfache Ligaturen und ToUnicode-CMaps werden
 automatisch ausgegeben.
 
 ---

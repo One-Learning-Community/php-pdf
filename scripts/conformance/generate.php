@@ -9,7 +9,9 @@ declare(strict_types=1);
  *
  * Output: one PDF per flavour (pdfa-1b, pdfa-1a, pdfa-2b, pdfa-2u, pdfa-3b,
  * plus pdfa-2b-signed — signed, with a signature stamp), built with embedded
- * Liberation fonts (run scripts/fetch-fonts.sh first) and the vendored sRGB
+ * Liberation fonts (run scripts/fetch-fonts.sh first), plus pdfa-1b-cff,
+ * pdfa-2u-cff and pdfa-2u-cff-cid — CFF-outline OpenType fonts (Source Sans 3
+ * and the CID-keyed test font in tests/fixtures/fonts) — and the vendored sRGB
  * ICC profile. These files are the input for scripts/conformance/verapdf.sh
  * (veraPDF validation in CI). Also the visual fixtures (form-fill,
  * signature-stamp) for scripts/conformance/visual-check.sh.
@@ -49,6 +51,13 @@ require $root.'/vendor/autoload.php';
 $fontDir = $root.'/.cache/fonts/liberation-fonts-ttf-2.1.5';
 if (! is_readable($fontDir.'/LiberationSans-Regular.ttf')) {
     fwrite(STDERR, "Liberation fonts not cached — run scripts/fetch-fonts.sh first.\n");
+    exit(1);
+}
+
+$cffFontPath = $root.'/.cache/fonts/SourceSans3-Regular.otf';
+$cffCidFontPath = $root.'/tests/fixtures/fonts/MiniCffCid-Regular.otf';
+if (! is_readable($cffFontPath)) {
+    fwrite(STDERR, "Source Sans 3 not cached — run scripts/fetch-fonts.sh first.\n");
     exit(1);
 }
 
@@ -160,6 +169,45 @@ foreach ($flavours as $name => [$part, $conformance]) {
         ),
     ));
     $failures += $ok ? 0 : 1;
+}
+
+// CFF-outline OpenType fonts: CIDFontType0 + FontFile3/CIDFontType0C. PDF/A-1
+// is the strictest case (PDF 1.4 base), the CID-keyed font checks that CIDs
+// are written through the CFF charset.
+$cffEngine = new Engine(defaultFont: new PdfFont(TtfFile::fromFile($cffFontPath)));
+$cffCidEngine = new Engine(defaultFont: new PdfFont(TtfFile::fromFile($cffCidFontPath)));
+$cffCases = [
+    'pdfa-1b-cff' => [$cffEngine, $section, PdfAConfig::PART_1, PdfAConfig::CONFORMANCE_B],
+    'pdfa-2u-cff' => [$cffEngine, $section, PdfAConfig::PART_2, PdfAConfig::CONFORMANCE_U],
+    // The test font has only the glyphs of this line.
+    'pdfa-2u-cff-cid' => [
+        $cffCidEngine,
+        new Section([new Paragraph([new Run('Hello World П')])]),
+        PdfAConfig::PART_2,
+        PdfAConfig::CONFORMANCE_U,
+    ],
+];
+foreach ($cffCases as $name => [$cffCaseEngine, $cffSection, $part, $conformance]) {
+    $path = $outDir.'/'.$name.'.pdf';
+    try {
+        file_put_contents($path, (new Document(
+            $cffSection,
+            lang: 'en',
+            pdfA: new PdfAConfig(
+                $iccPath,
+                iccProfileName: 'sRGB2014',
+                lang: 'en',
+                title: 'php-pdf conformance reference — '.strtoupper($name),
+                author: 'dskripchenko/php-pdf',
+                part: $part,
+                conformance: $conformance,
+            ),
+        ))->toBytes($cffCaseEngine));
+        echo "generated $path\n";
+    } catch (\Throwable $e) {
+        fwrite(STDERR, "FAILED $name: {$e->getMessage()}\n");
+        $failures++;
+    }
 }
 
 foreach ($pdfxVariants as $name => $variant) {

@@ -102,14 +102,24 @@ final class GposReader
         $reader->skip(2); // lookupFlag
         $subTableCount = $reader->readUInt16();
 
-        if ($lookupType !== 2) {
+        if ($lookupType !== 2 && $lookupType !== 9) {
             return; // not pair adjustment — ignore
         }
 
         for ($i = 0; $i < $subTableCount; $i++) {
             $reader->seek($lookupOffset + 6 + $i * 2);
-            $subtableOffset = $reader->readUInt16();
-            $this->readPairAdjustmentSubtable($bytes, $lookupOffset + $subtableOffset, $table);
+            $subtableOffset = $lookupOffset + $reader->readUInt16();
+            if ($lookupType === 9) {
+                // Extension subtable: uint16 format, uint16 extensionLookupType,
+                // Offset32 to the real subtable (from this subtable's start).
+                // Large fonts (e.g. Adobe's) keep their kerning there.
+                $reader->seek($subtableOffset + 2);
+                if ($reader->readUInt16() !== 2) {
+                    continue;
+                }
+                $subtableOffset += $reader->readUInt32();
+            }
+            $this->readPairAdjustmentSubtable($bytes, $subtableOffset, $table);
         }
     }
 
