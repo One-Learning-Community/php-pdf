@@ -4492,7 +4492,10 @@ final class Engine
                 }
                 $col += $cell->columnSpan;
             }
-            $columnCount = max($columnCount, $col, $held === [] ? 0 : max(array_keys(array_filter($held))) + 1);
+            // Columns still held by a cell merged down from above count too —
+            // once every merge has run out there are none.
+            $stillHeld = array_keys(array_filter($held));
+            $columnCount = max($columnCount, $col, $stillHeld === [] ? 0 : max($stillHeld) + 1);
             foreach ($held as $c => $left) {
                 $held[$c] = max(0, $left - 1);
             }
