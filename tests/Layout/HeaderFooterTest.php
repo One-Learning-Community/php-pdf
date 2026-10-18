@@ -18,6 +18,7 @@ use Dskripchenko\PhpPdf\Section;
 use Dskripchenko\PhpPdf\Style\Alignment;
 use Dskripchenko\PhpPdf\Style\ParagraphStyle;
 use Dskripchenko\PhpPdf\Style\TableStyle;
+use Dskripchenko\PhpPdf\Tests\Support\PdfGeometry;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -163,40 +164,35 @@ final class HeaderFooterTest extends TestCase
     }
 
     /**
-     * Phase 156: a header overflow has to push the body topY down (an
-     * mpdf-style adaptive top margin). Otherwise the header renders OVER the
-     * body content.
+     * A header or footer taller than its margin widens its zone (mpdf-style
+     * adaptive margins): the body starts below the header and ends above the
+     * footer on every page, instead of running under them.
      */
     #[Test]
-    public function tall_header_pushes_body_below(): void
+    public function tall_header_and_footer_push_the_body(): void
     {
-        // Tall header — multi-row table that exceeds default 20mm top margin.
-        $tallHeader = new Table(
-            rows: [
-                new Row([new Cell([new Paragraph([new Run('Line 1: company info')])])]),
-                new Row([new Cell([new Paragraph([new Run('Line 2: address line')])])]),
-                new Row([new Cell([new Paragraph([new Run('Line 3: contact info')])])]),
-                new Row([new Cell([new Paragraph([new Run('Line 4: registration data')])])]),
-                new Row([new Cell([new Paragraph([new Run('Line 5: license details')])])]),
-            ],
+        $table = static fn (string $prefix): Table => new Table(
+            array_map(static fn (int $i): Row => new Row([new Cell([new Paragraph([new Run($prefix.$i)])])]), range(1, 8)),
             style: new TableStyle(widthPercent: 100),
         );
-        $doc = new Document(new Section(
-            body: [new Paragraph([new Run('BODY_MARKER_TEXT')])],
-            headerBlocks: [$tallHeader],
-        ));
-        $bytes = $doc->toBytes(new Engine(compressStreams: false, defaultFont: $this->font()));
+        $body = array_map(static fn (int $i): Paragraph => new Paragraph([new Run('Body'.$i)]), range(1, 80));
+        $pdf = (new Document(new Section(body: $body, headerBlocks: [$table('Head')], footerBlocks: [$table('Foot')])))
+            ->toBytes(new Engine(compressStreams: false));
 
-        // Extract Y-positions of text snippets via PDF stream inspection.
-        // Header content "Line 1" should be HIGHER on page (larger Y) than body marker.
-        if (! preg_match('/(\d+(?:\.\d+)?) Td.*?\(Line 1: company info\) Tj/s', $bytes, $matchHeader)
-            || ! preg_match('/(\d+(?:\.\d+)?) Td.*?\(BODY_MARKER_TEXT\) Tj/s', $bytes, $matchBody)
-        ) {
-            // Streams may be compressed or reordered; fall back to pdftotext.
-            self::markTestIncomplete('Cannot extract Y positions via regex; needs pdftotext for layout verification');
+        $words = PdfGeometry::words($pdf) ?? self::markTestSkipped('pdftotext is not available');
+        $pages = [];
+        foreach ($words as $w) {
+            $pages[$w['page']][] = $w;
         }
-        $headerY = (float) $matchHeader[1];
-        $bodyY = (float) $matchBody[1];
-        self::assertGreaterThan($bodyY, $headerY, 'Header content должен быть выше body на page');
+        self::assertGreaterThanOrEqual(2, count($pages));
+        foreach ($pages as $page => $pageWords) {
+            $of = static fn (string $pattern): array => array_values(array_filter($pageWords, static fn (array $w): bool => preg_match($pattern, $w['text']) === 1));
+            $headerBottom = max(array_column($of('/^Head\d+$/'), 'yMax'));
+            $footerTop = min(array_column($of('/^Foot\d+$/'), 'yMin'));
+            $body = $of('/^Body\d+$/');
+            self::assertNotSame([], $body, "page $page has no body text");
+            self::assertGreaterThan($headerBottom, min(array_column($body, 'yMin')), "page $page: the body runs under the header");
+            self::assertLessThan($footerTop, max(array_column($body, 'yMax')), "page $page: the body runs under the footer");
+        }
     }
 }
