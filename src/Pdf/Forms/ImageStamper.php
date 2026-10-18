@@ -9,6 +9,7 @@ use Dskripchenko\PhpPdf\Pdf\Reader\PdfDictionary;
 use Dskripchenko\PhpPdf\Pdf\Reader\PdfName;
 use Dskripchenko\PhpPdf\Pdf\Reader\PdfReference;
 use Dskripchenko\PhpPdf\Pdf\Reader\PdfStream;
+use Dskripchenko\PhpPdf\Pdf\Reader\PdfString;
 use Dskripchenko\PhpPdf\Pdf\Reader\ReaderPage;
 
 /**
@@ -61,10 +62,20 @@ final class ImageStamper
             'Subtype' => new PdfName('Image'),
             'Width' => $image->widthPx,
             'Height' => $image->heightPx,
-            'ColorSpace' => new PdfName(ltrim($image->colorSpace, '/')),
+            'ColorSpace' => $image->palette !== null
+                ? [
+                    new PdfName('Indexed'),
+                    new PdfName(ltrim($image->colorSpace, '/')),
+                    intdiv(strlen($image->palette), 3) - 1,
+                    new PdfString($image->palette, true),
+                ]
+                : new PdfName(ltrim($image->colorSpace, '/')),
             'BitsPerComponent' => $image->bitsPerComponent,
             'Filter' => new PdfName(ltrim($image->filter, '/')),
         ];
+        if ($image->decodeParms !== null) {
+            $items['DecodeParms'] = new PdfDictionary($image->decodeParms);
+        }
 
         if ($image->alphaData !== null && $image->alphaData !== '') {
             $items['SMask'] = $this->graph->allocate(new PdfStream(new PdfDictionary([
@@ -73,7 +84,7 @@ final class ImageStamper
                 'Width' => $image->widthPx,
                 'Height' => $image->heightPx,
                 'ColorSpace' => new PdfName('DeviceGray'),
-                'BitsPerComponent' => 8,
+                'BitsPerComponent' => $image->alphaBitsPerComponent,
                 'Filter' => new PdfName('FlateDecode'),
             ]), $image->alphaData));
         }

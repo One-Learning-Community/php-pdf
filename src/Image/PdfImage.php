@@ -10,17 +10,19 @@ use Dskripchenko\PhpPdf\Pdf\Writer;
  * Image XObject for PDF embedding.
  *
  * Supports PNG and JPEG. For JPEG passes bytes through (PDF accepts
- * DCT-encoded streams natively); for PNG decodes IDAT and re-encodes
- * via Flate.
+ * DCT-encoded streams natively). For PNG:
+ *  - non-interlaced gray / RGB / palette: IDAT passed through as a Flate
+ *    stream with the PNG predictor (`/DecodeParms /Predictor 15`);
+ *  - palette (color type 3, 1/2/4/8 bit): `/Indexed` over `/DeviceRGB`,
+ *    tRNS alpha becomes an 8-bit `/SMask`;
+ *  - gray+alpha / RGBA: decoded, alpha split into an `/SMask`;
+ *  - 16-bit channels: kept as `/BitsPerComponent 16` (SMask too);
+ *  - Adam7 interlacing: decoded into plain scanlines and re-compressed.
  *
  * SCOPE LIMITATIONS:
- *  - PNG color types: only 2 (RGB) and 6 (RGBA) with bit depth 8
  *  - JPEG: only baseline / extended sequential DCT (SOF0/SOF1/SOF2/SOF3)
- *  - PNG interlacing (Adam7): NOT supported
- *  - PNG palette (color type 3): NOT supported
- *  - Alpha channel in RGBA: ignored, rendered as RGB
- *  - ICC color profiles: skip
- *  - 16-bit channels: skip
+ *  - PNG tRNS colour key for gray / RGB: ignored
+ *  - ICC color profiles, gamma: skip
  *
  * Usage:
  *   $img = PdfImage::fromPath('/tmp/photo.jpg');
@@ -43,8 +45,8 @@ final class PdfImage
         public readonly int $widthPx,
         public readonly int $heightPx,
         public readonly string $filter,         // /FlateDecode or /DCTDecode
-        public readonly string $colorSpace,     // /DeviceRGB or /DeviceGray
-        public readonly int $bitsPerComponent,  // typically 8
+        public readonly string $colorSpace,     // /DeviceRGB or /DeviceGray (base space when $palette is set)
+        public readonly int $bitsPerComponent,  // 1, 2, 4, 8 or 16
         public readonly string $imageData,      // raw bytes for PDF stream
         /**
          * The alpha channel as a separate stream (Flate, 8 bit, DeviceGray).
@@ -56,7 +58,36 @@ final class PdfImage
          * instead of the background.
          */
         public readonly ?string $alphaData = null,
+        /**
+         * Palette as RGB triplets (PNG PLTE). When set, samples are indices
+         * and the image is emitted as `[/Indexed $colorSpace hival <palette>]`.
+         */
+        public readonly ?string $palette = null,
+        /** Bits per component of the alpha stream: 8, or 16 for 16-bit PNG. */
+        public readonly int $alphaBitsPerComponent = 8,
+        /**
+         * `/DecodeParms` of the image stream — the PNG predictor when IDAT is
+         * passed through as is.
+         *
+         * @var array<string, int>|null
+         */
+        public readonly ?array $decodeParms = null,
     ) {}
+
+    /** The `/ColorSpace` operand: a name, or an `/Indexed` array for a palette. */
+    private function colorSpaceOperand(): string
+    {
+        if ($this->palette === null) {
+            return $this->colorSpace;
+        }
+
+        return sprintf(
+            '[/Indexed %s %d <%s>]',
+            $this->colorSpace,
+            intdiv(strlen($this->palette), 3) - 1,
+            bin2hex($this->palette),
+        );
+    }
 
     public static function fromPath(string $path): self
     {
@@ -92,23 +123,33 @@ final class PdfImage
         if ($this->alphaData !== null && $this->alphaData !== '') {
             $maskId = $writer->addObject(sprintf(
                 "<< /Type /XObject /Subtype /Image /Width %d /Height %d "
-                ."/ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode /Length %d >>\nstream\n%s\nendstream",
+                ."/ColorSpace /DeviceGray /BitsPerComponent %d /Filter /FlateDecode /Length %d >>\nstream\n%s\nendstream",
                 $this->widthPx,
                 $this->heightPx,
+                $this->alphaBitsPerComponent,
                 strlen($this->alphaData),
                 $this->alphaData,
             ));
             $smask = sprintf(' /SMask %d 0 R', $maskId);
         }
 
+        $parms = '';
+        if ($this->decodeParms !== null) {
+            foreach ($this->decodeParms as $key => $value) {
+                $parms .= sprintf(' /%s %d', $key, $value);
+            }
+            $parms = ' /DecodeParms <<'.$parms.' >>';
+        }
+
         $dict = sprintf(
             '<< /Type /XObject /Subtype /Image /Width %d /Height %d '
-            .'/ColorSpace %s /BitsPerComponent %d /Filter %s%s /Length %d >>',
+            .'/ColorSpace %s /BitsPerComponent %d /Filter %s%s%s /Length %d >>',
             $this->widthPx,
             $this->heightPx,
-            $this->colorSpace,
+            $this->colorSpaceOperand(),
             $this->bitsPerComponent,
             $this->filter,
+            $parms,
             $smask,
             strlen($this->imageData),
         );
@@ -188,6 +229,12 @@ final class PdfImage
         throw new \RuntimeException('JPEG SOF marker not found.');
     }
 
+    /** Adam7 passes: [x start, y start, x step, y step]. */
+    private const ADAM7 = [
+        [0, 0, 8, 8], [4, 0, 8, 8], [0, 4, 4, 8], [2, 0, 4, 4],
+        [0, 2, 2, 4], [1, 0, 2, 2], [0, 1, 1, 2],
+    ];
+
     /**
      * Parses PNG file. PNG = magic (8 bytes) + sequence of chunks.
      * Each chunk: 4-byte length + 4-byte type + data + 4-byte CRC.
@@ -201,12 +248,11 @@ final class PdfImage
      *   1 byte filter (always 0)
      *   1 byte interlace (0 = none, 1 = Adam7)
      *
-     * IDAT chunks — zlib-deflated image data. Concatenated together
-     * if multiple, then passed as a PDF Flate stream.
-     *
-     * PDF Flate decode requires DecodeParms with Predictor 15 (PNG
-     * filters), Colors, BitsPerComponent, Columns — otherwise the reader
-     * cannot decompress correctly.
+     * IDAT chunks — zlib-deflated, PNG-filtered scanlines, concatenated.
+     * PDF's Flate filter with `/Predictor 15` undoes exactly that, so a
+     * non-interlaced image without an alpha channel is embedded as is —
+     * no decode, no re-compression. Alpha channels and Adam7 need the
+     * pixels, so those images are decoded and re-compressed.
      */
     private static function parsePng(string $bytes): self
     {
@@ -219,8 +265,10 @@ final class PdfImage
         $bitDepth = 0;
         $interlace = 0;
         $idat = '';
+        $palette = null;
+        $trns = null;
 
-        while ($pos < $len) {
+        while ($pos + 8 <= $len) {
             $chunkLen = (ord($bytes[$pos]) << 24)
                 | (ord($bytes[$pos + 1]) << 16)
                 | (ord($bytes[$pos + 2]) << 8)
@@ -229,7 +277,7 @@ final class PdfImage
             $data = substr($bytes, $pos + 8, $chunkLen);
             $pos += 8 + $chunkLen + 4; // length + type + data + crc
 
-            if ($type === 'IHDR') {
+            if ($type === 'IHDR' && strlen($data) >= 13) {
                 $width = (ord($data[0]) << 24) | (ord($data[1]) << 16)
                     | (ord($data[2]) << 8) | ord($data[3]);
                 $height = (ord($data[4]) << 24) | (ord($data[5]) << 16)
@@ -237,9 +285,10 @@ final class PdfImage
                 $bitDepth = ord($data[8]);
                 $colorType = ord($data[9]);
                 $interlace = ord($data[12]);
-                if ($interlace !== 0) {
-                    throw new \RuntimeException('Adam7 interlaced PNG not supported.');
-                }
+            } elseif ($type === 'PLTE') {
+                $palette = $data;
+            } elseif ($type === 'tRNS') {
+                $trns = $data;
             } elseif ($type === 'IDAT') {
                 $idat .= $data;
             } elseif ($type === 'IEND') {
@@ -247,45 +296,67 @@ final class PdfImage
             }
         }
 
-        if ($bitDepth !== 8) {
-            throw new \RuntimeException("PNG bit depth $bitDepth not supported (expected 8).");
+        if ($width <= 0 || $height <= 0 || $idat === '') {
+            throw new \RuntimeException('Invalid PNG: missing IHDR or IDAT.');
+        }
+        if ($interlace > 1) {
+            throw new \RuntimeException("PNG interlace method $interlace not supported.");
         }
 
-        // Color type → ColorSpace + components.
-        [$colorSpace, $components] = match ($colorType) {
-            2 => ['/DeviceRGB', 3],   // RGB
-            0 => ['/DeviceGray', 1],  // Grayscale
-            // Note: RGBA (6) and Gray+Alpha (4) are rendered as
-            // RGB/Gray without alpha.
-            6 => ['/DeviceRGB', 4],
-            4 => ['/DeviceGray', 2],
+        // Color type → ColorSpace + samples per pixel. A palette image has
+        // one sample (the index) over an /Indexed /DeviceRGB space.
+        [$colorSpace, $channels, $depths] = match ($colorType) {
+            0 => ['/DeviceGray', 1, [1, 2, 4, 8, 16]],
+            2 => ['/DeviceRGB', 3, [8, 16]],
+            3 => ['/DeviceRGB', 1, [1, 2, 4, 8]],
+            4 => ['/DeviceGray', 2, [8, 16]],
+            6 => ['/DeviceRGB', 4, [8, 16]],
             default => throw new \RuntimeException("PNG color type $colorType not supported."),
         };
+        if (! in_array($bitDepth, $depths, true)) {
+            throw new \RuntimeException("PNG bit depth $bitDepth not supported for color type $colorType.");
+        }
+        if ($colorType === 3) {
+            if ($palette === null || $palette === '' || strlen($palette) % 3 !== 0 || strlen($palette) > 768) {
+                throw new \RuntimeException('Invalid PNG: missing or malformed PLTE.');
+            }
+        } else {
+            $palette = null; // a suggested palette of a truecolor image
+        }
+        $bitsPerPixel = $channels * $bitDepth;
 
-        // PNG IDAT is zlib-compressed with PNG filters per scanline.
-        // PDF Flate decode requires DecodeParms predictor 15 (PNG-style).
-        // Simplified: re-encode without predictor. That means
-        // decompress IDAT, strip PNG filter bytes, re-compress without filter.
-        // For a 1×1 image this is overkill, but for multi-byte images
-        // a real decoder is required.
-        //
-        // PNG data after inflate: each scanline starts with 1 filter
-        // byte, then scanline.width × bytesPerPixel actual pixel bytes.
-        // bytesPerPixel = components × (bitDepth/8) = components × 1.
-        $inflated = @gzuncompress($idat);
-        if ($inflated === false) {
-            throw new \RuntimeException('Failed to inflate PNG IDAT.');
+        // Palette transparency: tRNS holds one alpha per palette entry. A tRNS
+        // with only opaque entries changes nothing.
+        $paletteAlpha = $colorType === 3 && $trns !== null && strspn($trns, "\xFF") !== strlen($trns);
+
+        // The common case: IDAT goes into the PDF untouched.
+        if ($interlace === 0 && $colorType !== 4 && $colorType !== 6) {
+            $alpha = $paletteAlpha
+                ? self::paletteAlpha(self::unfilter(self::inflate($idat), 0, $width, $height, $bitsPerPixel), (string) $trns, $width, $height, $bitDepth)
+                : null;
+
+            return new self(
+                widthPx: $width,
+                heightPx: $height,
+                filter: '/FlateDecode',
+                colorSpace: $colorSpace,
+                bitsPerComponent: $bitDepth,
+                imageData: $idat,
+                alphaData: $alpha !== null ? (string) gzcompress($alpha) : null,
+                palette: $palette,
+                decodeParms: [
+                    'Predictor' => 15,
+                    'Colors' => $channels,
+                    'BitsPerComponent' => $bitDepth,
+                    'Columns' => $width,
+                ],
+            );
         }
-        $rowBytes = $width * $components;
-        $unfilteredRows = '';
-        $prevRow = str_repeat("\x00", $rowBytes);
-        for ($y = 0; $y < $height; $y++) {
-            $filterByte = ord($inflated[$y * ($rowBytes + 1)]);
-            $row = substr($inflated, $y * ($rowBytes + 1) + 1, $rowBytes);
-            $unfilteredRow = self::applyPngFilter($filterByte, $row, $prevRow, $components);
-            $unfilteredRows .= $unfilteredRow;
-            $prevRow = $unfilteredRow;
-        }
+
+        $inflated = self::inflate($idat);
+        $raw = $interlace === 1
+            ? self::deinterlace($inflated, $width, $height, $bitsPerPixel)
+            : self::unfilter($inflated, 0, $width, $height, $bitsPerPixel);
 
         // The alpha channel is separated from the colour: PDF keeps
         // transparency as a separate mask object (`/SMask`), and it cannot live
@@ -294,25 +365,11 @@ final class PdfImage
         // signatures and stamps that is a black rectangle instead of the
         // background.
         $alpha = null;
-        if ($colorType === 6) {
-            $stripped = '';
-            $alpha = '';
-            for ($i = 0; $i < strlen($unfilteredRows); $i += 4) {
-                $stripped .= substr($unfilteredRows, $i, 3);
-                $alpha .= $unfilteredRows[$i + 3];
-            }
-            $unfilteredRows = $stripped;
-            $components = 3;
-        }
-        if ($colorType === 4) {
-            $stripped = '';
-            $alpha = '';
-            for ($i = 0; $i < strlen($unfilteredRows); $i += 2) {
-                $stripped .= $unfilteredRows[$i];
-                $alpha .= $unfilteredRows[$i + 1];
-            }
-            $unfilteredRows = $stripped;
-            $components = 1;
+        if ($colorType === 4 || $colorType === 6) {
+            $sampleBytes = $bitDepth >> 3;
+            [$raw, $alpha] = self::splitAlpha($raw, ($channels - 1) * $sampleBytes, $sampleBytes);
+        } elseif ($paletteAlpha) {
+            $alpha = self::paletteAlpha($raw, (string) $trns, $width, $height, $bitDepth);
         }
 
         // A fully opaque image needs no mask — an extra object in the file buys
@@ -321,17 +378,144 @@ final class PdfImage
             $alpha = null;
         }
 
-        $pdfStream = gzcompress($unfilteredRows);
-
         return new self(
             widthPx: $width,
             heightPx: $height,
             filter: '/FlateDecode',
             colorSpace: $colorSpace,
-            bitsPerComponent: 8,
-            imageData: $pdfStream,
+            bitsPerComponent: $bitDepth,
+            imageData: (string) gzcompress($raw),
             alphaData: $alpha !== null ? (string) gzcompress($alpha) : null,
+            palette: $palette,
+            // Palette alpha comes from 8-bit tRNS entries.
+            alphaBitsPerComponent: $colorType === 3 ? 8 : $bitDepth,
         );
+    }
+
+    private static function inflate(string $idat): string
+    {
+        $inflated = @gzuncompress($idat);
+        if ($inflated === false) {
+            throw new \RuntimeException('Failed to inflate PNG IDAT.');
+        }
+
+        return $inflated;
+    }
+
+    /**
+     * Undoes the PNG filters of $height scanlines starting at $offset.
+     * Each scanline is a filter byte followed by ceil(width × bits / 8)
+     * bytes; filters work on whole bytes (one byte for sub-byte pixels).
+     */
+    private static function unfilter(string $data, int $offset, int $width, int $height, int $bitsPerPixel): string
+    {
+        $rowBytes = intdiv($width * $bitsPerPixel + 7, 8);
+        if (strlen($data) < $offset + $height * ($rowBytes + 1)) {
+            throw new \RuntimeException('PNG image data is truncated.');
+        }
+        $bytesPerPixel = max(1, $bitsPerPixel >> 3);
+        $out = '';
+        $prevRow = str_repeat("\x00", $rowBytes);
+        for ($y = 0; $y < $height; $y++) {
+            $at = $offset + $y * ($rowBytes + 1);
+            $row = self::applyPngFilter(ord($data[$at]), substr($data, $at + 1, $rowBytes), $prevRow, $bytesPerPixel);
+            $out .= $row;
+            $prevRow = $row;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Adam7: seven reduced images, each filtered on its own, whose pixels are
+     * scattered back onto the full grid. The result is the plain scanlines
+     * of a non-interlaced image, without filter bytes.
+     */
+    private static function deinterlace(string $data, int $width, int $height, int $bitsPerPixel): string
+    {
+        $rows = array_fill(0, $height, str_repeat("\x00", intdiv($width * $bitsPerPixel + 7, 8)));
+        $bytesPerPixel = $bitsPerPixel >> 3;
+        $mask = (1 << $bitsPerPixel) - 1;
+        $offset = 0;
+
+        foreach (self::ADAM7 as [$x0, $y0, $dx, $dy]) {
+            $passWidth = $width > $x0 ? intdiv($width - $x0 + $dx - 1, $dx) : 0;
+            $passHeight = $height > $y0 ? intdiv($height - $y0 + $dy - 1, $dy) : 0;
+            if ($passWidth === 0 || $passHeight === 0) {
+                continue; // an empty pass has no scanlines, not even filter bytes
+            }
+            $passRowBytes = intdiv($passWidth * $bitsPerPixel + 7, 8);
+            $pass = self::unfilter($data, $offset, $passWidth, $passHeight, $bitsPerPixel);
+            $offset += $passHeight * ($passRowBytes + 1);
+
+            for ($j = 0; $j < $passHeight; $j++) {
+                $y = $y0 + $j * $dy;
+                $src = substr($pass, $j * $passRowBytes, $passRowBytes);
+                $dst = $rows[$y];
+                for ($i = 0; $i < $passWidth; $i++) {
+                    $x = $x0 + $i * $dx;
+                    if ($bytesPerPixel > 0) {
+                        for ($k = 0; $k < $bytesPerPixel; $k++) {
+                            $dst[$x * $bytesPerPixel + $k] = $src[$i * $bytesPerPixel + $k];
+                        }
+                    } else {
+                        // Sub-byte pixels (1/2/4-bit gray or palette): move bits.
+                        $srcBit = $i * $bitsPerPixel;
+                        $value = (ord($src[$srcBit >> 3]) >> (8 - $bitsPerPixel - ($srcBit & 7))) & $mask;
+                        $dstBit = $x * $bitsPerPixel;
+                        $at = $dstBit >> 3;
+                        $dst[$at] = chr(ord($dst[$at]) | ($value << (8 - $bitsPerPixel - ($dstBit & 7))));
+                    }
+                }
+                $rows[$y] = $dst;
+            }
+        }
+
+        return implode('', $rows);
+    }
+
+    /**
+     * Splits interleaved pixels into colour and alpha streams.
+     *
+     * @return array{string, string}
+     */
+    private static function splitAlpha(string $raw, int $colorBytes, int $alphaBytes): array
+    {
+        $color = '';
+        $alpha = '';
+        $pixelBytes = $colorBytes + $alphaBytes;
+        $n = strlen($raw);
+        for ($i = 0; $i < $n; $i += $pixelBytes) {
+            $color .= substr($raw, $i, $colorBytes);
+            $alpha .= substr($raw, $i + $colorBytes, $alphaBytes);
+        }
+
+        return [$color, $alpha];
+    }
+
+    /**
+     * Per-pixel 8-bit alpha of a palette image: indices (unpacked from
+     * 1/2/4-bit rows if needed) mapped through the tRNS table. Entries
+     * missing from tRNS are opaque.
+     */
+    private static function paletteAlpha(string $raw, string $trns, int $width, int $height, int $bitDepth): string
+    {
+        if ($bitDepth === 8) {
+            $indices = $raw;
+        } else {
+            $rowBytes = intdiv($width * $bitDepth + 7, 8);
+            $mask = (1 << $bitDepth) - 1;
+            $indices = '';
+            for ($y = 0; $y < $height; $y++) {
+                $row = substr($raw, $y * $rowBytes, $rowBytes);
+                for ($x = 0; $x < $width; $x++) {
+                    $bit = $x * $bitDepth;
+                    $indices .= chr((ord($row[$bit >> 3]) >> (8 - $bitDepth - ($bit & 7))) & $mask);
+                }
+            }
+        }
+
+        return strtr($indices, implode('', array_map('chr', range(0, 255))), str_pad(substr($trns, 0, 256), 256, "\xFF"));
     }
 
     /**
@@ -345,7 +529,7 @@ final class PdfImage
      * Minimal implementation for several filter types — filter 0 (None)
      * is sufficient as libpng defaults to it for small images.
      */
-    private static function applyPngFilter(int $filter, string $row, string $prev, int $components): string
+    private static function applyPngFilter(int $filter, string $row, string $prev, int $bytesPerPixel): string
     {
         if ($filter === 0) {
             return $row;
@@ -354,9 +538,9 @@ final class PdfImage
         $out = '';
         for ($i = 0; $i < $len; $i++) {
             $x = ord($row[$i]);
-            $a = $i >= $components ? ord($out[$i - $components]) : 0;
+            $a = $i >= $bytesPerPixel ? ord($out[$i - $bytesPerPixel]) : 0;
             $b = ord($prev[$i]);
-            $c = $i >= $components ? ord($prev[$i - $components]) : 0;
+            $c = $i >= $bytesPerPixel ? ord($prev[$i - $bytesPerPixel]) : 0;
 
             $result = match ($filter) {
                 1 => ($x + $a) & 0xFF,

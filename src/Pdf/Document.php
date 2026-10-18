@@ -1019,7 +1019,9 @@ final class Document
                 if (isset($imageObjectIds[$img])) {
                     continue;
                 }
-                $hash = md5($img->imageData);
+                // Palette and mask are part of the identity: the same indices
+                // over another palette are another picture.
+                $hash = md5($img->imageData."\0".$img->palette."\0".$img->alphaData);
                 if (isset($imageHashMap[$hash])) {
                     $imageObjectIds[$img] = $imageHashMap[$hash];
 
