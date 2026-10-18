@@ -65,10 +65,11 @@ final class OverlongWordTest extends TestCase
 
         $pieces = array_values(array_filter(
             $words,
-            static fn (array $w): bool => str_contains($w['text'], 'printable') || str_contains($w['text'], 'security'),
+            static fn (array $w): bool => $w['text'] !== 'RIGHT' && str_contains(self::URL, $w['text']),
         ));
 
         self::assertGreaterThan(1, count($pieces), 'длинный URL не разделён — он не помещается в колонку целиком');
+        self::assertSame(self::URL, implode('', array_column($pieces, 'text')));
         foreach ($pieces as $piece) {
             self::assertLessThan($columnEdge, $piece['xMax'], "«{$piece['text']}» вылезло за колонку");
         }

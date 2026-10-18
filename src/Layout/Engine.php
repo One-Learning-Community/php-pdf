@@ -49,6 +49,8 @@ use Dskripchenko\PhpPdf\Style\VerticalAlignment;
 use Dskripchenko\PhpPdf\Pdf\Document as PdfDocument;
 use Dskripchenko\PhpPdf\Pdf\Page;
 use Dskripchenko\PhpPdf\Pdf\PdfFont;
+use Dskripchenko\PhpPdf\Pdf\Forms\Appearance\StandardFontMetrics;
+use Dskripchenko\PhpPdf\Pdf\Forms\Appearance\WinAnsi;
 use Dskripchenko\PhpPdf\Pdf\StandardFont;
 use Dskripchenko\PhpPdf\Section;
 use Dskripchenko\PhpPdf\Style\Alignment;
@@ -589,9 +591,7 @@ final class Engine
         $topY = $ctx->cursorY;
 
         if ($dc->title !== null) {
-            $titleW = $this->defaultFont !== null
-                ? (new TextMeasurer($this->defaultFont, $dc->titleSizePt))->widthPt($dc->title)
-                : mb_strlen($dc->title, 'UTF-8') * $dc->titleSizePt * 0.5;
+            $titleW = $this->chartTextWidth($dc->title, $dc->titleSizePt);
             $this->chartText($ctx->currentPage, $dc->title,
                 $blockX + ($blockW - $titleW) / 2, $topY - $dc->titleSizePt, $dc->titleSizePt);
             $topY -= $dc->titleSizePt + 4;
@@ -683,9 +683,7 @@ final class Engine
         $plotH = $plotTop - $plotBottom;
 
         if ($ac->title !== null) {
-            $titleW = $this->defaultFont !== null
-                ? (new TextMeasurer($this->defaultFont, $ac->titleSizePt))->widthPt($ac->title)
-                : mb_strlen($ac->title, 'UTF-8') * $ac->titleSizePt * 0.5;
+            $titleW = $this->chartTextWidth($ac->title, $ac->titleSizePt);
             $this->chartText($ctx->currentPage, $ac->title,
                 $blockX + ($totalW - $titleW) / 2, $topY - $ac->titleSizePt, $ac->titleSizePt);
         }
@@ -735,9 +733,7 @@ final class Engine
                 $this->chartText($ctx->currentPage, $s['name'],
                     $legendX + $ac->legendSizePt + 3, $legendY + 1, $ac->legendSizePt);
                 $legendX += $ac->legendSizePt + 3
-                    + ($this->defaultFont !== null
-                        ? (new TextMeasurer($this->defaultFont, $ac->legendSizePt))->widthPt($s['name'])
-                        : mb_strlen($s['name'], 'UTF-8') * $ac->legendSizePt * 0.5)
+                    + ($this->chartTextWidth($s['name'], $ac->legendSizePt))
                     + 14;
             }
         }
@@ -752,9 +748,7 @@ final class Engine
         $ctx->currentPage->strokeLine($plotLeft, $plotBottom, $plotRight, $plotBottom, 0.5, 0.4, 0.4, 0.4);
 
         $maxLabel = $this->formatChartNumber($maxValue);
-        $maxLabelW = $this->defaultFont !== null
-            ? (new TextMeasurer($this->defaultFont, $ac->axisLabelSizePt))->widthPt($maxLabel)
-            : mb_strlen($maxLabel, 'UTF-8') * $ac->axisLabelSizePt * 0.5;
+        $maxLabelW = $this->chartTextWidth($maxLabel, $ac->axisLabelSizePt);
         $this->chartText($ctx->currentPage, $maxLabel,
             $plotLeft - $maxLabelW - 2, $plotTop - $ac->axisLabelSizePt * 0.5, $ac->axisLabelSizePt);
 
@@ -765,9 +759,7 @@ final class Engine
         // X-axis labels.
         foreach ($ac->xLabels as $i => $label) {
             $x = $plotLeft + $i * $stepX;
-            $labelW = $this->defaultFont !== null
-                ? (new TextMeasurer($this->defaultFont, $ac->axisLabelSizePt))->widthPt($label)
-                : mb_strlen($label, 'UTF-8') * $ac->axisLabelSizePt * 0.5;
+            $labelW = $this->chartTextWidth($label, $ac->axisLabelSizePt);
             if ($acRotated) {
                 $this->chartTextRotated($ctx->currentPage, $label, $x, $plotBottom - 2.0, $labelW, $ac->axisLabelSizePt, $acRotRad);
             } else {
@@ -852,9 +844,7 @@ final class Engine
         $plotH = $plotTop - $plotBottom;
 
         if ($sc->title !== null) {
-            $titleW = $this->defaultFont !== null
-                ? (new TextMeasurer($this->defaultFont, $sc->titleSizePt))->widthPt($sc->title)
-                : mb_strlen($sc->title, 'UTF-8') * $sc->titleSizePt * 0.5;
+            $titleW = $this->chartTextWidth($sc->title, $sc->titleSizePt);
             $this->chartText($ctx->currentPage, $sc->title,
                 $blockX + ($totalW - $titleW) / 2, $topY - $sc->titleSizePt, $sc->titleSizePt);
         }
@@ -885,9 +875,7 @@ final class Engine
                 $this->chartText($ctx->currentPage, $s['name'],
                     $legendX + $sc->legendSizePt + 3, $legendY + 1, $sc->legendSizePt);
                 $legendX += $sc->legendSizePt + 3
-                    + ($this->defaultFont !== null
-                        ? (new TextMeasurer($this->defaultFont, $sc->legendSizePt))->widthPt($s['name'])
-                        : mb_strlen($s['name'], 'UTF-8') * $sc->legendSizePt * 0.5)
+                    + ($this->chartTextWidth($s['name'], $sc->legendSizePt))
                     + 14;
             }
         }
@@ -905,16 +893,12 @@ final class Engine
         $this->chartText($ctx->currentPage, $this->formatChartNumber($xMin),
             $plotLeft, $plotBottom - $sc->axisLabelSizePt - 2, $sc->axisLabelSizePt);
         $xMaxLabel = $this->formatChartNumber($xMax);
-        $xMaxW = $this->defaultFont !== null
-            ? (new TextMeasurer($this->defaultFont, $sc->axisLabelSizePt))->widthPt($xMaxLabel)
-            : mb_strlen($xMaxLabel, 'UTF-8') * $sc->axisLabelSizePt * 0.5;
+        $xMaxW = $this->chartTextWidth($xMaxLabel, $sc->axisLabelSizePt);
         $this->chartText($ctx->currentPage, $xMaxLabel,
             $plotRight - $xMaxW, $plotBottom - $sc->axisLabelSizePt - 2, $sc->axisLabelSizePt);
 
         $yMaxLabel = $this->formatChartNumber($yMax);
-        $yMaxW = $this->defaultFont !== null
-            ? (new TextMeasurer($this->defaultFont, $sc->axisLabelSizePt))->widthPt($yMaxLabel)
-            : mb_strlen($yMaxLabel, 'UTF-8') * $sc->axisLabelSizePt * 0.5;
+        $yMaxW = $this->chartTextWidth($yMaxLabel, $sc->axisLabelSizePt);
         $this->chartText($ctx->currentPage, $yMaxLabel,
             $plotLeft - $yMaxW - 2, $plotTop - $sc->axisLabelSizePt * 0.5, $sc->axisLabelSizePt);
 
@@ -994,9 +978,7 @@ final class Engine
         $plotH = $plotTop - $plotBottom;
 
         if ($gbc->title !== null) {
-            $titleW = $this->defaultFont !== null
-                ? (new TextMeasurer($this->defaultFont, $gbc->titleSizePt))->widthPt($gbc->title)
-                : mb_strlen($gbc->title, 'UTF-8') * $gbc->titleSizePt * 0.5;
+            $titleW = $this->chartTextWidth($gbc->title, $gbc->titleSizePt);
             $this->chartText($ctx->currentPage, $gbc->title,
                 $blockX + ($totalW - $titleW) / 2, $topY - $gbc->titleSizePt, $gbc->titleSizePt);
         }
@@ -1016,9 +998,7 @@ final class Engine
                 $this->chartText($ctx->currentPage, $name,
                     $legendX + $gbc->legendSizePt + 3, $legendY + 1, $gbc->legendSizePt);
                 $legendX += $gbc->legendSizePt + 3
-                    + ($this->defaultFont !== null
-                        ? (new TextMeasurer($this->defaultFont, $gbc->legendSizePt))->widthPt($name)
-                        : mb_strlen($name, 'UTF-8') * $gbc->legendSizePt * 0.5)
+                    + ($this->chartTextWidth($name, $gbc->legendSizePt))
                     + 14;
             }
         }
@@ -1046,9 +1026,7 @@ final class Engine
         $ctx->currentPage->strokeLine($plotLeft, $plotBottom, $plotRight, $plotBottom, 0.5, 0.4, 0.4, 0.4);
 
         $maxLabel = $this->formatChartNumber($maxValue);
-        $maxLabelW = $this->defaultFont !== null
-            ? (new TextMeasurer($this->defaultFont, $gbc->axisLabelSizePt))->widthPt($maxLabel)
-            : mb_strlen($maxLabel, 'UTF-8') * $gbc->axisLabelSizePt * 0.5;
+        $maxLabelW = $this->chartTextWidth($maxLabel, $gbc->axisLabelSizePt);
         $this->chartText($ctx->currentPage, $maxLabel, $plotLeft - $maxLabelW - 2, $plotTop - $gbc->axisLabelSizePt * 0.5, $gbc->axisLabelSizePt);
 
         // Bars.
@@ -1072,9 +1050,7 @@ final class Engine
             }
             // X-axis label.
             $label = $bar['label'];
-            $labelW = $this->defaultFont !== null
-                ? (new TextMeasurer($this->defaultFont, $gbc->axisLabelSizePt))->widthPt($label)
-                : mb_strlen($label, 'UTF-8') * $gbc->axisLabelSizePt * 0.5;
+            $labelW = $this->chartTextWidth($label, $gbc->axisLabelSizePt);
             if ($gbcRotated) {
                 $anchorX = $slotLeftX + $groupW / 2;
                 $this->chartTextRotated($ctx->currentPage, $label, $anchorX, $plotBottom - 2.0, $labelW, $gbc->axisLabelSizePt, $gbcRotRad);
@@ -1125,9 +1101,7 @@ final class Engine
         $plotH = $plotTop - $plotBottom;
 
         if ($sbc->title !== null) {
-            $titleW = $this->defaultFont !== null
-                ? (new TextMeasurer($this->defaultFont, $sbc->titleSizePt))->widthPt($sbc->title)
-                : mb_strlen($sbc->title, 'UTF-8') * $sbc->titleSizePt * 0.5;
+            $titleW = $this->chartTextWidth($sbc->title, $sbc->titleSizePt);
             $this->chartText($ctx->currentPage, $sbc->title,
                 $blockX + ($totalW - $titleW) / 2, $topY - $sbc->titleSizePt, $sbc->titleSizePt);
         }
@@ -1147,9 +1121,7 @@ final class Engine
                 $this->chartText($ctx->currentPage, $name,
                     $legendX + $sbc->legendSizePt + 3, $legendY + 1, $sbc->legendSizePt);
                 $legendX += $sbc->legendSizePt + 3
-                    + ($this->defaultFont !== null
-                        ? (new TextMeasurer($this->defaultFont, $sbc->legendSizePt))->widthPt($name)
-                        : mb_strlen($name, 'UTF-8') * $sbc->legendSizePt * 0.5)
+                    + ($this->chartTextWidth($name, $sbc->legendSizePt))
                     + 14;
             }
         }
@@ -1179,9 +1151,7 @@ final class Engine
         $ctx->currentPage->strokeLine($plotLeft, $plotBottom, $plotRight, $plotBottom, 0.5, 0.4, 0.4, 0.4);
 
         $maxLabel = $this->formatChartNumber($maxTotal);
-        $maxLabelW = $this->defaultFont !== null
-            ? (new TextMeasurer($this->defaultFont, $sbc->axisLabelSizePt))->widthPt($maxLabel)
-            : mb_strlen($maxLabel, 'UTF-8') * $sbc->axisLabelSizePt * 0.5;
+        $maxLabelW = $this->chartTextWidth($maxLabel, $sbc->axisLabelSizePt);
         $this->chartText($ctx->currentPage, $maxLabel, $plotLeft - $maxLabelW - 2, $plotTop - $sbc->axisLabelSizePt * 0.5, $sbc->axisLabelSizePt);
 
         // Bars — each category = stacked segments.
@@ -1206,9 +1176,7 @@ final class Engine
             }
             // X-axis label.
             $label = $bar['label'];
-            $labelW = $this->defaultFont !== null
-                ? (new TextMeasurer($this->defaultFont, $sbc->axisLabelSizePt))->widthPt($label)
-                : mb_strlen($label, 'UTF-8') * $sbc->axisLabelSizePt * 0.5;
+            $labelW = $this->chartTextWidth($label, $sbc->axisLabelSizePt);
             if ($sbcRotated) {
                 $this->chartTextRotated($ctx->currentPage, $label, $barX + $barW / 2, $plotBottom - 2.0, $labelW, $sbc->axisLabelSizePt, $sbcRotRad);
             } else {
@@ -1258,9 +1226,7 @@ final class Engine
         $plotH = $plotTop - $plotBottom;
 
         if ($mlc->title !== null) {
-            $titleW = $this->defaultFont !== null
-                ? (new TextMeasurer($this->defaultFont, $mlc->titleSizePt))->widthPt($mlc->title)
-                : mb_strlen($mlc->title, 'UTF-8') * $mlc->titleSizePt * 0.5;
+            $titleW = $this->chartTextWidth($mlc->title, $mlc->titleSizePt);
             $this->chartText($ctx->currentPage, $mlc->title,
                 $blockX + ($totalW - $titleW) / 2, $topY - $mlc->titleSizePt, $mlc->titleSizePt);
         }
@@ -1291,9 +1257,7 @@ final class Engine
                 $this->chartText($ctx->currentPage, $s['name'],
                     $legendX + $mlc->legendSizePt + 3, $legendY + 1, $mlc->legendSizePt);
                 $legendX += $mlc->legendSizePt + 3
-                    + ($this->defaultFont !== null
-                        ? (new TextMeasurer($this->defaultFont, $mlc->legendSizePt))->widthPt($s['name'])
-                        : mb_strlen($s['name'], 'UTF-8') * $mlc->legendSizePt * 0.5)
+                    + ($this->chartTextWidth($s['name'], $mlc->legendSizePt))
                     + 14;
             }
         }
@@ -1308,9 +1272,7 @@ final class Engine
         $ctx->currentPage->strokeLine($plotLeft, $plotBottom, $plotRight, $plotBottom, 0.5, 0.4, 0.4, 0.4);
 
         $maxLabel = $this->formatChartNumber($maxValue);
-        $maxLabelW = $this->defaultFont !== null
-            ? (new TextMeasurer($this->defaultFont, $mlc->axisLabelSizePt))->widthPt($maxLabel)
-            : mb_strlen($maxLabel, 'UTF-8') * $mlc->axisLabelSizePt * 0.5;
+        $maxLabelW = $this->chartTextWidth($maxLabel, $mlc->axisLabelSizePt);
         $this->chartText($ctx->currentPage, $maxLabel, $plotLeft - $maxLabelW - 2, $plotTop - $mlc->axisLabelSizePt * 0.5, $mlc->axisLabelSizePt);
 
         $n = count($mlc->xLabels);
@@ -1321,9 +1283,7 @@ final class Engine
         // X-axis labels.
         foreach ($mlc->xLabels as $i => $label) {
             $x = $plotLeft + $i * $stepX;
-            $labelW = $this->defaultFont !== null
-                ? (new TextMeasurer($this->defaultFont, $mlc->axisLabelSizePt))->widthPt($label)
-                : mb_strlen($label, 'UTF-8') * $mlc->axisLabelSizePt * 0.5;
+            $labelW = $this->chartTextWidth($label, $mlc->axisLabelSizePt);
             if ($mlcRotated) {
                 $this->chartTextRotated($ctx->currentPage, $label, $x, $plotBottom - 2.0, $labelW, $mlc->axisLabelSizePt, $mlcRotRad);
             } else {
@@ -1389,9 +1349,7 @@ final class Engine
         $plotH = $plotTop - $plotBottom;
 
         if ($lc->title !== null) {
-            $titleW = $this->defaultFont !== null
-                ? (new TextMeasurer($this->defaultFont, $lc->titleSizePt))->widthPt($lc->title)
-                : mb_strlen($lc->title, 'UTF-8') * $lc->titleSizePt * 0.5;
+            $titleW = $this->chartTextWidth($lc->title, $lc->titleSizePt);
             $this->chartText($ctx->currentPage, $lc->title,
                 $blockX + ($totalW - $titleW) / 2, $topY - $lc->titleSizePt, $lc->titleSizePt);
         }
@@ -1421,9 +1379,7 @@ final class Engine
         $ctx->currentPage->strokeLine($plotLeft, $plotBottom, $plotRight, $plotBottom, 0.5, 0.4, 0.4, 0.4);
 
         $maxLabel = $this->formatChartNumber($maxValue);
-        $maxLabelW = $this->defaultFont !== null
-            ? (new TextMeasurer($this->defaultFont, $lc->axisLabelSizePt))->widthPt($maxLabel)
-            : mb_strlen($maxLabel, 'UTF-8') * $lc->axisLabelSizePt * 0.5;
+        $maxLabelW = $this->chartTextWidth($maxLabel, $lc->axisLabelSizePt);
         $this->chartText($ctx->currentPage, $maxLabel, $plotLeft - $maxLabelW - 2, $plotTop - $lc->axisLabelSizePt * 0.5, $lc->axisLabelSizePt);
 
         $n = count($lc->points);
@@ -1441,9 +1397,7 @@ final class Engine
 
             // Label below x-axis.
             $label = $p['label'];
-            $labelW = $this->defaultFont !== null
-                ? (new TextMeasurer($this->defaultFont, $lc->axisLabelSizePt))->widthPt($label)
-                : mb_strlen($label, 'UTF-8') * $lc->axisLabelSizePt * 0.5;
+            $labelW = $this->chartTextWidth($label, $lc->axisLabelSizePt);
             if ($lcRotated) {
                 $this->chartTextRotated($ctx->currentPage, $label, $x, $plotBottom - 2.0, $labelW, $lc->axisLabelSizePt, $lcRotRad);
             } else {
@@ -1504,9 +1458,7 @@ final class Engine
         $topY = $ctx->cursorY;
 
         if ($pc->title !== null) {
-            $titleW = $this->defaultFont !== null
-                ? (new TextMeasurer($this->defaultFont, $pc->titleSizePt))->widthPt($pc->title)
-                : mb_strlen($pc->title, 'UTF-8') * $pc->titleSizePt * 0.5;
+            $titleW = $this->chartTextWidth($pc->title, $pc->titleSizePt);
             $this->chartText($ctx->currentPage, $pc->title,
                 $blockX + ($blockW - $titleW) / 2, $topY - $pc->titleSizePt, $pc->titleSizePt);
             $topY -= $pc->titleSizePt + 4;
@@ -1612,9 +1564,7 @@ final class Engine
                 $ctx->currentPage->strokeLine($x1, $y1, $x2, $y2, 0.5, 0.4, 0.4, 0.4);
                 // Label position: extends to the right side if cos>0, to the left if <0.
                 $labelText = (string) $slice['label'];
-                $labelW = $this->defaultFont !== null
-                    ? (new TextMeasurer($this->defaultFont, $pc->perimeterLabelSizePt))->widthPt($labelText)
-                    : mb_strlen($labelText, 'UTF-8') * $pc->perimeterLabelSizePt * 0.5;
+                $labelW = $this->chartTextWidth($labelText, $pc->perimeterLabelSizePt);
                 $labelX = cos($midAngle) >= 0 ? $x2 + 2 : $x2 - $labelW - 2;
                 $labelY = $y2 - $pc->perimeterLabelSizePt * 0.5;
                 $this->chartText($ctx->currentPage, $labelText, $labelX, $labelY, $pc->perimeterLabelSizePt);
@@ -1666,9 +1616,7 @@ final class Engine
 
         // Title.
         if ($bc->title !== null) {
-            $titleW = $this->defaultFont !== null
-                ? (new TextMeasurer($this->defaultFont, $bc->titleSizePt))->widthPt($bc->title)
-                : mb_strlen($bc->title, 'UTF-8') * $bc->titleSizePt * 0.5;
+            $titleW = $this->chartTextWidth($bc->title, $bc->titleSizePt);
             $titleX = $blockX + ($totalW - $titleW) / 2;
             $titleY = $topY - $bc->titleSizePt;
             if ($this->defaultFont !== null) {
@@ -1706,9 +1654,7 @@ final class Engine
 
         // Y-axis max label.
         $maxLabel = $this->formatChartNumber($maxValue);
-        $maxLabelW = $this->defaultFont !== null
-            ? (new TextMeasurer($this->defaultFont, $bc->axisLabelSizePt))->widthPt($maxLabel)
-            : mb_strlen($maxLabel, 'UTF-8') * $bc->axisLabelSizePt * 0.5;
+        $maxLabelW = $this->chartTextWidth($maxLabel, $bc->axisLabelSizePt);
         $this->chartText($ctx->currentPage, $maxLabel, $plotLeft - $maxLabelW - 2, $plotTop - $bc->axisLabelSizePt * 0.5, $bc->axisLabelSizePt);
 
         // Bars.
@@ -1729,9 +1675,7 @@ final class Engine
 
             // X-axis label under bar.
             $label = $bar['label'];
-            $labelW = $this->defaultFont !== null
-                ? (new TextMeasurer($this->defaultFont, $bc->axisLabelSizePt))->widthPt($label)
-                : mb_strlen($label, 'UTF-8') * $bc->axisLabelSizePt * 0.5;
+            $labelW = $this->chartTextWidth($label, $bc->axisLabelSizePt);
             if ($rotated) {
                 // End-anchor: right end of label at tick position (bar center, just below axis).
                 $anchorX = $x + $barW / 2;
@@ -2408,9 +2352,7 @@ final class Engine
         [$pageWidth, $pageHeight] = $setup->dimensions();
 
         $sizePt = 72;
-        $textWidth = $this->defaultFont !== null
-            ? (new TextMeasurer($this->defaultFont, $sizePt))->widthPt($text)
-            : mb_strlen($text, 'UTF-8') * $sizePt * 0.5;
+        $textWidth = $this->chartTextWidth($text, $sizePt);
 
         $angleRad = -M_PI / 4;
         $halfWidth = $textWidth / 2;
@@ -2648,9 +2590,7 @@ final class Engine
         // form with checksum digit.
         if ($bc->showText) {
             $captionY = $yBottom - $bc->textSizePt - 1.0;
-            $captionWidth = $this->defaultFont !== null
-                ? (new TextMeasurer($this->defaultFont, $bc->textSizePt))->widthPt($captionText)
-                : mb_strlen($captionText, 'UTF-8') * $bc->textSizePt * 0.5;
+            $captionWidth = $this->chartTextWidth($captionText, $bc->textSizePt);
             $captionX = $blockX + ($totalWidth - $captionWidth) / 2;
 
             if ($this->defaultFont !== null) {
@@ -2762,9 +2702,7 @@ final class Engine
 
         if ($bc->showText) {
             $captionY = $yTop - $totalHeightPt - $bc->textSizePt - 1.0;
-            $captionWidth = $this->defaultFont !== null
-                ? (new TextMeasurer($this->defaultFont, $bc->textSizePt))->widthPt($bc->value)
-                : mb_strlen($bc->value, 'UTF-8') * $bc->textSizePt * 0.5;
+            $captionWidth = $this->chartTextWidth($bc->value, $bc->textSizePt);
             $captionX = $blockX + ($totalWidthPt - $captionWidth) / 2;
             if ($this->defaultFont !== null) {
                 $ctx->currentPage->showEmbeddedText($bc->value, $captionX, $captionY, $this->defaultFont, $bc->textSizePt);
@@ -2835,9 +2773,7 @@ final class Engine
 
         if ($bc->showText) {
             $captionY = $yTop - $symbolHeightPt - $bc->textSizePt - 1.0;
-            $captionWidth = $this->defaultFont !== null
-                ? (new TextMeasurer($this->defaultFont, $bc->textSizePt))->widthPt($bc->value)
-                : mb_strlen($bc->value, 'UTF-8') * $bc->textSizePt * 0.5;
+            $captionWidth = $this->chartTextWidth($bc->value, $bc->textSizePt);
             $captionX = $blockX + ($totalSizePt - $captionWidth) / 2;
             if ($this->defaultFont !== null) {
                 $ctx->currentPage->showEmbeddedText($bc->value, $captionX, $captionY, $this->defaultFont, $bc->textSizePt);
@@ -2914,9 +2850,7 @@ final class Engine
         // Optional caption (default false for QR — traditionally no text).
         if ($bc->showText) {
             $captionY = $yTop - $totalSizePt - $bc->textSizePt - 1.0;
-            $captionWidth = $this->defaultFont !== null
-                ? (new TextMeasurer($this->defaultFont, $bc->textSizePt))->widthPt($bc->value)
-                : mb_strlen($bc->value, 'UTF-8') * $bc->textSizePt * 0.5;
+            $captionWidth = $this->chartTextWidth($bc->value, $bc->textSizePt);
             $captionX = $blockX + ($totalSizePt - $captionWidth) / 2;
 
             if ($this->defaultFont !== null) {
@@ -4005,7 +3939,7 @@ final class Engine
         if ($font !== null) {
             $page->showEmbeddedText($text, $x, $baselineY, $font, $sizePt, $r, $g, $b, $tracking);
         } else {
-            $page->showText($text, $x, $baselineY, $this->fallbackStandard, $sizePt, $r, $g, $b, $tracking);
+            $page->showText($text, $x, $baselineY, $this->standardFontFor($style), $sizePt, $r, $g, $b, $tracking);
         }
     }
 
@@ -4056,10 +3990,77 @@ final class Engine
 
             return $m->widthPt($text);
         }
-        // Fallback: estimate widths from standard font metrics.
-        $sizePt = $style->sizePt ?? $this->defaultFontSizePt;
 
-        return mb_strlen($text, 'UTF-8') * $sizePt * 0.5;
+        return $this->standardWidth($text, $this->standardFontFor($style), $style->sizePt ?? $this->defaultFontSizePt);
+    }
+
+    /**
+     * The base-14 face for text without an embedded font: the family of
+     * `fallbackStandard`, or the one a `fontFamily` names (serif → Times,
+     * mono → Courier, sans → Helvetica), in the run's weight and slant.
+     */
+    private function standardFontFor(RunStyle $style): StandardFont
+    {
+        $family = strtolower((string) $style->fontFamily);
+        $base = match (true) {
+            $family === '' => self::standardFamily($this->fallbackStandard),
+            str_contains($family, 'mono') || str_contains($family, 'courier') || str_contains($family, 'consol') => 'courier',
+            str_contains($family, 'sans') || str_contains($family, 'helvetica') || str_contains($family, 'arial') => 'helvetica',
+            str_contains($family, 'serif') || str_contains($family, 'times') || str_contains($family, 'georgia') => 'times',
+            default => self::standardFamily($this->fallbackStandard),
+        };
+        if ($base === null) {
+            // Symbol or ZapfDingbats as the fallback: no faces to choose.
+            return $this->fallbackStandard;
+        }
+
+        return match ($base.($style->bold ? '-b' : '').($style->italic ? '-i' : '')) {
+            'helvetica' => StandardFont::Helvetica,
+            'helvetica-b' => StandardFont::HelveticaBold,
+            'helvetica-i' => StandardFont::HelveticaOblique,
+            'helvetica-b-i' => StandardFont::HelveticaBoldOblique,
+            'times' => StandardFont::TimesRoman,
+            'times-b' => StandardFont::TimesBold,
+            'times-i' => StandardFont::TimesItalic,
+            'times-b-i' => StandardFont::TimesBoldItalic,
+            'courier' => StandardFont::Courier,
+            'courier-b' => StandardFont::CourierBold,
+            'courier-i' => StandardFont::CourierOblique,
+            default => StandardFont::CourierBoldOblique,
+        };
+    }
+
+    private static function standardFamily(StandardFont $font): ?string
+    {
+        return match (true) {
+            str_starts_with($font->value, 'Helvetica') => 'helvetica',
+            str_starts_with($font->value, 'Times') => 'times',
+            str_starts_with($font->value, 'Courier') => 'courier',
+            default => null,
+        };
+    }
+
+    /** Width of text in a base-14 font, from its WinAnsi advance widths. */
+    private function standardWidth(string $text, StandardFont $font, float $sizePt): float
+    {
+        if (! StandardFontMetrics::has($font->value)) {
+            return mb_strlen($text, 'UTF-8') * $sizePt * 0.5;
+        }
+        $units = 0;
+        $bytes = WinAnsi::encodeLossy($text);
+        for ($i = 0, $n = strlen($bytes); $i < $n; $i++) {
+            $units += StandardFontMetrics::width($font->value, ord($bytes[$i]));
+        }
+
+        return $units * $sizePt / 1000;
+    }
+
+    /** Width of a chart label in the chart's font. */
+    private function chartTextWidth(string $text, float $sizePt): float
+    {
+        return $this->defaultFont !== null
+            ? (new TextMeasurer($this->defaultFont, $sizePt))->widthPt($text)
+            : $this->standardWidth($text, $this->fallbackStandard, $sizePt);
     }
 
     /**
