@@ -334,7 +334,7 @@ $doc->toFile('report.pdf');
   page; a block taller than a page still splits.
 - Generated content: `::before` / `::after` (also `:before` / `:after`)
   with `content` — strings with CSS escapes, `attr(name)`, `open-quote` /
-  `close-quote` — styled by their own rules.
+  `close-quote` — styled by their own rules; `counter()` is not supported.
 - Style sheets: `<style>` and `<link rel="stylesheet">` in document order;
   a link may point to a local file or a `data:text/css` URL — remote style
   sheets are not fetched (the parser makes no network requests).

@@ -323,7 +323,7 @@ $doc->toFile('report.pdf');
   高于一页的块仍会被拆分。
 - 生成内容：`::before` / `::after`（也支持 `:before` / `:after`）配合
   `content`——带 CSS 转义的字符串、`attr(name)`、`open-quote` /
-  `close-quote`——由其自身的规则设置样式。
+  `close-quote`——由其自身的规则设置样式；不支持 `counter()`。
 - 样式表：`<style>` 与 `<link rel="stylesheet">` 按文档顺序生效；链接可
   指向本地文件或 `data:text/css` URL——不获取远程样式表（解析器不发起
   网络请求）。

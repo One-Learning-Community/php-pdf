@@ -319,6 +319,9 @@ final class HtmlParser
             $b['align'] = Alignment::Center;
         } elseif (in_array(strtolower($node->getAttribute('align')), ['right', 'left', 'justify'], true)) {
             $b['align'] = $this->alignment($node->getAttribute('align')) ?? $b['align'];
+        } elseif ($tag === 'th') {
+            // A header cell is centred unless told otherwise, as in a browser.
+            $b['align'] = Alignment::Center;
         }
         if (isset($decl['line-height'])) {
             $lh = strtolower(trim($decl['line-height']));
@@ -509,17 +512,28 @@ final class HtmlParser
             return null;
         }
         $inFlow = false;
+        // Offsets count from the padding edge of the positioned ancestor;
+        // the element is placed where that ancestor's content starts, so
+        // its padding comes off.
+        $padding = [0.0, 0.0, 0.0, 0.0];
         if ($position === 'absolute') {
             for ($a = $node->parentNode; $a instanceof \DOMElement && $a->getAttribute('id') !== '_phppdf_root'; $a = $a->parentNode) {
-                if (in_array(strtolower(trim($this->decl($a)['position'] ?? '')), ['relative', 'absolute', 'fixed', 'sticky'], true)) {
+                $ancestor = $this->decl($a);
+                if (in_array(strtolower(trim($ancestor['position'] ?? '')), ['relative', 'absolute', 'fixed', 'sticky'], true)) {
                     $inFlow = true;
+                    $padding = $this->sides($ancestor, 'padding');
                     break;
                 }
             }
         }
-        $offset = fn (string $side): ?float => isset($decl[$side]) && strtolower(trim($decl[$side])) !== 'auto'
-            ? $this->length($decl[$side], $this->contentWidth())
-            : null;
+        $offset = function (string $side, int $edge) use ($decl, $padding): ?float {
+            if (! isset($decl[$side]) || strtolower(trim($decl[$side])) === 'auto') {
+                return null;
+            }
+            $value = $this->length($decl[$side], $this->contentWidth());
+
+            return $value === null ? null : $value - $padding[$edge];
+        };
         [$widthPt, $widthPercent] = $this->widthOf($decl['width'] ?? null);
         $tag = strtolower($node->nodeName);
         if ($tag === 'img') {
@@ -540,10 +554,10 @@ final class HtmlParser
 
         return new Positioned(
             $children,
-            topPt: $offset('top'),
-            rightPt: $offset('right'),
-            bottomPt: $offset('bottom'),
-            leftPt: $offset('left'),
+            topPt: $offset('top', 0),
+            rightPt: $offset('right', 1),
+            bottomPt: $offset('bottom', 2),
+            leftPt: $offset('left', 3),
             widthPt: $widthPt ?? ($widthPercent !== null ? $this->contentWidth() * $widthPercent / 100 : null),
             fixed: $position === 'fixed',
             inFlow: $inFlow,
@@ -607,7 +621,7 @@ final class HtmlParser
 
         return [new Table(
             [new Row($side === 'left' ? [$floatCell, $restCell] : [$restCell, $floatCell])],
-            new TableStyle(widthPercent: 100, borderCollapse: true),
+            new TableStyle(widthPercent: 100, spaceAfterPt: 0, borderCollapse: true),
         )];
     }
 
@@ -924,12 +938,21 @@ final class HtmlParser
                     'bottom' => $l < $lineCount - 1 ? $rowGap / 2 : 0.0,
                 ]);
             }
+            $rest = $this->leftOver($line, $gap);
+            if ($rest !== null) {
+                // Items with widths that do not fill the line keep their
+                // widths; an empty cell takes the rest.
+                $cells[] = new Cell([new Paragraph([])], new CellStyle(
+                    widthPt: $rest[0], widthPercent: $rest[1],
+                    paddingTopPt: 0, paddingRightPt: 0, paddingBottomPt: 0, paddingLeftPt: 0,
+                ));
+            }
             $rows[] = $cells;
         }
 
         // Each line its own table: the lines of a wrapped flex box do not
         // share columns.
-        $tables = array_map(fn (array $cells): Table => new Table([new Row($cells)], new TableStyle(borderCollapse: true)), $rows);
+        $tables = array_map(fn (array $cells): Table => new Table([new Row($cells)], new TableStyle(spaceAfterPt: 0, borderCollapse: true)), $rows);
 
         return $this->boxed($tables, $decl);
     }
@@ -1020,7 +1043,7 @@ final class HtmlParser
             }
         }
 
-        return $this->boxed([new Table($rows, new TableStyle(widthPercent: 100, borderCollapse: true))], $decl);
+        return $this->boxed([new Table($rows, new TableStyle(widthPercent: 100, spaceAfterPt: 0, borderCollapse: true))], $decl);
     }
 
     /**
@@ -1113,6 +1136,37 @@ final class HtmlParser
         return $lines;
     }
 
+    /**
+     * What is left of a flex line whose items all have a width: [pt, null]
+     * or [null, percent]; null when an item has none or nothing is left.
+     *
+     * @param  list<\DOMElement>  $line
+     * @return ?array{0: ?float, 1: ?float}
+     */
+    private function leftOver(array $line, float $gap): ?array
+    {
+        $points = 0.0;
+        $percent = 0.0;
+        foreach ($line as $child) {
+            $childDecl = $this->decl($child);
+            [$widthPt, $widthPercent] = $this->widthOf($childDecl['width'] ?? ($childDecl['flex-basis'] ?? null));
+            if ($widthPt === null && $widthPercent === null) {
+                return null;
+            }
+            $points += $widthPt ?? 0.0;
+            $percent += $widthPercent ?? 0.0;
+        }
+        $points += $gap * (count($line) - 1);
+        if ($percent > 0 && $points === $gap * (count($line) - 1)) {
+            $left = 100 - $percent - $points / $this->contentWidth() * 100;
+
+            return $left > 0.5 ? [null, $left] : null;
+        }
+        $left = $this->contentWidth() - $points - $this->contentWidth() * $percent / 100;
+
+        return $left > 1 ? [$left, null] : null;
+    }
+
     /** The width of the page content area: `@page`, or A4 with the default margins. */
     private function contentWidth(): float
     {
@@ -1162,7 +1216,7 @@ final class HtmlParser
                         paddingTopPt: $pt, paddingRightPt: $pr, paddingBottomPt: $pb, paddingLeftPt: $pl,
                         verticalAlign: $vAlign, backgroundColor: $bg, borders: $borders,
                     ))])],
-                    new TableStyle(widthPercent: 100, borderCollapse: true),
+                    new TableStyle(widthPercent: 100, spaceAfterPt: 0, borderCollapse: true),
                 )];
                 [$pt, $pr, $pb, $pl] = [0.0, 0.0, 0.0, 0.0];
                 $bg = null;
@@ -1267,7 +1321,7 @@ final class HtmlParser
 
         return new Table(
             [new Row([new Cell($blocks, new CellStyle(paddingTopPt: 0, paddingRightPt: 0, paddingBottomPt: 0, paddingLeftPt: 0))], cantSplit: true)],
-            new TableStyle(widthPercent: 100, borderCollapse: true),
+            new TableStyle(widthPercent: 100, spaceAfterPt: 0, borderCollapse: true),
         );
     }
 

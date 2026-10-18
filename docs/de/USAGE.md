@@ -345,7 +345,7 @@ $doc->toFile('report.pdf');
   trotzdem geteilt.
 - Generierter Inhalt: `::before` / `::after` (auch `:before` / `:after`)
   mit `content` — Strings mit CSS-Escapes, `attr(name)`, `open-quote` /
-  `close-quote` —, gestaltet über eigene Regeln.
+  `close-quote` —, gestaltet über eigene Regeln; `counter()` wird nicht unterstützt.
 - Stylesheets: `<style>` und `<link rel="stylesheet">` in
   Dokumentreihenfolge; ein Link darf auf eine lokale Datei oder eine
   `data:text/css`-URL zeigen — entfernte Stylesheets werden nicht geladen
