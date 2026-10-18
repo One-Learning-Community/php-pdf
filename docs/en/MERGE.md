@@ -12,6 +12,8 @@ All of it is pure PHP and MIT-licensed — no FPDI, no external binaries.
 - [Appending documents](#appending-documents)
 - [Selecting and reordering pages](#selecting-and-reordering-pages)
 - [Embedding (stamping) a page](#embedding-stamping-a-page)
+- [Annotations and bookmarks](#annotations-and-bookmarks)
+- [Importing a page into a generated document (FPDI-style)](#importing-a-page-into-a-generated-document-fpdi-style)
 - [Placement](#placement)
 - [Encrypted input](#encrypted-input)
 - [What the reader handles](#what-the-reader-handles)

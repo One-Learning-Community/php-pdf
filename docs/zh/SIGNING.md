@@ -84,6 +84,21 @@ new SignatureConfig(signer: $mySigner);
 `sign(string $data): string`。库会把签名属性的 DER 交给 `sign()`，并期望返回原始签名值，
 因此密钥无需存在于 PHP 中。
 
+现成的 `Signer` 由配套包提供：
+[php-pdf-pkcs11](https://github.com/dskripchenko/php-pdf-pkcs11) 通过 PKCS#11
+使用 HSM、智能卡或 USB 令牌上的密钥签名（`Pkcs11Signer::open()`），
+[php-pdf-cloud-kms](https://github.com/dskripchenko/php-pdf-cloud-kms) 则使用
+AWS KMS（`AwsKmsSigner::create()`）、Google Cloud KMS（`GoogleKmsSigner`）或
+Azure Key Vault（`AzureKeyVaultSigner::fromCertificate()`）中的密钥签名：
+
+```php
+use Dskripchenko\PhpPdfCloudKms\Aws\AwsKmsSigner;
+use Dskripchenko\PhpPdfPkcs11\Pkcs11Signer;
+
+$signer = Pkcs11Signer::open('/usr/lib/softhsm/libsofthsm2.so', pin: $pin, keyLabel: 'signing-key');
+$signer = AwsKmsSigner::create('alias/pdf-signing', $certificatePem, region: 'eu-central-1');
+```
+
 摘要算法随密钥而定：RSA 和 P-256 使用 SHA-256，P-384 使用 SHA-384，P-521 使用
 SHA-512，GOST 使用 Streebog。向 `OpenSslSigner` 传入 `digest:` 可选择其他算法。
 
@@ -136,7 +151,20 @@ OpenSSL 和 CryptoPro 所用的标识符。PHP 必须加载 OpenSSL 的
 有些密钥只能通过返回完整 CMS（而不是单纯签名值）的软件使用：服务器上的
 CryptoPro CSP（`CadesSignedData.SignHash`、`cryptcp`）、签名服务、HSM 前端。
 实现 `CmsSigner`，即可像使用进程内密钥一样一次调用完成签名，无需手动
-prepare 和 complete：
+prepare 和 complete。
+
+对于服务器上的 CryptoPro CSP，
+[php-pdf-cryptopro](https://github.com/dskripchenko/php-pdf-cryptopro)
+提供了 `CryptoProCadesSigner` —— 一个基于 CryptoPro PHP 扩展的现成
+`CmsSigner`：
+
+```php
+use Dskripchenko\PhpPdfCryptoPro\CryptoProCadesSigner;
+
+$doc->sign(new SignatureConfig(signer: CryptoProCadesSigner::fromThumbprint('3A 5F … 9C', pin: $pin)));
+```
+
+只有在使用其他工具（`cryptcp`、签名服务）时才需要自己实现 `CmsSigner`：
 
 ```php
 use Dskripchenko\PhpPdf\Pdf\Signature\Signer\{Certificate, CmsSigner, DigestAlgorithm};
@@ -167,7 +195,7 @@ DER 或 BER 编码的 CMS SignedData，可分离也可附加。嵌入前库会�
 
 ## 在服务器之外签名
 
-当密钥无法到达服务器时——例如令牌上或用户机器上 CryptoPro 中的合格证书、按请求签名的 HSM、云签名服务——分两步签名：
+服务器可以直接调用的 HSM 或云 KMS 不需要两步签名——请使用上文的 [PKCS#11 或 KMS 签名器](#密钥和证书)。两阶段签名适用于只有用户才能访问的密钥：令牌上或用户机器上 CryptoPro 中的合格证书（通过浏览器插件），或稍后才给出应答的签名服务。分两步签名：
 
 ```php
 use Dskripchenko\PhpPdf\Pdf\Signature\External\{ExternalMode, ExternalSigner, PreparedSignature};
@@ -240,7 +268,7 @@ $twice = PdfSigner::fromBytes($signed)
 `addField()` 添加的字段）；否则是用 `addField()` 添加的字段；再否则是第一个空签名字段；
 最后才是第一页上新建的不可见字段。`signatureFields()` 列出文档的签名字段及其是否已签。
 用 `prepare()` 代替 `sign()` 会得到 `PreparedSignature`，供服务器之外的密钥使用，
-方式同上。加密的 PDF 会被拒绝。
+方式同上。加密的 PDF 使用其密码签署，参见[加密的 PDF](#加密的-pdf)。
 
 ## 认证签名与锁定字段
 

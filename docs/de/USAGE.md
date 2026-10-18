@@ -124,20 +124,25 @@ $style = new RunStyle(
 Das Blocklayout liegt in `ParagraphStyle`:
 
 ```php
-use Dskripchenko\PhpPdf\Element\Alignment;
+use Dskripchenko\PhpPdf\Style\Alignment;
 use Dskripchenko\PhpPdf\Style\ParagraphStyle;
 
-new ParagraphStyle(
-    alignment: Alignment::Justify,
+$style = new ParagraphStyle(
+    alignment: Alignment::Both,   // Blocksatz
     spaceBeforePt: 6.0,
     spaceAfterPt: 6.0,
     indentLeftPt: 36.0,
     indentFirstLinePt: 18.0,
     lineHeightMult: 1.5,
-    paddingPt: 8.0,
+    paddingTopPt: 8.0,
+    paddingBottomPt: 8.0,
     backgroundColor: 'f0f0f0',
 );
 ```
+
+Angewendet wird er mit `ParagraphBuilder::style($style)`. Der Innenabstand
+wird pro Seite gesetzt: `paddingTopPt`, `paddingRightPt`, `paddingBottomPt`,
+`paddingLeftPt`.
 
 ### Tabellen
 
@@ -184,8 +189,8 @@ DocumentBuilder::new()
     ->toFile('lists.pdf');
 ```
 
-`ListFormat` umfasst Decimal, UpperRoman, LowerRoman, UpperAlpha,
-LowerAlpha.
+`ListFormat` umfasst `Bullet`, `Decimal`, `LowerLetter`, `UpperLetter`,
+`LowerRoman`, `UpperRoman`.
 
 ### Bilder
 
@@ -198,8 +203,9 @@ DocumentBuilder::new()
     ->toFile('with-image.pdf');
 ```
 
-Unterstützte Formate: JPEG, PNG (8-Bit Truecolor, 8-Bit Palette, mit
-Alphakanal über SMask). Dasselbe Bild, das N-mal in einem Dokument
+Unterstützte Formate: JPEG (Graustufen, RGB, CMYK) und PNG — 8-Bit
+Graustufen, Grau + Alpha, RGB und RGBA (Alpha über SMask); Paletten-,
+16-Bit- und Interlaced-PNGs werden nicht unterstützt. Dasselbe Bild, das N-mal in einem Dokument
 verwendet wird, wird als ein einziges XObject eingebettet (Deduplizierung
 per Inhalts-Hash).
 
@@ -217,7 +223,7 @@ DocumentBuilder::new()
     })
     ->footer(function (HeaderFooterBuilder $f) {
         $f->paragraph(fn (ParagraphBuilder $p) =>
-            $p->text('Page ')->pageNumber()->text(' of ')->pageCount());
+            $p->text('Page ')->pageNumber()->text(' of ')->totalPages());
     })
     ->watermark('DRAFT')
     ->paragraph('Document body.')
@@ -241,14 +247,17 @@ DocumentBuilder::new()
     ->pageSetup(new PageSetup(
         paperSize: PaperSize::A4,
         orientation: Orientation::Landscape,
-        margins: new PageMargins(top: 36, right: 36, bottom: 36, left: 36),
+        margins: new PageMargins(topPt: 36, rightPt: 36, bottomPt: 36, leftPt: 36),
     ))
     ->heading(1, 'Wide content')
     ->toFile('landscape.pdf');
 ```
 
-Papierformate: A0–A6, B0–B6, Letter, Legal, Executive, Tabloid sowie
-benutzerdefinierte Größen via `defaultCustomDimensionsPt`.
+Papierformate (`PaperSize`): `A3`, `A4`, `A5`, `A6`, `Letter`, `Legal`,
+`Tabloid`, `Executive`. Jede andere Größe wird in Punkten angegeben:
+`new PageSetup(customDimensionsPt: [252, 144])` (eine Karte mit
+3,5 × 2 Zoll); bei `Pdf\Document` ist es `addPage(customDimensionsPt: [...])`
+oder `defaultCustomDimensionsPt` im Konstruktor.
 
 ---
 
@@ -340,25 +349,76 @@ dynamische Pseudoklassen, Formulare, JavaScript.
 
 ## Eigene Schriftarten
 
+Ohne eingebettete Schrift wird Text in der Base-14-Helvetica gesetzt (nur
+Latein). Die Schrift für den Fließtext ist `defaultFont` der Engine, mit
+optionalen `boldFont`, `italicFont` und `boldItalicFont`:
+
 ```php
 use Dskripchenko\PhpPdf\Build\DocumentBuilder;
+use Dskripchenko\PhpPdf\Font\Ttf\TtfFile;
+use Dskripchenko\PhpPdf\Layout\Engine;
+use Dskripchenko\PhpPdf\Pdf\PdfFont;
+
+$engine = new Engine(
+    defaultFont: new PdfFont(TtfFile::fromFile(__DIR__.'/fonts/DejaVuSans.ttf')),
+    boldFont: new PdfFont(TtfFile::fromFile(__DIR__.'/fonts/DejaVuSans-Bold.ttf')),
+    // Wörter, für die die Hauptschrift keine Glyphen hat (hier CJK), werden in einer Fallback-Schrift gesetzt.
+    fallbackFonts: [new PdfFont(TtfFile::fromFile(__DIR__.'/fonts/DroidSansFallback.ttf'))],
+);
+
+DocumentBuilder::new()
+    ->paragraph('Здравствуй, мир — Γειά σου κόσμε — 你好世界')
+    ->toFile('fonts.pdf', $engine);
+```
+
+`fallbackFonts` wird Wort für Wort probiert: Ein Wort, das die Hauptschrift
+nicht darstellen kann, wird in der ersten Fallback-Schrift gesetzt, die alle
+seine Glyphen besitzt.
+
+Ein `FontProvider` bedient Text, der eine Schriftfamilie benennt — ein
+`RunStyle(fontFamily: ...)` eines Runs oder CSS-`font-family` (die erste
+Familie der Liste). Die Standardschrift ändert er nicht:
+
+```php
+use Dskripchenko\PhpPdf\Document;
+use Dskripchenko\PhpPdf\Font\ChainedFontProvider;
 use Dskripchenko\PhpPdf\Font\DirectoryFontProvider;
 use Dskripchenko\PhpPdf\Layout\Engine;
+use Dskripchenko\PhpPdf\Pdf\PdfFont;
+use Dskripchenko\PhpPdfFontsLiberation\LiberationFontProvider;
 
-$fonts = new DirectoryFontProvider(__DIR__ . '/fonts');
+$fonts = new ChainedFontProvider(
+    new DirectoryFontProvider(__DIR__.'/fonts'),  // DejaVuSans.ttf, DejaVuSans-Bold.ttf, …
+    new LiberationFontProvider,                  // dskripchenko/php-pdf-fonts-liberation
+);
 
-$bytes = DocumentBuilder::new()
-    ->paragraph('Здравствуй, мир — 你好世界 — مرحبا')
-    ->toBytes(new Engine(fontProvider: $fonts));
+$engine = new Engine(
+    defaultFont: new PdfFont($fonts->resolve('LiberationSerif-Regular')),
+    boldFont: new PdfFont($fonts->resolve('LiberationSerif-Bold')),
+    fontProvider: $fonts,
+);
+
+Document::fromHtml(<<<'HTML'
+<p>Body text in Liberation Serif.</p>
+<p style="font-family: DejaVuSans">DejaVu Sans, <b>bold</b>.</p>
+<p style="font-family: Arial">Arial → Liberation Sans.</p>
+HTML)->toFile('fonts-provider.pdf', $engine);
 ```
 
 `DirectoryFontProvider` durchsucht ein Verzeichnis nach `.ttf`-/`.otf`-
-Dateien und macht sie über den Familiennamen verfügbar.
-`ChainedFontProvider` ermöglicht das Zusammensetzen von Providern,
-sodass die Engine bei fehlenden Glyphen auf Systemschriften zurückgreifen
-kann.
+Dateien und löst sie über den PostScript-Namen auf (`DejaVuSans`,
+`DejaVuSans-Bold`). Für eine Familie `X` fragt die Engine je nach Gewicht
+und Stil des Runs nach `X-BoldItalic`, `X-Bold`, `X-Italic`, `X-Regular`
+und dann `X`. `ChainedFontProvider` fragt seine Provider der Reihe nach und
+nimmt die erste gefundene Schrift — er löst Namen auf, nicht fehlende
+Glyphen; der Fallback pro Glyphe ist `fallbackFonts`.
+[dskripchenko/php-pdf-fonts-liberation](https://github.com/dskripchenko/php-pdf-fonts-liberation)
+liefert `LiberationFontProvider`: Liberation Sans, Serif und Mono, auch
+unter den Namen `Arial`, `Times New Roman` und `Courier New`.
 
-Eingebettete Schriftarten werden bedarfsgerecht als Subset
+Eingebettet werden nur Schriften mit TrueType-Outlines (`.ttf`,
+TrueType-basierte `.otf`); CFF-basierte OpenType-Schriften werden
+abgelehnt. Eingebettete Schriftarten werden bedarfsgerecht als Subset
 eingebunden — nur die tatsächlich verwendeten Glyphen landen in der
 Datei. Kerning, einfache Ligaturen und ToUnicode-CMaps werden
 automatisch ausgegeben.
@@ -382,17 +442,21 @@ QR-Komfort-Factories:
 ```php
 use Dskripchenko\PhpPdf\Barcode\QrEncoder;
 
-$vcard = QrEncoder::vCard(
-    fullName: 'Jane Doe',
-    org: 'Acme Corp',
-    email: 'jane@example.com',
-    phone: '+1-555-0100',
-);
+$vcard = QrEncoder::vCard([
+    'name' => 'Jane Doe',
+    'org' => 'Acme Corp',
+    'email' => 'jane@example.com',
+    'tel' => '+1-555-0100',
+]);
 
 $wifi = QrEncoder::wifi(ssid: 'guest', password: 'welcome', hidden: false);
 
-$mailto = QrEncoder::mailto('hello@example.com', subject: 'Hi');
+$email = QrEncoder::email('hello@example.com', subject: 'Hi');
 ```
+
+`vCard()` (3.0) nimmt `name`, `org`, `title`, `tel`, `email`, `url` und
+`address` entgegen. Die weiteren Factories sind `url()`, `sms($phone, $message)`
+und `geo($latitude, $longitude, zoom: ...)`.
 
 Die vollständige Liste der 16 unterstützten Formate findet sich in
 [COMPARISON.md](COMPARISON.md#barcodes).
@@ -478,20 +542,25 @@ use Dskripchenko\PhpPdf\Build\DocumentBuilder;
 use Dskripchenko\PhpPdf\Build\ParagraphBuilder;
 
 DocumentBuilder::new()
-    ->heading(1, 'Top')
+    ->heading(1, 'Contents')
     ->paragraph(function (ParagraphBuilder $p) {
-        $p->text('Visit ')->link('https://example.com', 'our site');
+        $p->text('Visit ')->link('https://example.com', 'our site')
+          ->text(', or jump to ')->internalLink('terms', 'the terms');
     })
-    ->bookmark('Chapter 1', level: 1)
-    ->heading(1, 'Chapter 1')
-    ->paragraph('Body...')
+    ->heading(1, 'Chapter 1')          // h1–h6 bilden die Gliederung
+    ->heading(2, 'Section 1.1')
+    ->paragraph(fn (ParagraphBuilder $p) => $p->bookmark('terms')->text('Terms apply.'))
     ->toFile('linked.pdf');
 ```
 
-Ausgegebene Hyperlink-Arten: `URI`, `Dest` (benanntes Ziel),
-JavaScript, Launch und benannte Seitenziele. Der Outline-Bereich
-(Lesezeichen) ist mehrstufig — übergeben Sie `level: 2` für einen
-Unterabschnitt, `level: 3` für eine weitere Unterebene usw.
+Der Outline-Bereich (Lesezeichen) wird aus den Überschriften aufgebaut:
+`heading(1, …)` ist ein Eintrag der obersten Ebene, `heading(2, …)` wird
+darunter verschachtelt, und so weiter bis Ebene 6.
+`ParagraphBuilder::bookmark($name)` markiert ein benanntes Ziel;
+`internalLink($name, …)` springt dorthin, `link($url, …)` öffnet eine URI.
+Auf einer `Pdf\Page` gibt es außerdem `addExternalLink()`,
+`addInternalLink()`, `addNamedActionLink()`, `addJavaScriptLink()` und
+`addLaunchLink()` für absolut positionierte Linkbereiche.
 
 Automatische Anker bei Überschriften: `<h1 id="intro">` wird zu einem
 benannten Ziel, sodass `<a href="#intro">jump</a>` innerhalb des HTML-
@@ -507,32 +576,29 @@ use Dskripchenko\PhpPdf\Element\FormField;
 
 DocumentBuilder::new()
     ->heading(1, 'Application form')
-    ->block(new FormField(
-        type: 'text',
-        name: 'full_name',
-        x: 100, y: 700, w: 200, h: 24,
-    ))
-    ->block(new FormField(
-        type: 'checkbox',
-        name: 'agree',
-        x: 100, y: 660, w: 14, h: 14,
-        defaultValue: 'on',
-    ))
-    ->block(new FormField(
-        type: 'combo',
-        name: 'country',
-        x: 100, y: 620, w: 200, h: 24,
-        options: ['US', 'UK', 'DE', 'RU', 'CN'],
-        defaultValue: 'US',
-    ))
-    ->block(new FormField(
-        type: 'submit',
-        name: 'send',
-        x: 100, y: 580, w: 80, h: 28,
-        buttonCaption: 'Submit',
-        submitUrl: 'https://example.com/submit',
-    ))
+    ->block(new FormField('full_name', tooltip: 'Full name'))
+    ->block(new FormField('agree', FormField::TYPE_CHECKBOX, widthPt: 14, heightPt: 14))
+    ->block(new FormField('country', FormField::TYPE_COMBO,
+        defaultValue: 'US', options: ['US', 'UK', 'DE', 'RU', 'CN']))
+    ->block(new FormField('send', FormField::TYPE_SUBMIT_BUTTON, widthPt: 80, heightPt: 28,
+        buttonCaption: 'Submit', submitUrl: 'https://example.com/submit'))
     ->toFile('form.pdf');
+```
+
+`FormField` ist ein Block im Textfluss: Er nimmt `name`, `type` (standardmäßig
+Text), `defaultValue`, `widthPt` / `heightPt` (standardmäßig 200 × 20),
+`tooltip`, `required`, `readOnly`, `options` sowie die unten beschriebenen
+Skript- und Button-Argumente entgegen. Um ein Feld an absoluten Koordinaten
+zu platzieren, fügen Sie es einer `Pdf\Page` hinzu:
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Document;
+
+$doc = Document::new();
+$page = $doc->addPage();
+$page->addFormField('text', 'full_name', x: 100, y: 700, width: 200, height: 24);
+$page->addFormField('checkbox', 'agree', x: 100, y: 660, width: 14, height: 14, defaultValue: 'on');
+$doc->toFile('form-absolute.pdf');
 ```
 
 Feldtypen: `text`, `text-multiline`, `password`, `checkbox`,
@@ -558,10 +624,10 @@ use Dskripchenko\PhpPdf\Pdf\Forms\ExistingFormFiller;
 ExistingFormFiller::fromFile('template.pdf')
     ->useFont('fonts/LiberationSans-Regular.ttf') // für nicht-lateinische Werte
     ->setValues([
-        'full_name' => 'Erika Mustermann',
+        'full_name' => 'Jane Roe',
         'agree' => true,
-        'employer.name' => 'Acme GmbH', // über /Parent-Vererbung aufgelöst
-        'country' => 'Deutschland',    // Combo-Box-Option (Exportwert oder Beschriftung)
+        'employer.name' => 'Acme Corp', // über /Parent-Vererbung aufgelöst
+        'country' => 'Germany',         // Combo-Box-Option (Exportwert oder Beschriftung)
     ])
     ->stampImage(0, 'signature.png', x: 100, y: 600, width: 120, height: 40)
     ->flatten()
@@ -642,7 +708,7 @@ $doc  = Document::new(PaperSize::A4);
 $page = $doc->addPage();
 $page->showText('Highlighted text', 72, 720, StandardFont::Helvetica, 12);
 $page->addHighlightAnnotation(
-    x1: 72, y1: 720, x2: 200, y2: 735,
+    x: 72, y: 716, width: 100, height: 16,
     contents: 'Reviewer note: confirm this number.',
     color: [1.0, 1.0, 0.4],
 );
@@ -720,6 +786,13 @@ ausgegeben und anschließend an Ort und Stelle mit der abgetrennten
 CMS-Signatur (standardmäßig PAdES) gepatcht.
 Signaturfelder im Layoutfluss, Stempelgestaltung, Platzhalter, Schriften
 und mehrere Unterzeichner beschreibt der [Signaturleitfaden](SIGNING.md).
+Für Schlüssel, die ein Gerät oder einen Dienst nie verlassen, gibt es fertige
+Signer: [php-pdf-pkcs11](https://github.com/dskripchenko/php-pdf-pkcs11)
+(HSMs, Smartcards, USB-Token),
+[php-pdf-cloud-kms](https://github.com/dskripchenko/php-pdf-cloud-kms)
+(AWS KMS, Google Cloud KMS, Azure Key Vault) und
+[php-pdf-cryptopro](https://github.com/dskripchenko/php-pdf-cryptopro)
+(CryptoPro CSP auf dem Server) — siehe [SIGNING.md](SIGNING.md#schlüssel-und-zertifikate).
 
 ---
 
@@ -731,14 +804,24 @@ use Dskripchenko\PhpPdf\Pdf\PdfAConfig;
 
 $doc = Document::new();
 $doc->enablePdfA(new PdfAConfig(
-    conformance: PdfAConfig::CONFORMANCE_B,   // or CONFORMANCE_A, CONFORMANCE_U
+    iccProfilePath: 'vendor/dskripchenko/php-pdf/resources/icc/sRGB2014.icc',
+    part: PdfAConfig::PART_2,                 // PART_1, PART_2 or PART_3
+    conformance: PdfAConfig::CONFORMANCE_U,   // or CONFORMANCE_A, CONFORMANCE_B
     title: 'Archive copy',
     author: 'Acme Corp',
     lang: 'en-US',
 ));
 // Conformance 'A' auto-enables Tagged PDF.
+$doc->addPage();
 $doc->toFile('pdfa.pdf');
 ```
+
+Der Output Intent braucht ein sRGB-ICC-Profil; das Paket liefert eines in
+`resources/icc/sRGB2014.icc` mit. PDF/A-1 erlaubt die Konformitätsstufen A
+oder B, PDF/A-2 und PDF/A-3 zusätzlich U. PDF/A verlangt außerdem, dass jede
+Schrift eingebettet ist — die Base-14-Schriften fallen bei der Validierung
+durch, setzen Sie Text daher in einer TTF (`PdfFont` oder, bei gesetzten
+Dokumenten, eine `Engine` mit `defaultFont`).
 
 `enablePdfA()` ist nicht mit `encrypt()` und `enablePdfX()`
 kompatibel — die Bibliothek wirft im Konfliktfall eine Exception.
@@ -765,17 +848,20 @@ use Dskripchenko\PhpPdf\Pdf\PdfXConfig;
 
 $doc = Document::new();
 $doc->enablePdfX(new PdfXConfig(
+    iccProfilePath: 'vendor/dskripchenko/php-pdf/resources/icc/sRGB2014.icc',
     variant: PdfXConfig::VARIANT_X4,
-    outputConditionIdentifier: 'FOGRA39',
-    outputCondition: 'Coated FOGRA39',
-    registryName: 'http://www.color.org',
     title: 'Print master',
-    trapped: 'False',
+    trapped: PdfXConfig::TRAPPED_FALSE,
 ));
+$doc->addPage();
 $doc->toFile('print.pdf');
 ```
 
-Varianten: `VARIANT_X1A`, `VARIANT_X3`, `VARIANT_X4`. Der Aufrufer ist
+Varianten: `VARIANT_X1A`, `VARIANT_X3`, `VARIANT_X4`. Das mitgelieferte
+sRGB-Profil genügt für X-3 und X-4; für eine Druckbedingung übergeben Sie
+deren CMYK-Profil (für X-1a ist ein CMYK-Profil Pflicht — keines ist
+mitgeliefert) zusammen mit `iccProfileName`, `outputConditionIdentifier`
+(z. B. `FOGRA39`) und `outputCondition`. Der Aufrufer ist
 für die Inhaltskonformität verantwortlich (z. B. CMYK-Konvertierung
 für X-1a, keine Transparenz bei X-1a / X-3).
 
@@ -839,23 +925,20 @@ $page = $doc->addPage();
 $page->showText('Lower left', 30, 30, StandardFont::Helvetica, 10);
 $page->showText('Hello, world!', 200, 400, StandardFont::TimesRoman, 24);
 
-// Filled rectangle.
-$page->saveState();
-$page->setNonStrokingColor(0.9, 0.1, 0.1);
-$page->fillRectangle(100, 100, 200, 50);
-$page->restoreState();
+// Filled rectangle (x, y, width, height, RGB 0..1).
+$page->fillRect(100, 100, 200, 50, r: 0.9, g: 0.1, b: 0.1);
 
-// Line.
-$page->saveState();
-$page->setStrokingColor(0, 0, 0);
-$page->setLineWidth(2.0);
-$page->moveTo(50, 200);
-$page->lineTo(550, 200);
-$page->stroke();
-$page->restoreState();
+// Outlined rectangle and a line, 2 pt wide.
+$page->strokeRect(100, 300, 200, 50, lineWidthPt: 2.0);
+$page->strokeLine(50, 200, 550, 200, lineWidthPt: 2.0);
 
+$doc->metadata(title: 'Ticket', author: 'Acme Corp');
 file_put_contents('low-level.pdf', $doc->toBytes());
 ```
+
+Weitere Zeichenmethoden auf `Pdf\Page`: `fillRoundedRect()`,
+`strokeRoundedRect()`, `strokeDashedLine()`, `fillPolygon()`,
+`strokePolyline()`, `drawImage()`.
 
 `Pdf\Document` besitzt keine Layout-Engine — Koordinaten werden in
 PDF-Punkten (1/72 Zoll) angegeben, der Ursprung liegt unten links.
@@ -864,8 +947,9 @@ der Aufrufer die Positionierung vollständig selbst berechnet.
 
 Konfiguration auf `Pdf\Document`:
 
-- `setMetadata(...)` — Title, Author, Subject, Keywords, Creator,
-  Producer, CreationDate.
+- `metadata(title: ..., author: ..., subject: ..., keywords: ...,
+  creator: ..., producer: ..., creationDate: ...)` — das
+  `/Info`-Dictionary.
 - `useXrefStream(true)` — Cross-Reference als Stream-Objekt ausgeben
   (PDF 1.5+), ~50 % kleinerer Metadaten-Fußabdruck.
 - `useObjectStreams(true)` — Nicht-Stream-Dictionaries in Object

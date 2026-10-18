@@ -51,6 +51,12 @@ $engine = new Engine(defaultFont: new PdfFont(TtfFile::fromFile('/path/DejaVuSan
 $mpdf = new Mpdf([], $engine);
 ```
 
+Oder installieren Sie [dskripchenko/php-pdf-fonts-liberation](https://github.com/dskripchenko/php-pdf-fonts-liberation)
+für fertige Liberation Sans, Serif und Mono (Latein, Kyrillisch, Griechisch,
+Hebräisch) und übergeben Sie
+`defaultFont: new PdfFont((new LiberationFontProvider)->resolve('LiberationSans-Regular'))`
+(`Dskripchenko\PhpPdfFontsLiberation\LiberationFontProvider`).
+
 ## Route 2 — die native API
 
 | mpdf | php-pdf |
@@ -87,13 +93,18 @@ $mpdf = new Mpdf([], $engine);
 ## Stolpersteine
 
 - **Fonts**: Nichts wird automatisch eingebettet. Base-14 deckt Latein ab
-  (WinAnsi); alles andere braucht ein TTF über die `Engine` (siehe oben).
-  Anders als bei mpdf werden TTFs standardmäßig subsettet — die Ausgabe
-  bleibt klein.
-- **CSS-Abdeckung** unterscheidet sich: php-pdf parst eine
-  HTML5/Inline-CSS-Teilmenge (siehe [Nutzungshandbuch](USAGE.md));
-  mpdf-spezifische Tags und `@page`-Regeln werden nicht erkannt. Komplexe
-  `@page`-Setups wandern nach `Section`/`PageSetup`.
+  (WinAnsi); alles andere braucht ein TTF über die `Engine` (siehe oben),
+  oder installieren Sie `dskripchenko/php-pdf-fonts-liberation` für fertige
+  Liberation Sans, Serif und Mono (Latein, Kyrillisch, Griechisch,
+  Hebräisch). Anders als bei mpdf werden TTFs standardmäßig subsettet — die
+  Ausgabe bleibt klein.
+- **CSS-Abdeckung** unterscheidet sich: php-pdf liest `<style>`-Blöcke mit
+  der Kaskade und übernimmt Seitengröße und -ränder aus `@page` über
+  `Document::fromHtml()` (siehe [Nutzungshandbuch](USAGE.md#html---css-eingabe));
+  die Compat-Fassade nimmt die Seite stattdessen aus ihrer Konfiguration.
+  mpdf-spezifische Tags und erweiterte `@page`-Funktionen (benannte Seiten,
+  Randboxen) werden nicht erkannt; solche Setups wandern nach
+  `Section`/`PageSetup`.
 - **Einheiten**: mpdf-Konfigs sind mm; die native API rechnet in Punkten
   (`1 mm = 72 / 25.4 pt`). Die Compat-Fassade konvertiert selbst.
 - **Temp-Verzeichnisse**: php-pdf schreibt nichts auf die Platte — kein

@@ -115,20 +115,24 @@ $style = new RunStyle(
 块级布局通过 `ParagraphStyle` 控制：
 
 ```php
-use Dskripchenko\PhpPdf\Element\Alignment;
+use Dskripchenko\PhpPdf\Style\Alignment;
 use Dskripchenko\PhpPdf\Style\ParagraphStyle;
 
-new ParagraphStyle(
-    alignment: Alignment::Justify,
+$style = new ParagraphStyle(
+    alignment: Alignment::Both,   // 两端对齐
     spaceBeforePt: 6.0,
     spaceAfterPt: 6.0,
     indentLeftPt: 36.0,
     indentFirstLinePt: 18.0,
     lineHeightMult: 1.5,
-    paddingPt: 8.0,
+    paddingTopPt: 8.0,
+    paddingBottomPt: 8.0,
     backgroundColor: 'f0f0f0',
 );
 ```
+
+通过 `ParagraphBuilder::style($style)` 应用它。内边距按边设置：
+`paddingTopPt`、`paddingRightPt`、`paddingBottomPt`、`paddingLeftPt`。
 
 ### 表格
 
@@ -174,8 +178,8 @@ DocumentBuilder::new()
     ->toFile('lists.pdf');
 ```
 
-`ListFormat` 覆盖 Decimal、UpperRoman、LowerRoman、UpperAlpha、
-LowerAlpha。
+`ListFormat` 覆盖 `Bullet`、`Decimal`、`LowerLetter`、`UpperLetter`、
+`LowerRoman`、`UpperRoman`。
 
 ### 图片
 
@@ -188,8 +192,9 @@ DocumentBuilder::new()
     ->toFile('with-image.pdf');
 ```
 
-支持的格式：JPEG、PNG（8 位真彩色、8 位调色板、通过 SMask 支持
-alpha 通道）。同一张图片在文档中被使用 N 次时，仅以单个 XObject
+支持的格式：JPEG（灰度、RGB、CMYK）与 PNG —— 8 位
+灰度、灰度 + alpha、RGB 与 RGBA（alpha 通过 SMask）；不支持调色板、16 位
+与隔行扫描的 PNG。同一张图片在文档中被使用 N 次时，仅以单个 XObject
 嵌入（通过内容哈希去重）。
 
 ### 页眉、页脚、水印
@@ -206,7 +211,7 @@ DocumentBuilder::new()
     })
     ->footer(function (HeaderFooterBuilder $f) {
         $f->paragraph(fn (ParagraphBuilder $p) =>
-            $p->text('Page ')->pageNumber()->text(' of ')->pageCount());
+            $p->text('Page ')->pageNumber()->text(' of ')->totalPages());
     })
     ->watermark('DRAFT')
     ->paragraph('Document body.')
@@ -229,14 +234,17 @@ DocumentBuilder::new()
     ->pageSetup(new PageSetup(
         paperSize: PaperSize::A4,
         orientation: Orientation::Landscape,
-        margins: new PageMargins(top: 36, right: 36, bottom: 36, left: 36),
+        margins: new PageMargins(topPt: 36, rightPt: 36, bottomPt: 36, leftPt: 36),
     ))
     ->heading(1, 'Wide content')
     ->toFile('landscape.pdf');
 ```
 
-纸张尺寸：A0–A6、B0–B6、Letter、Legal、Executive、Tabloid，以及
-通过 `defaultCustomDimensionsPt` 自定义。
+纸张尺寸（`PaperSize`）：`A3`、`A4`、`A5`、`A6`、`Letter`、`Legal`、
+`Tabloid`、`Executive`。其他尺寸以点为单位给出：
+`new PageSetup(customDimensionsPt: [252, 144])`（3.5 × 2 英寸的卡片）；在
+`Pdf\Document` 上则是 `addPage(customDimensionsPt: [...])` 或构造函数的
+`defaultCustomDimensionsPt`。
 
 ---
 
@@ -322,23 +330,72 @@ grid、`::before` / `::after`、`:hover` 等动态伪类、表单、JavaScript�
 
 ## 自定义字体
 
+没有内嵌字体时，文字使用 base-14 的 Helvetica（仅拉丁字符）排版。
+正文字体是引擎的 `defaultFont`，另外可选 `boldFont`、`italicFont` 和
+`boldItalicFont`：
+
 ```php
 use Dskripchenko\PhpPdf\Build\DocumentBuilder;
-use Dskripchenko\PhpPdf\Font\DirectoryFontProvider;
+use Dskripchenko\PhpPdf\Font\Ttf\TtfFile;
 use Dskripchenko\PhpPdf\Layout\Engine;
+use Dskripchenko\PhpPdf\Pdf\PdfFont;
 
-$fonts = new DirectoryFontProvider(__DIR__ . '/fonts');
+$engine = new Engine(
+    defaultFont: new PdfFont(TtfFile::fromFile(__DIR__.'/fonts/DejaVuSans.ttf')),
+    boldFont: new PdfFont(TtfFile::fromFile(__DIR__.'/fonts/DejaVuSans-Bold.ttf')),
+    // 主字体没有字形的单词（此处为 CJK）改用回退字体排版。
+    fallbackFonts: [new PdfFont(TtfFile::fromFile(__DIR__.'/fonts/DroidSansFallback.ttf'))],
+);
 
-$bytes = DocumentBuilder::new()
-    ->paragraph('Здравствуй, мир — 你好世界 — مرحبا')
-    ->toBytes(new Engine(fontProvider: $fonts));
+DocumentBuilder::new()
+    ->paragraph('Здравствуй, мир — Γειά σου κόσμε — 你好世界')
+    ->toFile('fonts.pdf', $engine);
 ```
 
-`DirectoryFontProvider` 扫描指定目录中的 `.ttf` / `.otf` 文件，
-按字体族名暴露它们。`ChainedFontProvider` 允许您组合多个 provider，
-让引擎可以回退到系统字体以处理缺失的字形。
+`fallbackFonts` 按单词逐一尝试：主字体无法绘制的单词，会使用第一个
+包含其全部字形的回退字体排版。
 
-内嵌字体按需子集化 —— 只有您实际使用过的字形才会进入最终文件。
+`FontProvider` 为指定了字体族的文本提供字体 —— 即 run 的
+`RunStyle(fontFamily: ...)` 或 CSS `font-family`（列表中的第一个字体族）。
+它不会改变默认字体：
+
+```php
+use Dskripchenko\PhpPdf\Document;
+use Dskripchenko\PhpPdf\Font\ChainedFontProvider;
+use Dskripchenko\PhpPdf\Font\DirectoryFontProvider;
+use Dskripchenko\PhpPdf\Layout\Engine;
+use Dskripchenko\PhpPdf\Pdf\PdfFont;
+use Dskripchenko\PhpPdfFontsLiberation\LiberationFontProvider;
+
+$fonts = new ChainedFontProvider(
+    new DirectoryFontProvider(__DIR__.'/fonts'),  // DejaVuSans.ttf, DejaVuSans-Bold.ttf, …
+    new LiberationFontProvider,                  // dskripchenko/php-pdf-fonts-liberation
+);
+
+$engine = new Engine(
+    defaultFont: new PdfFont($fonts->resolve('LiberationSerif-Regular')),
+    boldFont: new PdfFont($fonts->resolve('LiberationSerif-Bold')),
+    fontProvider: $fonts,
+);
+
+Document::fromHtml(<<<'HTML'
+<p>Body text in Liberation Serif.</p>
+<p style="font-family: DejaVuSans">DejaVu Sans, <b>bold</b>.</p>
+<p style="font-family: Arial">Arial → Liberation Sans.</p>
+HTML)->toFile('fonts-provider.pdf', $engine);
+```
+
+`DirectoryFontProvider` 扫描目录中的 `.ttf` / `.otf` 文件，并按 PostScript
+名称（`DejaVuSans`、`DejaVuSans-Bold`）解析它们。对于字体族 `X`，引擎会根据
+run 的字重与样式依次请求 `X-BoldItalic`、`X-Bold`、`X-Italic`、`X-Regular`，
+最后是 `X`。`ChainedFontProvider` 按顺序询问其 provider，取第一个找到的字体 ——
+它解析的是名称，而不是缺失的字形；按字形回退由 `fallbackFonts` 负责。
+[dskripchenko/php-pdf-fonts-liberation](https://github.com/dskripchenko/php-pdf-fonts-liberation)
+提供 `LiberationFontProvider`：Liberation Sans、Serif 和 Mono，也可通过
+`Arial`、`Times New Roman` 和 `Courier New` 这些名称获取。
+
+只有 TrueType 轮廓字体会被内嵌（`.ttf`、TrueType 风格的 `.otf`）；
+基于 CFF 的 OpenType 字体会被拒绝。内嵌字体按需子集化 —— 只有您实际使用过的字形才会进入最终文件。
 字距调整、基础连字与 ToUnicode CMap 会自动发射。
 
 ---
@@ -360,17 +417,21 @@ QR 便捷工厂方法：
 ```php
 use Dskripchenko\PhpPdf\Barcode\QrEncoder;
 
-$vcard = QrEncoder::vCard(
-    fullName: 'Jane Doe',
-    org: 'Acme Corp',
-    email: 'jane@example.com',
-    phone: '+1-555-0100',
-);
+$vcard = QrEncoder::vCard([
+    'name' => 'Jane Doe',
+    'org' => 'Acme Corp',
+    'email' => 'jane@example.com',
+    'tel' => '+1-555-0100',
+]);
 
 $wifi = QrEncoder::wifi(ssid: 'guest', password: 'welcome', hidden: false);
 
-$mailto = QrEncoder::mailto('hello@example.com', subject: 'Hi');
+$email = QrEncoder::email('hello@example.com', subject: 'Hi');
 ```
+
+`vCard()`（3.0）接受 `name`、`org`、`title`、`tel`、`email`、`url` 和
+`address`。其他工厂方法有 `url()`、`sms($phone, $message)` 与
+`geo($latitude, $longitude, zoom: ...)`。
 
 支持的全部 16 种格式列表请参阅 [COMPARISON.md](COMPARISON.md#条形码)。
 
@@ -454,19 +515,24 @@ use Dskripchenko\PhpPdf\Build\DocumentBuilder;
 use Dskripchenko\PhpPdf\Build\ParagraphBuilder;
 
 DocumentBuilder::new()
-    ->heading(1, 'Top')
+    ->heading(1, 'Contents')
     ->paragraph(function (ParagraphBuilder $p) {
-        $p->text('Visit ')->link('https://example.com', 'our site');
+        $p->text('Visit ')->link('https://example.com', 'our site')
+          ->text(', or jump to ')->internalLink('terms', 'the terms');
     })
-    ->bookmark('Chapter 1', level: 1)
-    ->heading(1, 'Chapter 1')
-    ->paragraph('Body...')
+    ->heading(1, 'Chapter 1')          // h1–h6 构成大纲
+    ->heading(2, 'Section 1.1')
+    ->paragraph(fn (ParagraphBuilder $p) => $p->bookmark('terms')->text('Terms apply.'))
     ->toFile('linked.pdf');
 ```
 
-可发射的超链接类型：`URI`、`Dest`（命名目的地）、
-JavaScript、Launch、命名页面目的地。大纲面板（书签）支持多级 ——
-传 `level: 2` 表示子小节，传 `level: 3` 表示更深一层，以此类推。
+大纲面板（书签）由标题构建：`heading(1, …)` 是顶级条目，
+`heading(2, …)` 嵌套在其下，以此类推，最深到第 6 级。
+`ParagraphBuilder::bookmark($name)` 标记一个命名目的地；
+`internalLink($name, …)` 跳转到它，`link($url, …)` 打开 URI。在
+`Pdf\Page` 上还有 `addExternalLink()`、`addInternalLink()`、
+`addNamedActionLink()`、`addJavaScriptLink()` 和 `addLaunchLink()`，
+用于绝对定位的链接区域。
 
 标题自动锚点：`<h1 id="intro">` 会成为一个命名目的地，因此
 `<a href="#intro">jump</a>` 在 HTML 输入中也能工作。
@@ -481,32 +547,28 @@ use Dskripchenko\PhpPdf\Element\FormField;
 
 DocumentBuilder::new()
     ->heading(1, 'Application form')
-    ->block(new FormField(
-        type: 'text',
-        name: 'full_name',
-        x: 100, y: 700, w: 200, h: 24,
-    ))
-    ->block(new FormField(
-        type: 'checkbox',
-        name: 'agree',
-        x: 100, y: 660, w: 14, h: 14,
-        defaultValue: 'on',
-    ))
-    ->block(new FormField(
-        type: 'combo',
-        name: 'country',
-        x: 100, y: 620, w: 200, h: 24,
-        options: ['US', 'UK', 'DE', 'RU', 'CN'],
-        defaultValue: 'US',
-    ))
-    ->block(new FormField(
-        type: 'submit',
-        name: 'send',
-        x: 100, y: 580, w: 80, h: 28,
-        buttonCaption: 'Submit',
-        submitUrl: 'https://example.com/submit',
-    ))
+    ->block(new FormField('full_name', tooltip: 'Full name'))
+    ->block(new FormField('agree', FormField::TYPE_CHECKBOX, widthPt: 14, heightPt: 14))
+    ->block(new FormField('country', FormField::TYPE_COMBO,
+        defaultValue: 'US', options: ['US', 'UK', 'DE', 'RU', 'CN']))
+    ->block(new FormField('send', FormField::TYPE_SUBMIT_BUTTON, widthPt: 80, heightPt: 28,
+        buttonCaption: 'Submit', submitUrl: 'https://example.com/submit'))
     ->toFile('form.pdf');
+```
+
+`FormField` 是流中的一个块：它接受 `name`、`type`（默认为文本）、
+`defaultValue`、`widthPt` / `heightPt`（默认 200 × 20）、`tooltip`、
+`required`、`readOnly`、`options`，以及下文介绍的脚本与按钮参数。
+若要把字段放在绝对坐标处，请将其添加到 `Pdf\Page`：
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Document;
+
+$doc = Document::new();
+$page = $doc->addPage();
+$page->addFormField('text', 'full_name', x: 100, y: 700, width: 200, height: 24);
+$page->addFormField('checkbox', 'agree', x: 100, y: 660, width: 14, height: 14, defaultValue: 'on');
+$doc->toFile('form-absolute.pdf');
 ```
 
 字段类型：`text`、`text-multiline`、`password`、`checkbox`、
@@ -527,12 +589,12 @@ DocumentBuilder::new()
 use Dskripchenko\PhpPdf\Pdf\Forms\ExistingFormFiller;
 
 ExistingFormFiller::fromFile('template.pdf')
-    ->useFont('fonts/NotoSansSC-Regular.ttf') // 用于非拉丁文字的值
+    ->useFont('fonts/LiberationSans-Regular.ttf') // 用于非拉丁文字的值
     ->setValues([
-        'full_name' => '张伟',
+        'full_name' => 'Jane Roe',
         'agree' => true,
         'employer.name' => 'Acme Corp', // 通过 /Parent 继承解析
-        'country' => 'China',           // 组合框选项（导出值或显示文本）
+        'country' => 'Germany',         // 组合框选项（导出值或显示文本）
     ])
     ->stampImage(0, 'signature.png', x: 100, y: 600, width: 120, height: 40)
     ->flatten()
@@ -543,7 +605,7 @@ ExistingFormFiller::fromFile('template.pdf')
 
 ```php
 foreach (ExistingFormFiller::fromFile('template.pdf')->fields() as $name => $field) {
-    echo "{$name}: {$field->type} = ".json_encode($field->value, JSON_UNESCAPED_UNICODE)."\n";
+    echo "{$name}: {$field->type} = ".json_encode($field->value)."\n";
 }
 ```
 
@@ -582,7 +644,7 @@ $doc  = Document::new(PaperSize::A4);
 $page = $doc->addPage();
 $page->showText('Highlighted text', 72, 720, StandardFont::Helvetica, 12);
 $page->addHighlightAnnotation(
-    x1: 72, y1: 720, x2: 200, y2: 735,
+    x: 72, y: 716, width: 100, height: 16,
     contents: 'Reviewer note: confirm this number.',
     color: [1.0, 1.0, 0.4],
 );
@@ -655,7 +717,13 @@ $doc->sign(new SignatureConfig(
 $doc->toFile('signed.pdf');
 ```
 
-PDF 先以占位的 `/ByteRange` 与 `/Contents` 发射，然后就地写入分离的 CMS 签名（默认 PAdES）。版式流中的签名字段、签章设计、占位符、字体以及多个签署人，详见[签名指南](SIGNING.md)。
+PDF 先以占位的 `/ByteRange` 与 `/Contents` 发射，然后就地写入分离的 CMS 签名（默认 PAdES）。版式流中的签名字段、签章设计、占位符、字体以及多个签署人，详见[签名指南](SIGNING.md)。对于永远不离开设备或服务的密钥，有现成的签名器：
+[php-pdf-pkcs11](https://github.com/dskripchenko/php-pdf-pkcs11)（HSM、
+智能卡、USB 令牌）、
+[php-pdf-cloud-kms](https://github.com/dskripchenko/php-pdf-cloud-kms)
+（AWS KMS、Google Cloud KMS、Azure Key Vault）以及
+[php-pdf-cryptopro](https://github.com/dskripchenko/php-pdf-cryptopro)
+（服务器上的 CryptoPro CSP）—— 参见 [SIGNING.md](SIGNING.md#密钥和证书)。
 
 ---
 
@@ -667,14 +735,23 @@ use Dskripchenko\PhpPdf\Pdf\PdfAConfig;
 
 $doc = Document::new();
 $doc->enablePdfA(new PdfAConfig(
-    conformance: PdfAConfig::CONFORMANCE_B,   // or CONFORMANCE_A, CONFORMANCE_U
+    iccProfilePath: 'vendor/dskripchenko/php-pdf/resources/icc/sRGB2014.icc',
+    part: PdfAConfig::PART_2,                 // PART_1, PART_2 or PART_3
+    conformance: PdfAConfig::CONFORMANCE_U,   // or CONFORMANCE_A, CONFORMANCE_B
     title: 'Archive copy',
     author: 'Acme Corp',
     lang: 'en-US',
 ));
 // Conformance 'A' auto-enables Tagged PDF.
+$doc->addPage();
 $doc->toFile('pdfa.pdf');
 ```
+
+输出意图（output intent）需要 sRGB ICC 配置文件；本包在
+`resources/icc/sRGB2014.icc` 中自带一份。PDF/A-1 接受一致性级别 A 或 B；
+PDF/A-2 与 PDF/A-3 还接受 U。PDF/A 还要求所有字体都被内嵌 —— base-14
+字体无法通过验证，因此请用 TTF 排版文字（`PdfFont`，或对排版文档使用带
+`defaultFont` 的 `Engine`）。
 
 `enablePdfA()` 与 `encrypt()` 和 `enablePdfX()` 互斥 ——
 冲突时库会抛出异常。
@@ -700,18 +777,20 @@ use Dskripchenko\PhpPdf\Pdf\PdfXConfig;
 
 $doc = Document::new();
 $doc->enablePdfX(new PdfXConfig(
+    iccProfilePath: 'vendor/dskripchenko/php-pdf/resources/icc/sRGB2014.icc',
     variant: PdfXConfig::VARIANT_X4,
-    outputConditionIdentifier: 'FOGRA39',
-    outputCondition: 'Coated FOGRA39',
-    registryName: 'http://www.color.org',
     title: 'Print master',
-    trapped: 'False',
+    trapped: PdfXConfig::TRAPPED_FALSE,
 ));
+$doc->addPage();
 $doc->toFile('print.pdf');
 ```
 
-变体：`VARIANT_X1A`、`VARIANT_X3`、`VARIANT_X4`。调用方负责
-内容级的合规性（例如 X-1a 需要 CMYK 转换，X-1a / X-3 不允许透明度）。
+变体：`VARIANT_X1A`、`VARIANT_X3`、`VARIANT_X4`。自带的 sRGB
+配置文件适用于 X-3 与 X-4；针对特定印刷条件，请传入其 CMYK 配置文件
+（X-1a 必须使用 CMYK 配置文件 —— 本包未自带），并配合
+`iccProfileName`、`outputConditionIdentifier`（例如 `FOGRA39`）与
+`outputCondition`。调用方负责内容级的合规性（例如 X-1a 需要 CMYK 转换，X-1a / X-3 不允许透明度）。
 
 ---
 
@@ -771,23 +850,20 @@ $page = $doc->addPage();
 $page->showText('Lower left', 30, 30, StandardFont::Helvetica, 10);
 $page->showText('Hello, world!', 200, 400, StandardFont::TimesRoman, 24);
 
-// Filled rectangle.
-$page->saveState();
-$page->setNonStrokingColor(0.9, 0.1, 0.1);
-$page->fillRectangle(100, 100, 200, 50);
-$page->restoreState();
+// Filled rectangle (x, y, width, height, RGB 0..1).
+$page->fillRect(100, 100, 200, 50, r: 0.9, g: 0.1, b: 0.1);
 
-// Line.
-$page->saveState();
-$page->setStrokingColor(0, 0, 0);
-$page->setLineWidth(2.0);
-$page->moveTo(50, 200);
-$page->lineTo(550, 200);
-$page->stroke();
-$page->restoreState();
+// Outlined rectangle and a line, 2 pt wide.
+$page->strokeRect(100, 300, 200, 50, lineWidthPt: 2.0);
+$page->strokeLine(50, 200, 550, 200, lineWidthPt: 2.0);
 
+$doc->metadata(title: 'Ticket', author: 'Acme Corp');
 file_put_contents('low-level.pdf', $doc->toBytes());
 ```
+
+`Pdf\Page` 上的其他绘图方法：`fillRoundedRect()`、
+`strokeRoundedRect()`、`strokeDashedLine()`、`fillPolygon()`、
+`strokePolyline()`、`drawImage()`。
 
 `Pdf\Document` 没有布局引擎 —— 坐标以 PDF 点（1/72 英寸）为单位，
 原点在左下角。适用于票据风格或叠加风格的 PDF，定位完全由调用方
@@ -795,8 +871,9 @@ file_put_contents('low-level.pdf', $doc->toBytes());
 
 `Pdf\Document` 上的配置：
 
-- `setMetadata(...)` —— Title、Author、Subject、Keywords、Creator、
-  Producer、CreationDate。
+- `metadata(title: ..., author: ..., subject: ..., keywords: ...,
+  creator: ..., producer: ..., creationDate: ...)` —— `/Info`
+  字典。
 - `useXrefStream(true)` —— 以流对象形式发射交叉引用（PDF 1.5+），
   元数据体积减小约 50%。
 - `useObjectStreams(true)` —— 将非流字典打包进 Object Streams，

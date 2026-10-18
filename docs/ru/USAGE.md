@@ -125,20 +125,25 @@ $style = new RunStyle(
 Блочная раскладка живёт в `ParagraphStyle`:
 
 ```php
-use Dskripchenko\PhpPdf\Element\Alignment;
+use Dskripchenko\PhpPdf\Style\Alignment;
 use Dskripchenko\PhpPdf\Style\ParagraphStyle;
 
-new ParagraphStyle(
-    alignment: Alignment::Justify,
+$style = new ParagraphStyle(
+    alignment: Alignment::Both,   // justified
     spaceBeforePt: 6.0,
     spaceAfterPt: 6.0,
     indentLeftPt: 36.0,
     indentFirstLinePt: 18.0,
     lineHeightMult: 1.5,
-    paddingPt: 8.0,
+    paddingTopPt: 8.0,
+    paddingBottomPt: 8.0,
     backgroundColor: 'f0f0f0',
 );
 ```
+
+Применяется через `ParagraphBuilder::style($style)`. Внутренние отступы
+задаются по сторонам: `paddingTopPt`, `paddingRightPt`, `paddingBottomPt`,
+`paddingLeftPt`.
 
 ### Таблицы
 
@@ -185,8 +190,8 @@ DocumentBuilder::new()
     ->toFile('lists.pdf');
 ```
 
-`ListFormat` покрывает Decimal, UpperRoman, LowerRoman, UpperAlpha,
-LowerAlpha.
+`ListFormat` покрывает `Bullet`, `Decimal`, `LowerLetter`, `UpperLetter`,
+`LowerRoman`, `UpperRoman`.
 
 ### Изображения
 
@@ -199,8 +204,9 @@ DocumentBuilder::new()
     ->toFile('with-image.pdf');
 ```
 
-Поддерживаемые форматы: JPEG, PNG (8-bit truecolor, 8-bit palette, с
-альфой через SMask). Одно и то же изображение, использованное N раз в
+Поддерживаемые форматы: JPEG (оттенки серого, RGB, CMYK) и PNG — 8-bit
+оттенки серого, серый + альфа, RGB и RGBA (альфа через SMask); палитровые,
+16-битные и чересстрочные PNG не поддерживаются. Одно и то же изображение, использованное N раз в
 документе, встраивается как единственный XObject (дедупликация по
 content-hash).
 
@@ -218,7 +224,7 @@ DocumentBuilder::new()
     })
     ->footer(function (HeaderFooterBuilder $f) {
         $f->paragraph(fn (ParagraphBuilder $p) =>
-            $p->text('Page ')->pageNumber()->text(' of ')->pageCount());
+            $p->text('Page ')->pageNumber()->text(' of ')->totalPages());
     })
     ->watermark('DRAFT')
     ->paragraph('Document body.')
@@ -242,14 +248,17 @@ DocumentBuilder::new()
     ->pageSetup(new PageSetup(
         paperSize: PaperSize::A4,
         orientation: Orientation::Landscape,
-        margins: new PageMargins(top: 36, right: 36, bottom: 36, left: 36),
+        margins: new PageMargins(topPt: 36, rightPt: 36, bottomPt: 36, leftPt: 36),
     ))
     ->heading(1, 'Wide content')
     ->toFile('landscape.pdf');
 ```
 
-Форматы бумаги: A0–A6, B0–B6, Letter, Legal, Executive, Tabloid, плюс
-произвольный через `defaultCustomDimensionsPt`.
+Форматы бумаги (`PaperSize`): `A3`, `A4`, `A5`, `A6`, `Letter`, `Legal`,
+`Tabloid`, `Executive`. Любой другой размер задаётся в пунктах:
+`new PageSetup(customDimensionsPt: [252, 144])` (карточка 3,5 × 2 дюйма); в
+`Pdf\Document` это `addPage(customDimensionsPt: [...])` или
+`defaultCustomDimensionsPt` конструктора.
 
 ---
 
@@ -343,23 +352,75 @@ $doc->toFile('report.pdf');
 
 ## Пользовательские шрифты
 
+Без встроенного шрифта текст набирается базовым Helvetica из base-14
+(только латиница). Шрифт основного текста — `defaultFont` движка, плюс
+необязательные `boldFont`, `italicFont` и `boldItalicFont`:
+
 ```php
 use Dskripchenko\PhpPdf\Build\DocumentBuilder;
+use Dskripchenko\PhpPdf\Font\Ttf\TtfFile;
+use Dskripchenko\PhpPdf\Layout\Engine;
+use Dskripchenko\PhpPdf\Pdf\PdfFont;
+
+$engine = new Engine(
+    defaultFont: new PdfFont(TtfFile::fromFile(__DIR__.'/fonts/DejaVuSans.ttf')),
+    boldFont: new PdfFont(TtfFile::fromFile(__DIR__.'/fonts/DejaVuSans-Bold.ttf')),
+    // Words the main font has no glyphs for (CJK here) are set in a fallback.
+    fallbackFonts: [new PdfFont(TtfFile::fromFile(__DIR__.'/fonts/DroidSansFallback.ttf'))],
+);
+
+DocumentBuilder::new()
+    ->paragraph('Здравствуй, мир — Γειά σου κόσμε — 你好世界')
+    ->toFile('fonts.pdf', $engine);
+```
+
+`fallbackFonts` перебираются пословно: слово, которое основной шрифт не
+может нарисовать, набирается первым запасным шрифтом, в котором есть все
+его глифы.
+
+`FontProvider` обслуживает текст, в котором названо семейство шрифта, —
+`RunStyle(fontFamily: ...)` у run или CSS `font-family` (первое семейство
+в списке). Шрифт по умолчанию он не меняет:
+
+```php
+use Dskripchenko\PhpPdf\Document;
+use Dskripchenko\PhpPdf\Font\ChainedFontProvider;
 use Dskripchenko\PhpPdf\Font\DirectoryFontProvider;
 use Dskripchenko\PhpPdf\Layout\Engine;
+use Dskripchenko\PhpPdf\Pdf\PdfFont;
+use Dskripchenko\PhpPdfFontsLiberation\LiberationFontProvider;
 
-$fonts = new DirectoryFontProvider(__DIR__ . '/fonts');
+$fonts = new ChainedFontProvider(
+    new DirectoryFontProvider(__DIR__.'/fonts'),  // DejaVuSans.ttf, DejaVuSans-Bold.ttf, …
+    new LiberationFontProvider,                  // dskripchenko/php-pdf-fonts-liberation
+);
 
-$bytes = DocumentBuilder::new()
-    ->paragraph('Здравствуй, мир — 你好世界 — مرحبا')
-    ->toBytes(new Engine(fontProvider: $fonts));
+$engine = new Engine(
+    defaultFont: new PdfFont($fonts->resolve('LiberationSerif-Regular')),
+    boldFont: new PdfFont($fonts->resolve('LiberationSerif-Bold')),
+    fontProvider: $fonts,
+);
+
+Document::fromHtml(<<<'HTML'
+<p>Body text in Liberation Serif.</p>
+<p style="font-family: DejaVuSans">DejaVu Sans, <b>bold</b>.</p>
+<p style="font-family: Arial">Arial → Liberation Sans.</p>
+HTML)->toFile('fonts-provider.pdf', $engine);
 ```
 
 `DirectoryFontProvider` сканирует каталог на файлы `.ttf` / `.otf` и
-предоставляет их по имени семейства. `ChainedFontProvider` позволяет
-композировать провайдеры, чтобы движок мог откатиться на системные
-шрифты для отсутствующих глифов.
+находит их по PostScript-имени (`DejaVuSans`, `DejaVuSans-Bold`). Для
+семейства `X` движок запрашивает `X-BoldItalic`, `X-Bold`, `X-Italic`,
+`X-Regular`, затем `X` — в зависимости от жирности и начертания run.
+`ChainedFontProvider` опрашивает свои провайдеры по порядку и берёт
+первый найденный шрифт — он разрешает имена, а не недостающие глифы;
+откат по глифам — это `fallbackFonts`.
+[dskripchenko/php-pdf-fonts-liberation](https://github.com/dskripchenko/php-pdf-fonts-liberation)
+поставляет `LiberationFontProvider`: Liberation Sans, Serif и Mono, в том
+числе под именами `Arial`, `Times New Roman` и `Courier New`.
 
+Встраиваются только шрифты с TrueType-контурами (`.ttf`, `.otf` с
+TrueType-контурами); OpenType-шрифты на основе CFF отклоняются.
 Встраиваемые шрифты сабсетятся по требованию — в файл попадают только
 использованные глифы. Кернинг, базовые лигатуры и ToUnicode CMaps
 эмитятся автоматически.
@@ -383,17 +444,21 @@ DocumentBuilder::new()
 ```php
 use Dskripchenko\PhpPdf\Barcode\QrEncoder;
 
-$vcard = QrEncoder::vCard(
-    fullName: 'Jane Doe',
-    org: 'Acme Corp',
-    email: 'jane@example.com',
-    phone: '+1-555-0100',
-);
+$vcard = QrEncoder::vCard([
+    'name' => 'Jane Doe',
+    'org' => 'Acme Corp',
+    'email' => 'jane@example.com',
+    'tel' => '+1-555-0100',
+]);
 
 $wifi = QrEncoder::wifi(ssid: 'guest', password: 'welcome', hidden: false);
 
-$mailto = QrEncoder::mailto('hello@example.com', subject: 'Hi');
+$email = QrEncoder::email('hello@example.com', subject: 'Hi');
 ```
+
+`vCard()` (3.0) принимает `name`, `org`, `title`, `tel`, `email`, `url` и
+`address`. Остальные фабрики — `url()`, `sms($phone, $message)` и
+`geo($latitude, $longitude, zoom: ...)`.
 
 Полный список из 16 поддерживаемых форматов см. в
 [COMPARISON.md](COMPARISON.md#штрихкоды).
@@ -480,20 +545,24 @@ use Dskripchenko\PhpPdf\Build\DocumentBuilder;
 use Dskripchenko\PhpPdf\Build\ParagraphBuilder;
 
 DocumentBuilder::new()
-    ->heading(1, 'Top')
+    ->heading(1, 'Contents')
     ->paragraph(function (ParagraphBuilder $p) {
-        $p->text('Visit ')->link('https://example.com', 'our site');
+        $p->text('Visit ')->link('https://example.com', 'our site')
+          ->text(', or jump to ')->internalLink('terms', 'the terms');
     })
-    ->bookmark('Chapter 1', level: 1)
-    ->heading(1, 'Chapter 1')
-    ->paragraph('Body...')
+    ->heading(1, 'Chapter 1')          // h1–h6 build the outline
+    ->heading(2, 'Section 1.1')
+    ->paragraph(fn (ParagraphBuilder $p) => $p->bookmark('terms')->text('Terms apply.'))
     ->toFile('linked.pdf');
 ```
 
-Эмитируемые виды гиперссылок: `URI`, `Dest` (именованное назначение),
-JavaScript, Launch и назначения на именованные страницы. Панель
-оглавления (закладки) — многоуровневая: передавайте `level: 2` для
-подраздела, `level: 3` для под-подраздела и так далее.
+Панель оглавления (закладки) строится из заголовков: `heading(1, …)` —
+запись верхнего уровня, `heading(2, …)` вкладывается в неё и так далее до
+уровня 6. `ParagraphBuilder::bookmark($name)` ставит именованное
+назначение; `internalLink($name, …)` переходит к нему, `link($url, …)`
+открывает URI. У `Pdf\Page` есть также `addExternalLink()`,
+`addInternalLink()`, `addNamedActionLink()`, `addJavaScriptLink()` и
+`addLaunchLink()` для абсолютно позиционированных областей ссылок.
 
 Авто-якоря заголовков: `<h1 id="intro">` становится именованным
 назначением, поэтому `<a href="#intro">jump</a>` работает внутри
@@ -509,32 +578,29 @@ use Dskripchenko\PhpPdf\Element\FormField;
 
 DocumentBuilder::new()
     ->heading(1, 'Application form')
-    ->block(new FormField(
-        type: 'text',
-        name: 'full_name',
-        x: 100, y: 700, w: 200, h: 24,
-    ))
-    ->block(new FormField(
-        type: 'checkbox',
-        name: 'agree',
-        x: 100, y: 660, w: 14, h: 14,
-        defaultValue: 'on',
-    ))
-    ->block(new FormField(
-        type: 'combo',
-        name: 'country',
-        x: 100, y: 620, w: 200, h: 24,
-        options: ['US', 'UK', 'DE', 'RU', 'CN'],
-        defaultValue: 'US',
-    ))
-    ->block(new FormField(
-        type: 'submit',
-        name: 'send',
-        x: 100, y: 580, w: 80, h: 28,
-        buttonCaption: 'Submit',
-        submitUrl: 'https://example.com/submit',
-    ))
+    ->block(new FormField('full_name', tooltip: 'Full name'))
+    ->block(new FormField('agree', FormField::TYPE_CHECKBOX, widthPt: 14, heightPt: 14))
+    ->block(new FormField('country', FormField::TYPE_COMBO,
+        defaultValue: 'US', options: ['US', 'UK', 'DE', 'RU', 'CN']))
+    ->block(new FormField('send', FormField::TYPE_SUBMIT_BUTTON, widthPt: 80, heightPt: 28,
+        buttonCaption: 'Submit', submitUrl: 'https://example.com/submit'))
     ->toFile('form.pdf');
+```
+
+`FormField` — блок в потоке: принимает `name`, `type` (по умолчанию
+text), `defaultValue`, `widthPt` / `heightPt` (по умолчанию 200 × 20),
+`tooltip`, `required`, `readOnly`, `options` и аргументы скриптов и кнопок,
+описанные ниже. Чтобы поставить поле по абсолютным координатам, добавьте
+его на `Pdf\Page`:
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Document;
+
+$doc = Document::new();
+$page = $doc->addPage();
+$page->addFormField('text', 'full_name', x: 100, y: 700, width: 200, height: 24);
+$page->addFormField('checkbox', 'agree', x: 100, y: 660, width: 14, height: 14, defaultValue: 'on');
+$doc->toFile('form-absolute.pdf');
 ```
 
 Типы полей: `text`, `text-multiline`, `password`, `checkbox`,
@@ -560,10 +626,10 @@ use Dskripchenko\PhpPdf\Pdf\Forms\ExistingFormFiller;
 ExistingFormFiller::fromFile('template.pdf')
     ->useFont('fonts/LiberationSans-Regular.ttf') // для кириллицы и прочего не-Latin
     ->setValues([
-        'full_name' => 'Иван Петров',
+        'full_name' => 'Jane Roe',
         'agree' => true,
-        'employer.name' => 'ООО «Ромашка»', // разрешается через наследование /Parent
-        'country' => 'Россия',               // вариант combo box (экспортное значение или подпись)
+        'employer.name' => 'Acme Corp', // разрешается через наследование /Parent
+        'country' => 'Germany',         // вариант combo box (экспортное значение или подпись)
     ])
     ->stampImage(0, 'signature.png', x: 100, y: 600, width: 120, height: 40)
     ->flatten()
@@ -579,7 +645,7 @@ ExistingFormFiller::fromFile('template.pdf')
 
 ```php
 foreach (ExistingFormFiller::fromFile('template.pdf')->fields() as $name => $field) {
-    echo "{$name}: {$field->type} = ".json_encode($field->value, JSON_UNESCAPED_UNICODE)."\n";
+    echo "{$name}: {$field->type} = ".json_encode($field->value)."\n";
 }
 ```
 
@@ -641,7 +707,7 @@ $doc  = Document::new(PaperSize::A4);
 $page = $doc->addPage();
 $page->showText('Highlighted text', 72, 720, StandardFont::Helvetica, 12);
 $page->addHighlightAnnotation(
-    x1: 72, y1: 720, x2: 200, y2: 735,
+    x: 72, y: 716, width: 100, height: 16,
     contents: 'Reviewer note: confirm this number.',
     color: [1.0, 1.0, 0.4],
 );
@@ -717,7 +783,14 @@ $doc->toFile('signed.pdf');
 PDF эмитируется с плейсхолдерами `/ByteRange` и `/Contents`, которые
 патчатся на месте отсоединённой CMS-подписью (по умолчанию PAdES). Поле подписи в потоке
 документа, оформление штампа, плейсхолдеры, шрифты и несколько подписантов —
-в [руководстве по подписи](SIGNING.md).
+в [руководстве по подписи](SIGNING.md). Для ключей, которые никогда не
+покидают устройство или сервис, есть готовые подписанты:
+[php-pdf-pkcs11](https://github.com/dskripchenko/php-pdf-pkcs11) (HSM,
+смарт-карты, USB-токены),
+[php-pdf-cloud-kms](https://github.com/dskripchenko/php-pdf-cloud-kms)
+(AWS KMS, Google Cloud KMS, Azure Key Vault) и
+[php-pdf-cryptopro](https://github.com/dskripchenko/php-pdf-cryptopro)
+(КриптоПро CSP на сервере) — см. [SIGNING.md](SIGNING.md#ключи-и-сертификаты).
 
 ---
 
@@ -729,14 +802,24 @@ use Dskripchenko\PhpPdf\Pdf\PdfAConfig;
 
 $doc = Document::new();
 $doc->enablePdfA(new PdfAConfig(
-    conformance: PdfAConfig::CONFORMANCE_B,   // or CONFORMANCE_A, CONFORMANCE_U
+    iccProfilePath: 'vendor/dskripchenko/php-pdf/resources/icc/sRGB2014.icc',
+    part: PdfAConfig::PART_2,                 // PART_1, PART_2 or PART_3
+    conformance: PdfAConfig::CONFORMANCE_U,   // or CONFORMANCE_A, CONFORMANCE_B
     title: 'Archive copy',
     author: 'Acme Corp',
     lang: 'en-US',
 ));
 // Conformance 'A' auto-enables Tagged PDF.
+$doc->addPage();
 $doc->toFile('pdfa.pdf');
 ```
+
+Для output intent нужен ICC-профиль sRGB; пакет поставляет его в
+`resources/icc/sRGB2014.icc`. PDF/A-1 допускает уровень соответствия A или
+B; PDF/A-2 и PDF/A-3 — ещё и U. PDF/A также требует, чтобы все шрифты были
+встроены — base-14 шрифты валидацию не проходят, поэтому набирайте текст
+TTF-шрифтом (`PdfFont` или `Engine` с `defaultFont` для свёрстанных
+документов).
 
 `enablePdfA()` несовместим с `encrypt()` и `enablePdfX()` —
 библиотека бросает исключение при конфликте.
@@ -762,18 +845,20 @@ use Dskripchenko\PhpPdf\Pdf\PdfXConfig;
 
 $doc = Document::new();
 $doc->enablePdfX(new PdfXConfig(
+    iccProfilePath: 'vendor/dskripchenko/php-pdf/resources/icc/sRGB2014.icc',
     variant: PdfXConfig::VARIANT_X4,
-    outputConditionIdentifier: 'FOGRA39',
-    outputCondition: 'Coated FOGRA39',
-    registryName: 'http://www.color.org',
     title: 'Print master',
-    trapped: 'False',
+    trapped: PdfXConfig::TRAPPED_FALSE,
 ));
+$doc->addPage();
 $doc->toFile('print.pdf');
 ```
 
-Варианты: `VARIANT_X1A`, `VARIANT_X3`, `VARIANT_X4`. Вызывающий код
-отвечает за соответствие на уровне содержимого (например, конвертацию
+Варианты: `VARIANT_X1A`, `VARIANT_X3`, `VARIANT_X4`. Встроенный профиль
+sRGB подходит для X-3 и X-4; для условий печати передайте их CMYK-профиль
+(для X-1a CMYK-профиль обязателен — в пакете его нет) вместе с
+`iccProfileName`, `outputConditionIdentifier` (например, `FOGRA39`) и
+`outputCondition`. Вызывающий код отвечает за соответствие на уровне содержимого (например, конвертацию
 в CMYK для X-1a, отсутствие прозрачности для X-1a / X-3).
 
 ---
@@ -835,23 +920,20 @@ $page = $doc->addPage();
 $page->showText('Lower left', 30, 30, StandardFont::Helvetica, 10);
 $page->showText('Hello, world!', 200, 400, StandardFont::TimesRoman, 24);
 
-// Filled rectangle.
-$page->saveState();
-$page->setNonStrokingColor(0.9, 0.1, 0.1);
-$page->fillRectangle(100, 100, 200, 50);
-$page->restoreState();
+// Filled rectangle (x, y, width, height, RGB 0..1).
+$page->fillRect(100, 100, 200, 50, r: 0.9, g: 0.1, b: 0.1);
 
-// Line.
-$page->saveState();
-$page->setStrokingColor(0, 0, 0);
-$page->setLineWidth(2.0);
-$page->moveTo(50, 200);
-$page->lineTo(550, 200);
-$page->stroke();
-$page->restoreState();
+// Outlined rectangle and a line, 2 pt wide.
+$page->strokeRect(100, 300, 200, 50, lineWidthPt: 2.0);
+$page->strokeLine(50, 200, 550, 200, lineWidthPt: 2.0);
 
+$doc->metadata(title: 'Ticket', author: 'Acme Corp');
 file_put_contents('low-level.pdf', $doc->toBytes());
 ```
+
+Другие методы рисования у `Pdf\Page`: `fillRoundedRect()`,
+`strokeRoundedRect()`, `strokeDashedLine()`, `fillPolygon()`,
+`strokePolyline()`, `drawImage()`.
 
 У `Pdf\Document` нет движка раскладки — координаты в PDF-пунктах
 (1/72 дюйма), начало координат в левом нижнем углу. Используйте его
@@ -860,8 +942,8 @@ file_put_contents('low-level.pdf', $doc->toBytes());
 
 Конфигурация `Pdf\Document`:
 
-- `setMetadata(...)` — Title, Author, Subject, Keywords, Creator,
-  Producer, CreationDate.
+- `metadata(title: ..., author: ..., subject: ..., keywords: ...,
+  creator: ..., producer: ..., creationDate: ...)` — словарь `/Info`.
 - `useXrefStream(true)` — эмитировать таблицу перекрёстных ссылок как
   потоковый объект (PDF 1.5+), ~50% компактнее метаданных.
 - `useObjectStreams(true)` — упаковать непотоковые словари в Object

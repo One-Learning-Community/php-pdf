@@ -1,11 +1,11 @@
 # dskripchenko/php-pdf
 
 > **Ein MIT-Paket ersetzt mpdf + FPDI — ohne GPL-Reibung, und
-> [schneller](../en/BENCHMARKS.md).** Reines PHP-Toolkit zum **Erzeugen,
+> [schneller](BENCHMARKS.md).** Reines PHP-Toolkit zum **Erzeugen,
 > Lesen und Zusammenführen** von PDFs: GPL-freie mpdf-Alternative für
 > HTML→PDF und freie FPDI-Alternative für Import/Stempeln — inklusive
-> XRef-Stream- und verschlüsselter Quellen. Migration:
-> [von mpdf](../en/MIGRATION-FROM-MPDF.md) · [von FPDI](../en/MIGRATION-FROM-FPDI.md).
+> XRef-Stream- und verschlüsselter Quellen. Die Migration ist mechanisch:
+> [von mpdf](MIGRATION-FROM-MPDF.md) · [von FPDI](MIGRATION-FROM-FPDI.md).
 
 [![Tests](https://img.shields.io/github/actions/workflow/status/dskripchenko/php-pdf/tests.yml?branch=main&label=tests&logo=github)](https://github.com/dskripchenko/php-pdf/actions/workflows/tests.yml)
 [![Conformance](https://img.shields.io/github/actions/workflow/status/dskripchenko/php-pdf/conformance.yml?branch=main&label=PDF%2FA%20%C2%B7%20PDF%2FX%20%C2%B7%20visual&logo=github)](../en/CONFORMANCE.md)
@@ -25,6 +25,7 @@
 - [Schnellstart](#schnellstart)
 - [Funktionsüberblick](#funktionsüberblick)
 - [Dokumentation](#dokumentation)
+- [Die php-pdf-Familie](#die-php-pdf-familie)
 - [Performance](#performance)
 - [Voraussetzungen](#voraussetzungen)
 - [Tests](#tests)
@@ -70,8 +71,15 @@ gängigen PHP-PDF-Stack:
   (B-LT mit DSS, B-LTA mit Dokumentzeitstempel); **Signaturvalidierung** gegen
   die bekannten Angriffe auf signierte PDFs; **abgetrennte CAdES-Signaturen**
   (`.p7s`) beliebiger Bytes, signiert und geprüft.
-- **PDF/A-1a / 1b / 2u und PDF/X-1a / 3 / 4** Konformität mit
-  eingebettetem sRGB-ICC-Profil und XMP-Metadaten.
+  Fertige Signer für PKCS#11-Token und HSMs
+  ([php-pdf-pkcs11](https://github.com/dskripchenko/php-pdf-pkcs11)), Cloud-KMS
+  — AWS, Google, Azure
+  ([php-pdf-cloud-kms](https://github.com/dskripchenko/php-pdf-cloud-kms)) —
+  und CryptoPro CSP auf dem Server
+  ([php-pdf-cryptopro](https://github.com/dskripchenko/php-pdf-cryptopro)).
+- **PDF/A-1a, 1b, 2b, 2u und 3b** (im CI mit veraPDF validiert) und
+  **PDF/X-1a / 3 / 4** Konformität mit eingebettetem ICC-Profil und
+  XMP-Metadaten.
 - **Tagged PDF / PDF/UA-tauglicher** Strukturbaum mit H1–H6, Table/TR/TD,
   L/LI, eigener RoleMap, ParentTree-Zahlenbaum.
 - **Streaming-Ausgabe** an eine Stream-Ressource für große Dokumente.
@@ -159,22 +167,38 @@ file_put_contents('hello.pdf', $doc->toBytes());
   `<cite>`, `<dfn>`, `<q>`, `<abbr>`.
 - HTML5-Semantik-Blöcke (`<header>`, `<footer>`, `<article>`, `<nav>`,
   `<section>` usw.) und Legacy-Elemente `<center>` / `<font>`.
-- Inline-CSS: color, background, font-Eigenschaften, text-align,
-  text-decoration, text-transform, margin/padding-Kurzschreibweise,
-  borders, line-height, text-indent.
+- CSS aus `<style>`-Blöcken und `style`-Attributen, mit Kaskade:
+  Typ-, Klassen-, ID- und Attributselektoren, `:first-child`, `:last-child`,
+  `:nth-child()`, `:not()`, Nachfahren- / `>` / `+` / `~`-Kombinatoren,
+  Spezifität, `!important` — kein CSS-Inliner nötig.
+- `@media print` wird angewendet, `@media screen` übersprungen; `@page`-Größe
+  und -Ränder.
+- Vererbung wie im Browser: color, font, text-align, line-height und
+  Ähnliches, gesetzt an `body`, einem `div` oder einer `td`, erreichen den
+  Text darin.
+- `div`-Container mit margin, padding, background und border;
+  `display: flex` (eine Zeile), `display: none`.
+- Tabellenstile: `width`, `table-layout: auto`, `border-collapse` /
+  `border-spacing`, Zellen-`padding` und `vertical-align`, `<col>`-Breiten;
+  `<thead>`-Zeilen wiederholen sich auf jeder Seite.
+- `page-break-*` / `break-*`, `white-space: pre` / `pre-wrap` /
+  `pre-line`; durchgezogene, gestrichelte, gepunktete und doppelte Rahmen.
+- Nicht unterstützt: externe Stylesheets, Floats, Positionierung, Grid,
+  Pseudo-Elemente.
 
 ### Layout und Typografie
 - Knuth–Plass-Zeilenumbruch nach dem Box-Glue-Penalty-Modell mit
   adaptivem Penalty.
 - Mehrspaltiges Layout (`ColumnSet`) mit Spalten-zuerst-Fluss.
-- Tabellen mit rowspan, colspan, Border-Collapse, doppelten Rahmen,
-  Border-Radius, Zellenabstand.
+- Tabellen mit rowspan, colspan, Border-Collapse, doppelten, gestrichelten
+  und gepunkteten Rahmen, Border-Radius, Zellenabstand.
 - Kopf- und Fußzeilen, Wasserzeichen (Text und Bild), Abschnittsumbrüche.
 - Fußnoten mit Positionierung am Seitenfuß.
 
 ### Schriftarten
 - 14 Adobe-Base-14-Schriftarten (WinAnsi).
-- TTF-Einbettung mit On-Demand-Subsetting (CFF und TrueType).
+- Schriften mit TrueType-Outlines (`.ttf`, TrueType-basierte `.otf`) mit
+  On-Demand-Subsetting; CFF-basiertes OpenType wird nicht unterstützt.
 - Kerning, einfache GSUB-Ligaturen, ToUnicode-CMap.
 - Variable-Font-Instanzen (fvar, gvar, MVAR, HVAR, avar).
 - Bidi (UAX#9), Arabische Schaping, einfache indische Schaping.
@@ -189,7 +213,8 @@ file_put_contents('hello.pdf', $doc->toBytes());
   Append, FNC1), Data Matrix ECC 200 (alle Größen inkl. 144×144,
   rechteckig, 6 Modi), PDF417 (Byte/Text/Numeric, Macro, GS1, ECI),
   Aztec Compact 1–4L + Full 5–32L (Structured Append, FLG/ECI).
-- QR-Komfort-Factories: vCard 3.0, WiFi Joinware, mailto.
+- QR-Komfort-Factories: vCard 3.0, WiFi (Joinware), URL, SMS,
+  E-Mail (`mailto:`), Geo-Position.
 
 ### Diagramme
 - BarChart, LineChart, PieChart, AreaChart, DonutChart, GroupedBarChart,
@@ -208,7 +233,14 @@ file_put_contents('hello.pdf', $doc->toBytes());
   Ort, Unterzeichner, Zertifikatskette und RFC-3161-Zeitstempeln;
   Signaturstempel (Text, Bilder, QR) mit Zertifikats-Platzhaltern, mehrere
   Signaturfelder, unsichtbare Signaturen.
-- PDF/A-1a, PDF/A-1b, PDF/A-2u mit eingebettetem sRGB-ICC.
+- Fertige Signer: PKCS#11-Token und HSMs
+  ([php-pdf-pkcs11](https://github.com/dskripchenko/php-pdf-pkcs11)), AWS
+  KMS, Google Cloud KMS und Azure Key Vault
+  ([php-pdf-cloud-kms](https://github.com/dskripchenko/php-pdf-cloud-kms)),
+  CryptoPro CSP auf dem Server
+  ([php-pdf-cryptopro](https://github.com/dskripchenko/php-pdf-cryptopro)).
+- PDF/A-1a, PDF/A-1b, PDF/A-2b, PDF/A-2u, PDF/A-3b mit eingebettetem sRGB-ICC,
+  im CI mit veraPDF validiert.
 - PDF/X-1a, PDF/X-3, PDF/X-4 mit /OutputIntent /S /GTS_PDFX.
 - Tagged PDF / PDF/UA-tauglicher Strukturbaum.
 
@@ -217,13 +249,13 @@ file_put_contents('hello.pdf', $doc->toBytes());
   Objekt-Streams, Wiederherstellung bei beschädigter xref, Entschlüsselung
   (RC4 / AES-128 / AES-256).
 - Zusammenführen (`PdfMerger`) — ganze oder ausgewählte Seiten aus mehreren
-  Dateien anhängen und umordnen; Annotationen und Lesezeichen werden mit
-  umgemappten internen Links und benannten Zielen übernommen.
+  Dateien anhängen und umordnen; Seitenannotationen und Lesezeichen werden
+  mit umgemappten internen Links und benannten Zielen übernommen.
 - Overlays stempeln (Wasserzeichen, Briefköpfe) und FPDI-artiger Seitenimport
-  in ein erzeugtes Dokument (`PageImporter::intoDocument()`). Siehe den
-  [Lese- & Merge-Leitfaden](MERGE.md).
+  in ein frisch erzeugtes Dokument via `PageImporter::intoDocument()`.
+- Siehe den [Lese- & Merge-Leitfaden](MERGE.md).
 
-Eine vollständige Anleitung findet sich in [docs/en/USAGE.md](USAGE.md).
+Eine vollständige Anleitung findet sich in [USAGE.md](USAGE.md).
 
 ---
 
@@ -233,17 +265,56 @@ Eine vollständige Anleitung findet sich in [docs/en/USAGE.md](USAGE.md).
   Barcodes, Formulare, Verschlüsselung, Signing, PDF/A.
 - ✍️ [Digitale Signaturen](SIGNING.md) — PAdES- und GOST-Signaturen,
   Stempel, Signieren außerhalb des Servers (CryptoPro, HSM), bestehende PDFs
-  und mehrere Unterzeichner, Zertifizierung, Langzeit- und Signaturvalidierung.
+  und mehrere Unterzeichner, Zertifizierung, Langzeit- und Signaturvalidierung,
+  abgetrennte `.p7s`-Signaturen.
 - 🔗 [PDFs lesen & zusammenführen](MERGE.md) — bestehende Dateien lesen,
-  Seiten anhängen/umordnen, Overlays stempeln, FPDI-Stil-Import.
+  Seiten anhängen/umordnen, Overlays stempeln, verschlüsselte Eingaben
+  verarbeiten.
 - ⚖️ [Vergleich mit mpdf / tcpdf / dompdf / FPDF](COMPARISON.md) —
   Feature-Matrix, wann welche Bibliothek zu wählen ist.
 - 📊 [Benchmarks](BENCHMARKS.md) — reproduzierbare Messungen zu
   Wall-Time, Speicher und Ausgabegröße.
-- 🔀 [Migration von mpdf](MIGRATION-FROM-MPDF.md) — Compat-Fassade und
-  vollständige Mapping-Tabelle.
-- 🔀 [Migration von FPDI](MIGRATION-FROM-FPDI.md) — Import/Stempeln,
-  liest XRef-Stream- und verschlüsselte Quellen.
+- ✅ [Konformität](../en/CONFORMANCE.md) — PDF/A mit veraPDF validiert,
+  PDF/X mit Ghostscript geprüft, Renderings gegen Golden-Dateien verglichen
+  und Signaturen mit OpenSSL und pyHanko verifiziert — bei jedem Push.
+- 🔀 [Migration von mpdf](MIGRATION-FROM-MPDF.md) — Compat-Fassade
+  (`WriteHTML`/`Output` funktionieren weiter) und vollständige Mapping-Tabelle.
+- 🔀 [Migration von FPDI](MIGRATION-FROM-FPDI.md) —
+  `setSourceFile`/`importPage`/`useTemplate`-Fassade; liest XRef-Stream- und
+  verschlüsselte Quellen ohne kommerziellen Parser.
+
+### Beispiele
+
+Lauffähige Skripte in [`examples/`](../../examples/), Ausgaben eingecheckt in
+[`samples/`](../../samples/) — jede wird im CI per Rendering geprüft:
+
+| Aufruf | Ausgabe | Zeigt |
+|---|---|---|
+| `php examples/01-html-to-pdf.php` | [PDF](../../samples/01-html-to-pdf.pdf) | HTML/CSS-Subset → PDF |
+| `php examples/02-builder.php` | [PDF](../../samples/02-builder.pdf) | Fluent-Builder, Tabellen |
+| `php examples/03-barcodes.php` | [PDF](../../samples/03-barcodes.pdf) | QR, Code 128, EAN-13, DataMatrix |
+| `php examples/04-charts.php` | [PDF](../../samples/04-charts.pdf) | Vektor-Kreis-/Balken-/Liniendiagramme |
+| `php examples/05-forms.php` | [PDF](../../samples/05-forms.pdf) | ausfüllbare AcroForm-Felder |
+| `php examples/06-signature.php` | [PDF](../../samples/06-signature.pdf) | digitale PAdES-Signatur mit sichtbarem Stempel |
+| `php examples/07-pdfa.php` | [PDF](../../samples/07-pdfa.pdf) | PDF/A-2u (veraPDF-sauber); benötigt `scripts/fetch-fonts.sh` |
+| `php examples/08-merge.php` | [PDF](../../samples/08-merge.pdf) | bestehende PDFs anhängen + umordnen |
+| `php examples/09-stamp.php` | [PDF](../../samples/09-stamp.pdf) | Wasserzeichen/Briefkopf stempeln |
+
+Das [Torture-Set](../../examples/torture/) prüft die schwierigen Pfade (Arabisch,
+CJK, rechteckige DataMatrix, …) — siehe [VIEWER-MATRIX](../en/VIEWER-MATRIX.md).
+
+---
+
+## Die php-pdf-Familie
+
+| Paket | Was es hinzufügt |
+|---|---|
+| **php-pdf** (dieses Paket) | Der Kern: HTML mit CSS oder ein Builder zu PDF, lesen, zusammenführen, Formulare ausfüllen, signieren und validieren. |
+| [laravel-php-pdf](https://github.com/dskripchenko/laravel-php-pdf) | Laravel-Bridge: eine Blade-View direkt als PDF, `response()->pdf()`, Signieren aus der Konfiguration. |
+| [php-pdf-fonts-liberation](https://github.com/dskripchenko/php-pdf-fonts-liberation) | Liberation Sans, Serif und Mono, metrisch kompatibel zu Arial, Times New Roman und Courier New (OFL, aus dem MIT-Kern herausgehalten). |
+| [php-pdf-cryptopro](https://github.com/dskripchenko/php-pdf-cryptopro) | Signiert mit einem Schlüssel in CryptoPro CSP auf dem Server: GOST R 34.10-2012, russische qualifizierte Signaturen. |
+| [php-pdf-pkcs11](https://github.com/dskripchenko/php-pdf-pkcs11) | Signiert mit einem Schlüssel auf einem HSM, einer Smartcard oder einem USB-Token, über PKCS#11. |
+| [php-pdf-cloud-kms](https://github.com/dskripchenko/php-pdf-cloud-kms) | Signiert mit einem Schlüssel in AWS KMS, Google Cloud KMS oder Azure Key Vault. |
 
 ---
 
@@ -251,15 +322,15 @@ Eine vollständige Anleitung findet sich in [docs/en/USAGE.md](USAGE.md).
 
 Median aus 5 isolierten Subprozess-Läufen (Umgebung und Versionen im Bericht). Die
 vollständige Methodik und ein Reproducer finden sich in
-[docs/en/BENCHMARKS.md](BENCHMARKS.md).
+[BENCHMARKS.md](BENCHMARKS.md).
 
 <!-- bench:table:start — generated by scripts/bench/run.php, do not edit -->
 | Scenario | dskripchenko/php-pdf | mpdf | tcpdf | dompdf | FPDF |
 |---|---:|---:|---:|---:|---:|
-| HTML → PDF article (~5 pages) | **12.0 ms** | 64.1 ms | 37.4 ms | 51.7 ms | _n/a_ |
-| 100-page invoice (50 rows/page) | **576 ms** | 2640 ms | 1479 ms | 9586 ms | 27.3 ms |
-| Image grid (20 pages × 4 JPEGs) | **6.7 ms** | 36.3 ms | 14.5 ms | 32.8 ms | 1.0 ms |
-| Hello world (single page, one paragraph) | **4.3 ms** | 28.4 ms | 12.9 ms | 11.5 ms | 0.9 ms |
+| HTML → PDF article (~5 pages) | **15.2 ms** | 61.9 ms | 38.0 ms | 48.1 ms | _n/a_ |
+| 100-page invoice (50 rows/page) | **632 ms** | 2300 ms | 1342 ms | 9156 ms | 26.4 ms |
+| Image grid (20 pages × 4 JPEGs) | **7.7 ms** | 36.5 ms | 16.9 ms | 31.8 ms | 1.0 ms |
+| Hello world (single page, one paragraph) | **5.0 ms** | 29.4 ms | 15.0 ms | 11.7 ms | 0.9 ms |
 <!-- bench:table:end -->
 
 FPDF gewinnt in den einfachsten Szenarien (kein HTML, kein Umbruch,
@@ -285,7 +356,7 @@ composer install
 vendor/bin/phpunit
 ```
 
-2.000+ Tests, ~119k Assertions, alle erfolgreich auf PHP 8.2 / 8.3 / 8.4.
+2.480+ Tests, ~120k Assertions, laufen im CI auf PHP 8.2 / 8.3 / 8.4 / 8.5 (siehe den [Tests-Workflow](https://github.com/dskripchenko/php-pdf/actions/workflows/tests.yml)).
 
 ---
 

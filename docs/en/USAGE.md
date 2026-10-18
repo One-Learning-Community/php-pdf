@@ -120,20 +120,24 @@ $style = new RunStyle(
 Block-level layout lives in `ParagraphStyle`:
 
 ```php
-use Dskripchenko\PhpPdf\Element\Alignment;
+use Dskripchenko\PhpPdf\Style\Alignment;
 use Dskripchenko\PhpPdf\Style\ParagraphStyle;
 
-new ParagraphStyle(
-    alignment: Alignment::Justify,
+$style = new ParagraphStyle(
+    alignment: Alignment::Both,   // justified
     spaceBeforePt: 6.0,
     spaceAfterPt: 6.0,
     indentLeftPt: 36.0,
     indentFirstLinePt: 18.0,
     lineHeightMult: 1.5,
-    paddingPt: 8.0,
+    paddingTopPt: 8.0,
+    paddingBottomPt: 8.0,
     backgroundColor: 'f0f0f0',
 );
 ```
+
+Apply it with `ParagraphBuilder::style($style)`. Padding is set per side:
+`paddingTopPt`, `paddingRightPt`, `paddingBottomPt`, `paddingLeftPt`.
 
 ### Tables
 
@@ -179,8 +183,8 @@ DocumentBuilder::new()
     ->toFile('lists.pdf');
 ```
 
-`ListFormat` covers Decimal, UpperRoman, LowerRoman, UpperAlpha,
-LowerAlpha.
+`ListFormat` covers `Bullet`, `Decimal`, `LowerLetter`, `UpperLetter`,
+`LowerRoman`, `UpperRoman`.
 
 ### Images
 
@@ -193,8 +197,9 @@ DocumentBuilder::new()
     ->toFile('with-image.pdf');
 ```
 
-Supported formats: JPEG, PNG (8-bit truecolor, 8-bit palette, with
-alpha via SMask). The same image used N times across a document is
+Supported formats: JPEG (grayscale, RGB, CMYK) and PNG — 8-bit
+grayscale, gray + alpha, RGB and RGBA (alpha via SMask); palette, 16-bit
+and interlaced PNGs are not supported. The same image used N times across a document is
 embedded as a single XObject (content-hash dedup).
 
 ### Headers, footers, watermarks
@@ -211,7 +216,7 @@ DocumentBuilder::new()
     })
     ->footer(function (HeaderFooterBuilder $f) {
         $f->paragraph(fn (ParagraphBuilder $p) =>
-            $p->text('Page ')->pageNumber()->text(' of ')->pageCount());
+            $p->text('Page ')->pageNumber()->text(' of ')->totalPages());
     })
     ->watermark('DRAFT')
     ->paragraph('Document body.')
@@ -234,14 +239,17 @@ DocumentBuilder::new()
     ->pageSetup(new PageSetup(
         paperSize: PaperSize::A4,
         orientation: Orientation::Landscape,
-        margins: new PageMargins(top: 36, right: 36, bottom: 36, left: 36),
+        margins: new PageMargins(topPt: 36, rightPt: 36, bottomPt: 36, leftPt: 36),
     ))
     ->heading(1, 'Wide content')
     ->toFile('landscape.pdf');
 ```
 
-Paper sizes: A0–A6, B0–B6, Letter, Legal, Executive, Tabloid, plus
-custom via `defaultCustomDimensionsPt`.
+Paper sizes (`PaperSize`): `A3`, `A4`, `A5`, `A6`, `Letter`, `Legal`,
+`Tabloid`, `Executive`. Any other size goes in points:
+`new PageSetup(customDimensionsPt: [252, 144])` (a 3.5 × 2 in card); on
+`Pdf\Document` it is `addPage(customDimensionsPt: [...])` or the
+constructor's `defaultCustomDimensionsPt`.
 
 ---
 
@@ -333,24 +341,73 @@ dynamic pseudo-classes, forms, JavaScript.
 
 ## Custom fonts
 
+Without an embedded font, text is set in the base-14 Helvetica (Latin
+only). The font for body text is the engine's `defaultFont`, with
+optional `boldFont`, `italicFont` and `boldItalicFont`:
+
 ```php
 use Dskripchenko\PhpPdf\Build\DocumentBuilder;
-use Dskripchenko\PhpPdf\Font\DirectoryFontProvider;
+use Dskripchenko\PhpPdf\Font\Ttf\TtfFile;
 use Dskripchenko\PhpPdf\Layout\Engine;
+use Dskripchenko\PhpPdf\Pdf\PdfFont;
 
-$fonts = new DirectoryFontProvider(__DIR__ . '/fonts');
+$engine = new Engine(
+    defaultFont: new PdfFont(TtfFile::fromFile(__DIR__.'/fonts/DejaVuSans.ttf')),
+    boldFont: new PdfFont(TtfFile::fromFile(__DIR__.'/fonts/DejaVuSans-Bold.ttf')),
+    // Words the main font has no glyphs for (CJK here) are set in a fallback.
+    fallbackFonts: [new PdfFont(TtfFile::fromFile(__DIR__.'/fonts/DroidSansFallback.ttf'))],
+);
 
-$bytes = DocumentBuilder::new()
-    ->paragraph('Здравствуй, мир — 你好世界 — مرحبا')
-    ->toBytes(new Engine(fontProvider: $fonts));
+DocumentBuilder::new()
+    ->paragraph('Здравствуй, мир — Γειά σου κόσμε — 你好世界')
+    ->toFile('fonts.pdf', $engine);
 ```
 
-`DirectoryFontProvider` scans a directory for `.ttf` / `.otf` files and
-exposes them by family name. `ChainedFontProvider` lets you compose
-providers so the engine can fall back to system fonts for missing
-glyphs.
+`fallbackFonts` is tried word by word: a word the main font cannot draw
+is set in the first fallback that has all its glyphs.
 
-Embedded fonts are subset on demand — only the glyphs you used end up
+A `FontProvider` serves text that names a font family — a run's
+`RunStyle(fontFamily: ...)` or CSS `font-family` (the first family in
+the list). It does not change the default font:
+
+```php
+use Dskripchenko\PhpPdf\Document;
+use Dskripchenko\PhpPdf\Font\ChainedFontProvider;
+use Dskripchenko\PhpPdf\Font\DirectoryFontProvider;
+use Dskripchenko\PhpPdf\Layout\Engine;
+use Dskripchenko\PhpPdf\Pdf\PdfFont;
+use Dskripchenko\PhpPdfFontsLiberation\LiberationFontProvider;
+
+$fonts = new ChainedFontProvider(
+    new DirectoryFontProvider(__DIR__.'/fonts'),  // DejaVuSans.ttf, DejaVuSans-Bold.ttf, …
+    new LiberationFontProvider,                  // dskripchenko/php-pdf-fonts-liberation
+);
+
+$engine = new Engine(
+    defaultFont: new PdfFont($fonts->resolve('LiberationSerif-Regular')),
+    boldFont: new PdfFont($fonts->resolve('LiberationSerif-Bold')),
+    fontProvider: $fonts,
+);
+
+Document::fromHtml(<<<'HTML'
+<p>Body text in Liberation Serif.</p>
+<p style="font-family: DejaVuSans">DejaVu Sans, <b>bold</b>.</p>
+<p style="font-family: Arial">Arial → Liberation Sans.</p>
+HTML)->toFile('fonts-provider.pdf', $engine);
+```
+
+`DirectoryFontProvider` scans a directory for `.ttf` / `.otf` files and resolves
+them by PostScript name (`DejaVuSans`, `DejaVuSans-Bold`). For a family
+`X` the engine asks for `X-BoldItalic`, `X-Bold`, `X-Italic`,
+`X-Regular`, then `X`, as the run's weight and style need.
+`ChainedFontProvider` asks its providers in order and takes the first
+font found — it resolves names, not missing glyphs; per-glyph fallback is
+`fallbackFonts`. [dskripchenko/php-pdf-fonts-liberation](https://github.com/dskripchenko/php-pdf-fonts-liberation)
+ships `LiberationFontProvider`: Liberation Sans, Serif and Mono, also
+under the names `Arial`, `Times New Roman` and `Courier New`.
+
+Only TrueType-outline fonts are embedded (`.ttf`, TrueType-flavoured
+`.otf`); CFF-based OpenType fonts are rejected. Embedded fonts are subset on demand — only the glyphs you used end up
 in the file. Kerning, basic ligatures, and ToUnicode CMaps are emitted
 automatically.
 
@@ -373,17 +430,21 @@ QR convenience factories:
 ```php
 use Dskripchenko\PhpPdf\Barcode\QrEncoder;
 
-$vcard = QrEncoder::vCard(
-    fullName: 'Jane Doe',
-    org: 'Acme Corp',
-    email: 'jane@example.com',
-    phone: '+1-555-0100',
-);
+$vcard = QrEncoder::vCard([
+    'name' => 'Jane Doe',
+    'org' => 'Acme Corp',
+    'email' => 'jane@example.com',
+    'tel' => '+1-555-0100',
+]);
 
 $wifi = QrEncoder::wifi(ssid: 'guest', password: 'welcome', hidden: false);
 
-$mailto = QrEncoder::mailto('hello@example.com', subject: 'Hi');
+$email = QrEncoder::email('hello@example.com', subject: 'Hi');
 ```
+
+`vCard()` (3.0) takes `name`, `org`, `title`, `tel`, `email`, `url` and
+`address`. The other factories are `url()`, `sms($phone, $message)` and
+`geo($latitude, $longitude, zoom: ...)`.
 
 See [COMPARISON.md](COMPARISON.md#barcodes) for the full list of 16
 supported formats.
@@ -468,20 +529,24 @@ use Dskripchenko\PhpPdf\Build\DocumentBuilder;
 use Dskripchenko\PhpPdf\Build\ParagraphBuilder;
 
 DocumentBuilder::new()
-    ->heading(1, 'Top')
+    ->heading(1, 'Contents')
     ->paragraph(function (ParagraphBuilder $p) {
-        $p->text('Visit ')->link('https://example.com', 'our site');
+        $p->text('Visit ')->link('https://example.com', 'our site')
+          ->text(', or jump to ')->internalLink('terms', 'the terms');
     })
-    ->bookmark('Chapter 1', level: 1)
-    ->heading(1, 'Chapter 1')
-    ->paragraph('Body...')
+    ->heading(1, 'Chapter 1')          // h1–h6 build the outline
+    ->heading(2, 'Section 1.1')
+    ->paragraph(fn (ParagraphBuilder $p) => $p->bookmark('terms')->text('Terms apply.'))
     ->toFile('linked.pdf');
 ```
 
-Hyperlink kinds emitted: `URI`, `Dest` (named destination),
-JavaScript, Launch, and named-page destinations. The outline panel
-(bookmarks) is multi-level — pass `level: 2` for a subsection, `level:
-3` for a sub-subsection, and so on.
+The outline panel (bookmarks) is built from the headings: `heading(1, …)`
+is a top-level entry, `heading(2, …)` nests under it, and so on down to
+level 6. `ParagraphBuilder::bookmark($name)` marks a named destination;
+`internalLink($name, …)` jumps to it, `link($url, …)` opens a URI. On a
+`Pdf\Page` there are also `addExternalLink()`, `addInternalLink()`,
+`addNamedActionLink()`, `addJavaScriptLink()` and `addLaunchLink()` for
+absolutely positioned link areas.
 
 Heading auto-anchors: `<h1 id="intro">` becomes a named destination, so
 `<a href="#intro">jump</a>` works inside HTML input.
@@ -496,32 +561,29 @@ use Dskripchenko\PhpPdf\Element\FormField;
 
 DocumentBuilder::new()
     ->heading(1, 'Application form')
-    ->block(new FormField(
-        type: 'text',
-        name: 'full_name',
-        x: 100, y: 700, w: 200, h: 24,
-    ))
-    ->block(new FormField(
-        type: 'checkbox',
-        name: 'agree',
-        x: 100, y: 660, w: 14, h: 14,
-        defaultValue: 'on',
-    ))
-    ->block(new FormField(
-        type: 'combo',
-        name: 'country',
-        x: 100, y: 620, w: 200, h: 24,
-        options: ['US', 'UK', 'DE', 'RU', 'CN'],
-        defaultValue: 'US',
-    ))
-    ->block(new FormField(
-        type: 'submit',
-        name: 'send',
-        x: 100, y: 580, w: 80, h: 28,
-        buttonCaption: 'Submit',
-        submitUrl: 'https://example.com/submit',
-    ))
+    ->block(new FormField('full_name', tooltip: 'Full name'))
+    ->block(new FormField('agree', FormField::TYPE_CHECKBOX, widthPt: 14, heightPt: 14))
+    ->block(new FormField('country', FormField::TYPE_COMBO,
+        defaultValue: 'US', options: ['US', 'UK', 'DE', 'RU', 'CN']))
+    ->block(new FormField('send', FormField::TYPE_SUBMIT_BUTTON, widthPt: 80, heightPt: 28,
+        buttonCaption: 'Submit', submitUrl: 'https://example.com/submit'))
     ->toFile('form.pdf');
+```
+
+`FormField` is a block in the flow: it takes `name`, `type` (text by
+default), `defaultValue`, `widthPt` / `heightPt` (200 × 20 by default),
+`tooltip`, `required`, `readOnly`, `options` and the script and button
+arguments below. To place a field at absolute coordinates, add it to a
+`Pdf\Page`:
+
+```php
+use Dskripchenko\PhpPdf\Pdf\Document;
+
+$doc = Document::new();
+$page = $doc->addPage();
+$page->addFormField('text', 'full_name', x: 100, y: 700, width: 200, height: 24);
+$page->addFormField('checkbox', 'agree', x: 100, y: 660, width: 14, height: 14, defaultValue: 'on');
+$doc->toFile('form-absolute.pdf');
 ```
 
 Field types: `text`, `text-multiline`, `password`, `checkbox`,
@@ -626,7 +688,7 @@ $doc  = Document::new(PaperSize::A4);
 $page = $doc->addPage();
 $page->showText('Highlighted text', 72, 720, StandardFont::Helvetica, 12);
 $page->addHighlightAnnotation(
-    x1: 72, y1: 720, x2: 200, y2: 735,
+    x: 72, y: 716, width: 100, height: 16,
     contents: 'Reviewer note: confirm this number.',
     color: [1.0, 1.0, 0.4],
 );
@@ -702,7 +764,14 @@ $doc->toFile('signed.pdf');
 The PDF is emitted with placeholder `/ByteRange` and `/Contents`, then
 patched in place with the detached CMS signature (PAdES by default). Signature fields in the
 layout flow, stamp design, placeholders, fonts and several signers are
-covered in the [signing guide](SIGNING.md).
+covered in the [signing guide](SIGNING.md). For keys that never leave a
+device or service there are ready-made signers:
+[php-pdf-pkcs11](https://github.com/dskripchenko/php-pdf-pkcs11) (HSMs,
+smart cards, USB tokens),
+[php-pdf-cloud-kms](https://github.com/dskripchenko/php-pdf-cloud-kms)
+(AWS KMS, Google Cloud KMS, Azure Key Vault) and
+[php-pdf-cryptopro](https://github.com/dskripchenko/php-pdf-cryptopro)
+(CryptoPro CSP on the server) — see [SIGNING.md](SIGNING.md#keys-and-certificates).
 
 ---
 
@@ -714,14 +783,23 @@ use Dskripchenko\PhpPdf\Pdf\PdfAConfig;
 
 $doc = Document::new();
 $doc->enablePdfA(new PdfAConfig(
-    conformance: PdfAConfig::CONFORMANCE_B,   // or CONFORMANCE_A, CONFORMANCE_U
+    iccProfilePath: 'vendor/dskripchenko/php-pdf/resources/icc/sRGB2014.icc',
+    part: PdfAConfig::PART_2,                 // PART_1, PART_2 or PART_3
+    conformance: PdfAConfig::CONFORMANCE_U,   // or CONFORMANCE_A, CONFORMANCE_B
     title: 'Archive copy',
     author: 'Acme Corp',
     lang: 'en-US',
 ));
 // Conformance 'A' auto-enables Tagged PDF.
+$doc->addPage();
 $doc->toFile('pdfa.pdf');
 ```
+
+The output intent needs an sRGB ICC profile; the package ships one in
+`resources/icc/sRGB2014.icc`. PDF/A-1 takes conformance A or B; PDF/A-2
+and PDF/A-3 also U. PDF/A also requires every font to be embedded — the
+base-14 fonts fail validation, so set text in a TTF (`PdfFont`, or an
+`Engine` with `defaultFont` for laid-out documents).
 
 `enablePdfA()` is incompatible with `encrypt()` and `enablePdfX()` —
 the library throws on conflict.
@@ -747,19 +825,21 @@ use Dskripchenko\PhpPdf\Pdf\PdfXConfig;
 
 $doc = Document::new();
 $doc->enablePdfX(new PdfXConfig(
+    iccProfilePath: 'vendor/dskripchenko/php-pdf/resources/icc/sRGB2014.icc',
     variant: PdfXConfig::VARIANT_X4,
-    outputConditionIdentifier: 'FOGRA39',
-    outputCondition: 'Coated FOGRA39',
-    registryName: 'http://www.color.org',
     title: 'Print master',
-    trapped: 'False',
+    trapped: PdfXConfig::TRAPPED_FALSE,
 ));
+$doc->addPage();
 $doc->toFile('print.pdf');
 ```
 
-Variants: `VARIANT_X1A`, `VARIANT_X3`, `VARIANT_X4`. Caller is
-responsible for content-level compliance (e.g. CMYK conversion for
-X-1a, no transparency for X-1a / X-3).
+Variants: `VARIANT_X1A`, `VARIANT_X3`, `VARIANT_X4`. The bundled sRGB
+profile serves X-3 and X-4; for a press condition pass its CMYK profile
+(for X-1a a CMYK profile is required — none is bundled) with
+`iccProfileName`, `outputConditionIdentifier` (e.g. `FOGRA39`) and
+`outputCondition`. Caller is responsible for content-level compliance
+(e.g. CMYK conversion for X-1a, no transparency for X-1a / X-3).
 
 ---
 
@@ -820,23 +900,20 @@ $page = $doc->addPage();
 $page->showText('Lower left', 30, 30, StandardFont::Helvetica, 10);
 $page->showText('Hello, world!', 200, 400, StandardFont::TimesRoman, 24);
 
-// Filled rectangle.
-$page->saveState();
-$page->setNonStrokingColor(0.9, 0.1, 0.1);
-$page->fillRectangle(100, 100, 200, 50);
-$page->restoreState();
+// Filled rectangle (x, y, width, height, RGB 0..1).
+$page->fillRect(100, 100, 200, 50, r: 0.9, g: 0.1, b: 0.1);
 
-// Line.
-$page->saveState();
-$page->setStrokingColor(0, 0, 0);
-$page->setLineWidth(2.0);
-$page->moveTo(50, 200);
-$page->lineTo(550, 200);
-$page->stroke();
-$page->restoreState();
+// Outlined rectangle and a line, 2 pt wide.
+$page->strokeRect(100, 300, 200, 50, lineWidthPt: 2.0);
+$page->strokeLine(50, 200, 550, 200, lineWidthPt: 2.0);
 
+$doc->metadata(title: 'Ticket', author: 'Acme Corp');
 file_put_contents('low-level.pdf', $doc->toBytes());
 ```
+
+Other drawing methods on `Pdf\Page`: `fillRoundedRect()`,
+`strokeRoundedRect()`, `strokeDashedLine()`, `fillPolygon()`,
+`strokePolyline()`, `drawImage()`.
 
 `Pdf\Document` has no layout engine — coordinates are in PDF points
 (1/72 inch), origin at the bottom-left. Use it for ticket-style or
@@ -845,8 +922,9 @@ caller.
 
 Configuration on `Pdf\Document`:
 
-- `setMetadata(...)` — Title, Author, Subject, Keywords, Creator,
-  Producer, CreationDate.
+- `metadata(title: ..., author: ..., subject: ..., keywords: ...,
+  creator: ..., producer: ..., creationDate: ...)` — the `/Info`
+  dictionary.
 - `useXrefStream(true)` — emit cross-reference as a stream object
   (PDF 1.5+), ~50% smaller metadata footprint.
 - `useObjectStreams(true)` — pack non-stream dictionaries into Object

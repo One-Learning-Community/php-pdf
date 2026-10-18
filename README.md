@@ -23,8 +23,6 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![PHP](https://img.shields.io/badge/PHP-8.2%2B-purple.svg)](https://www.php.net)
 
-🌐 [Русский](docs/ru/README.md) · [中文](docs/zh/README.md) · [Deutsch](docs/de/README.md) · [English](docs/en/README.md)
-
 ---
 
 ## Contents
@@ -34,6 +32,7 @@
 - [Quick start](#quick-start)
 - [Feature highlights](#feature-highlights)
 - [Documentation](#documentation)
+- [The php-pdf family](#the-php-pdf-family)
 - [Performance](#performance)
 - [Requirements](#requirements)
 - [Testing](#testing)
@@ -77,8 +76,15 @@ PDF stack:
   locks) and **long-term validation** (B-LT DSS, B-LTA document timestamps);
   **signature validation** against the known PDF signature attacks;
   **detached CAdES signatures** (`.p7s`) of any bytes, signed and verified.
-- **PDF/A-1a / 1b / 2u and PDF/X-1a / 3 / 4** conformance with embedded
-  sRGB ICC profile and XMP metadata.
+  Ready-made signers for PKCS#11 tokens and HSMs
+  ([php-pdf-pkcs11](https://github.com/dskripchenko/php-pdf-pkcs11)), cloud
+  KMS — AWS, Google, Azure
+  ([php-pdf-cloud-kms](https://github.com/dskripchenko/php-pdf-cloud-kms)) —
+  and CryptoPro CSP on the server
+  ([php-pdf-cryptopro](https://github.com/dskripchenko/php-pdf-cryptopro)).
+- **PDF/A-1a, 1b, 2b, 2u and 3b** (validated with veraPDF in CI) and
+  **PDF/X-1a / 3 / 4** conformance with embedded ICC profile and XMP
+  metadata.
 - **Tagged PDF / PDF/UA-ready** structure tree with H1–H6, Table/TR/TD,
   L/LI, custom RoleMap, ParentTree number tree.
 - **Streaming output** to a stream resource for large documents.
@@ -165,21 +171,36 @@ file_put_contents('hello.pdf', $doc->toBytes());
   `<cite>`, `<dfn>`, `<q>`, `<abbr>`.
 - HTML5 semantic blocks (`<header>`, `<footer>`, `<article>`, `<nav>`,
   `<section>`, etc.) and legacy `<center>` / `<font>`.
-- Inline CSS: color, background, font properties, text-align,
-  text-decoration, text-transform, margin/padding shorthand, borders,
-  line-height, text-indent.
+- CSS from `<style>` blocks and `style` attributes, with the cascade:
+  type, class, id and attribute selectors, `:first-child`, `:last-child`,
+  `:nth-child()`, `:not()`, descendant / `>` / `+` / `~` combinators,
+  specificity, `!important` — no CSS inliner needed.
+- `@media print` applied, `@media screen` skipped; `@page` size and
+  margins.
+- Inheritance as in a browser: color, font, text-align, line-height and
+  the like set on `body`, a `div` or a `td` reach the text inside.
+- `div` containers with margin, padding, background and border;
+  `display: flex` (one row), `display: none`.
+- Table styles: `width`, `table-layout: auto`, `border-collapse` /
+  `border-spacing`, cell `padding` and `vertical-align`, `<col>` widths;
+  `<thead>` rows repeat on every page.
+- `page-break-*` / `break-*`, `white-space: pre` / `pre-wrap` /
+  `pre-line`; solid, dashed, dotted and double borders.
+- Not supported: external stylesheets, floats, positioning, grid,
+  pseudo-elements.
 
 ### Layout and typography
 - Knuth–Plass box–glue–penalty line breaker with adaptive penalty.
 - Multi-column layout (`ColumnSet`) with column-first flow.
-- Tables with rowspan, colspan, border collapse, double borders, border
-  radius, cell padding.
+- Tables with rowspan, colspan, border collapse, double, dashed and dotted
+  borders, border radius, cell padding.
 - Headers, footers, watermarks (text and image), section breaks.
 - Footnotes with page-bottom positioning.
 
 ### Fonts
 - 14 Adobe base-14 fonts (WinAnsi).
-- TTF embedding with on-demand subsetting (CFF and TrueType).
+- TrueType-outline fonts (`.ttf`, TrueType-flavoured `.otf`) with
+  on-demand subsetting; CFF-based OpenType is not supported.
 - Kerning, basic GSUB ligatures, ToUnicode CMap.
 - Variable font instances (fvar, gvar, MVAR, HVAR, avar).
 - Bidi (UAX#9), Arabic shaping, basic Indic shaping.
@@ -194,7 +215,8 @@ file_put_contents('hello.pdf', $doc->toBytes());
   Append, FNC1), Data Matrix ECC 200 (all sizes incl. 144×144,
   rectangular, 6 modes), PDF417 (Byte/Text/Numeric, Macro, GS1, ECI),
   Aztec Compact 1–4L + Full 5–32L (Structured Append, FLG/ECI).
-- QR convenience factories: vCard 3.0, WiFi Joinware, mailto.
+- QR convenience factories: vCard 3.0, WiFi (Joinware), URL, SMS,
+  email (`mailto:`), geo location.
 
 ### Charts
 - BarChart, LineChart, PieChart, AreaChart, DonutChart, GroupedBarChart,
@@ -213,7 +235,14 @@ file_put_contents('hello.pdf', $doc->toBytes());
   location, signer name, certificate chain and RFC 3161 timestamps;
   signature stamps (text, images, QR) with certificate placeholders,
   several signature fields, invisible signatures.
-- PDF/A-1a, PDF/A-1b, PDF/A-2u with embedded sRGB ICC.
+- Ready-made signers: PKCS#11 tokens and HSMs
+  ([php-pdf-pkcs11](https://github.com/dskripchenko/php-pdf-pkcs11)), AWS
+  KMS, Google Cloud KMS and Azure Key Vault
+  ([php-pdf-cloud-kms](https://github.com/dskripchenko/php-pdf-cloud-kms)),
+  CryptoPro CSP on the server
+  ([php-pdf-cryptopro](https://github.com/dskripchenko/php-pdf-cryptopro)).
+- PDF/A-1a, PDF/A-1b, PDF/A-2b, PDF/A-2u, PDF/A-3b with embedded sRGB ICC,
+  validated with veraPDF in CI.
 - PDF/X-1a, PDF/X-3, PDF/X-4 with /OutputIntent /S /GTS_PDFX.
 - Tagged PDF / PDF/UA-ready structure tree.
 
@@ -276,6 +305,19 @@ CJK, rectangular DataMatrix, …) — see [VIEWER-MATRIX](docs/en/VIEWER-MATRIX.
 
 ---
 
+## The php-pdf family
+
+| Package | What it adds |
+|---|---|
+| **php-pdf** (this package) | The core: HTML with CSS or a builder to PDF, read, merge, fill forms, sign and validate. |
+| [laravel-php-pdf](https://github.com/dskripchenko/laravel-php-pdf) | Laravel bridge: a Blade view straight to PDF, `response()->pdf()`, signing from config. |
+| [php-pdf-fonts-liberation](https://github.com/dskripchenko/php-pdf-fonts-liberation) | Liberation Sans, Serif and Mono, metric-compatible with Arial, Times New Roman and Courier New (OFL, kept out of the MIT core). |
+| [php-pdf-cryptopro](https://github.com/dskripchenko/php-pdf-cryptopro) | Signs with a key in CryptoPro CSP on the server: GOST R 34.10-2012, Russian qualified signatures. |
+| [php-pdf-pkcs11](https://github.com/dskripchenko/php-pdf-pkcs11) | Signs with a key on an HSM, a smart card or a USB token, through PKCS#11. |
+| [php-pdf-cloud-kms](https://github.com/dskripchenko/php-pdf-cloud-kms) | Signs with a key in AWS KMS, Google Cloud KMS or Azure Key Vault. |
+
+---
+
 ## Performance
 
 Median of 5 isolated subprocess runs (environment and versions in the report). Full
@@ -284,10 +326,10 @@ methodology and reproducer in [docs/en/BENCHMARKS.md](docs/en/BENCHMARKS.md).
 <!-- bench:table:start — generated by scripts/bench/run.php, do not edit -->
 | Scenario | dskripchenko/php-pdf | mpdf | tcpdf | dompdf | FPDF |
 |---|---:|---:|---:|---:|---:|
-| HTML → PDF article (~5 pages) | **12.0 ms** | 64.1 ms | 37.4 ms | 51.7 ms | _n/a_ |
-| 100-page invoice (50 rows/page) | **576 ms** | 2640 ms | 1479 ms | 9586 ms | 27.3 ms |
-| Image grid (20 pages × 4 JPEGs) | **6.7 ms** | 36.3 ms | 14.5 ms | 32.8 ms | 1.0 ms |
-| Hello world (single page, one paragraph) | **4.3 ms** | 28.4 ms | 12.9 ms | 11.5 ms | 0.9 ms |
+| HTML → PDF article (~5 pages) | **15.2 ms** | 61.9 ms | 38.0 ms | 48.1 ms | _n/a_ |
+| 100-page invoice (50 rows/page) | **632 ms** | 2300 ms | 1342 ms | 9156 ms | 26.4 ms |
+| Image grid (20 pages × 4 JPEGs) | **7.7 ms** | 36.5 ms | 16.9 ms | 31.8 ms | 1.0 ms |
+| Hello world (single page, one paragraph) | **5.0 ms** | 29.4 ms | 15.0 ms | 11.7 ms | 0.9 ms |
 <!-- bench:table:end -->
 
 FPDF wins on the simplest scenarios (no HTML, no wrapping, no table
@@ -312,7 +354,7 @@ composer install
 vendor/bin/phpunit
 ```
 
-2,000+ tests, ~119k assertions, all passing on PHP 8.2 / 8.3 / 8.4 (see the [tests workflow](https://github.com/dskripchenko/php-pdf/actions/workflows/tests.yml)).
+2,480+ tests, ~120k assertions, run on PHP 8.2 / 8.3 / 8.4 / 8.5 in CI (see the [tests workflow](https://github.com/dskripchenko/php-pdf/actions/workflows/tests.yml)).
 
 ---
 

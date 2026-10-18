@@ -1,6 +1,6 @@
 {
     "name": "dskripchenko/php-pdf",
-    "description": "MIT alternative to mpdf (GPL) and FPDI: pure-PHP PDF toolkit — generate (HTML/CSS input, fluent builders, low-level emission, 16 barcode formats, 8 chart types, TTF embedding, AcroForm, PDF/A and PDF/X), digital signatures (PAdES and GOST, visible stamps, timestamps, long-term validation, signing existing PDFs and outside the server, validation), plus read and merge existing PDFs (append/reorder pages, stamp overlays, FPDI-style import, encrypted input).",
+    "description": "MIT alternative to mpdf (GPL) and FPDI: pure-PHP PDF toolkit — generate (HTML/CSS input, fluent builders, low-level emission, 16 barcode formats, 9 chart types, TTF embedding, AcroForm, PDF/A and PDF/X), digital signatures (PAdES and GOST, visible stamps, timestamps, long-term validation, signing existing PDFs and outside the server, validation), plus read and merge existing PDFs (append/reorder pages, stamp overlays, FPDI-style import, encrypted input).",
     "type": "library",
     "license": "MIT",
     "keywords": ["pdf", "html-to-pdf", "pdf-writer", "pdf-reader", "pdf-merge", "mpdf-alternative", "fpdi-alternative", "fpdi", "gpl-free", "barcode", "qr-code", "acroform", "pdf-a", "pdf-x", "tagged-pdf", "pkcs7", "pades", "digital-signature", "esignature", "gost", "ltv", "ttf-embed"],
