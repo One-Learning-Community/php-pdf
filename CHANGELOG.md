@@ -4,6 +4,19 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- Text in the base-14 fonts (no embedded font) came out garbled outside
+  ASCII: the fonts are declared with `/WinAnsiEncoding`, but the UTF-8
+  bytes went into the content stream as they were, so "Café · 10 €" read
+  "CafÃ© Â· 10 â‚¬". Text is now converted to WinAnsi codes in
+  `Page::showText()`, watermarks, laid-out documents and form-field
+  appearances; a character WinAnsi has no code for (Cyrillic, CJK…) is
+  shown as `?` — embed a font for those. Symbol and ZapfDingbats keep
+  their own codes, and text that is not valid UTF-8 passes through as
+  WinAnsi bytes.
+
 ## [1.19.1] — 2026-10-16
 
 ### Fixed

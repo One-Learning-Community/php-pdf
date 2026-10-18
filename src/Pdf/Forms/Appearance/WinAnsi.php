@@ -41,16 +41,7 @@ final class WinAnsi
      */
     public static function encode(string $utf8): ?string
     {
-        if (self::$reverse === null) {
-            self::$reverse = [];
-            for ($code = 0x20; $code <= 0xFF; $code++) {
-                $cp = self::codepoint($code);
-                if ($cp !== null) {
-                    self::$reverse[$cp] = $code;
-                }
-            }
-        }
-
+        self::buildReverse();
         $out = '';
         foreach (mb_str_split($utf8, 1, 'UTF-8') as $char) {
             $code = self::$reverse[mb_ord($char, 'UTF-8')] ?? null;
@@ -61,5 +52,38 @@ final class WinAnsi
         }
 
         return $out;
+    }
+
+    /**
+     * Encode UTF-8 text as WinAnsi bytes for a base-14 font, with `?` for a
+     * character WinAnsi has no code for. Bytes that are not valid UTF-8 are
+     * taken to be WinAnsi already and pass through unchanged.
+     */
+    public static function encodeLossy(string $text): string
+    {
+        if ($text === '' || ! preg_match('/[\x80-\xFF]/', $text) || ! mb_check_encoding($text, 'UTF-8')) {
+            return $text;
+        }
+        self::buildReverse();
+        $out = '';
+        foreach (mb_str_split($text, 1, 'UTF-8') as $char) {
+            $codepoint = mb_ord($char, 'UTF-8');
+            $out .= $codepoint < 0x80 ? $char : chr(self::$reverse[$codepoint] ?? 0x3F);
+        }
+
+        return $out;
+    }
+
+    private static function buildReverse(): void
+    {
+        if (self::$reverse === null) {
+            self::$reverse = [];
+            for ($code = 0x20; $code <= 0xFF; $code++) {
+                $cp = self::codepoint($code);
+                if ($cp !== null) {
+                    self::$reverse[$cp] = $code;
+                }
+            }
+        }
     }
 }

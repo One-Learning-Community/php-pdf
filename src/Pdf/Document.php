@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Dskripchenko\PhpPdf\Pdf;
 
+use Dskripchenko\PhpPdf\Pdf\Forms\Appearance\WinAnsi;
 use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\AppearanceRenderer;
 use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\SignatureAppearance;
 use Dskripchenko\PhpPdf\Pdf\Signature\Appearance\StampValues;
@@ -2538,7 +2539,7 @@ final class Document
             : sprintf("BT\n/Helv %s Tf\n0 g\n%s %s Td\n%s Tj\nET\n",
                 $this->fmt($fontSize),
                 $this->fmt($padding), $this->fmt($textY),
-                $this->pdfString($text),
+                $this->pdfString(WinAnsi::encodeLossy($text)),
             );
         // q .. Q wrap + clip to bbox.
         $content = sprintf(
@@ -2590,7 +2591,7 @@ final class Document
         $resources = sprintf('<< /Font << /Helv %d 0 R >> >>', $fontId);
         $fontSize = 11.0;
         // Approximate caption width — Helvetica avg. ~5pt per char @ 11pt.
-        $captionWidth = strlen($caption) * $fontSize * 0.5;
+        $captionWidth = mb_strlen($caption, 'UTF-8') * $fontSize * 0.5;
         $tx = max(2.0, ($w - $captionWidth) / 2.0);
         $ty = ($h - $fontSize) / 2.0 + 1.0;
         $content = sprintf(
@@ -2599,7 +2600,7 @@ final class Document
             $this->fmt($w), $this->fmt($h),
             $this->fmt($fontSize),
             $this->fmt($tx), $this->fmt($ty),
-            $this->pdfString($caption),
+            $this->pdfString(WinAnsi::encodeLossy($caption)),
         );
 
         return $this->emitAppearanceStream($writer, $w, $h, $content, $resources);
