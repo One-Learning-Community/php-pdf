@@ -6,6 +6,7 @@ namespace Dskripchenko\PhpPdf\Tests\Pdf;
 
 use Dskripchenko\PhpPdf\Pdf\Document as PdfDocument;
 use Dskripchenko\PhpPdf\Pdf\StandardFont;
+use Dskripchenko\PhpPdf\Tests\Support\PdfBytes;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -36,7 +37,7 @@ final class StreamingOutputTest extends TestCase
         fclose($mem);
 
         self::assertSame(strlen($expected), $written);
-        self::assertSame($expected, $actual);
+        self::assertSame(PdfBytes::stable($expected), PdfBytes::stable($actual));
     }
 
     #[Test]

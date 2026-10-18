@@ -15,6 +15,7 @@ use Dskripchenko\PhpPdf\Section;
 use Dskripchenko\PhpPdf\Style\Border;
 use Dskripchenko\PhpPdf\Style\BorderStyle;
 use Dskripchenko\PhpPdf\Style\TableStyle;
+use Dskripchenko\PhpPdf\Tests\Support\PdfBytes;
 use PHPUnit\Framework\Attributes\Test;
 use PHPUnit\Framework\TestCase;
 
@@ -52,7 +53,7 @@ final class BorderSpacingTest extends TestCase
         $doc8 = new Document(new Section([$this->table(8)]));
         $b0 = $doc0->toBytes(new Engine(compressStreams: false));
         $b8 = $doc8->toBytes(new Engine(compressStreams: false));
-        self::assertNotSame($b0, $b8);
+        self::assertNotSame(PdfBytes::stable($b0), PdfBytes::stable($b8));
     }
 
     #[Test]
@@ -63,6 +64,6 @@ final class BorderSpacingTest extends TestCase
         $b0 = $doc0->toBytes(new Engine(compressStreams: false));
         $b8 = $doc8->toBytes(new Engine(compressStreams: false));
         // In collapse mode the spacing must have no effect.
-        self::assertSame($b0, $b8);
+        self::assertSame(PdfBytes::stable($b0), PdfBytes::stable($b8));
     }
 }
