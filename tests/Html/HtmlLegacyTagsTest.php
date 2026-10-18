@@ -110,11 +110,12 @@ final class HtmlLegacyTagsTest extends TestCase
     }
 
     #[Test]
-    public function font_face_first_choice_from_list(): void
+    public function font_face_keeps_the_family_list(): void
     {
+        // The engine takes the first family it can use.
         $blocks = $this->parse('<p><font face="Arial, Helvetica, sans-serif">multi</font></p>');
         $run = $blocks[0]->children[0];
-        self::assertSame('Arial', $run->style->fontFamily);
+        self::assertSame('Arial, Helvetica, sans-serif', $run->style->fontFamily);
     }
 
     #[Test]

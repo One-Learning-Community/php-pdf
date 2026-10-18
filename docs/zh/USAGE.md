@@ -304,10 +304,29 @@ $doc->toFile('report.pdf');
   `white-space`（`pre`、`pre-wrap`、`pre-line`、`nowrap`）。`&nbsp;` 会保留。
 - 块：`margin`、`padding`、`border`（简写、按边、`-width`、`-style`、
   `-color`）、`background-color`、`text-align`、`line-height`（倍数、%、
-  长度）、`text-indent`、`display: none / block / flex`。
+  长度）、`text-indent`、`display: none / block / flex / grid`。
 - 容器：包含块元素的 `div`（`section` 等）保留其中的块；其 margin 和
   padding 形成间距与缩进，背景或边框会在外面画出框。`display: flex`
-  让子元素并排（`gap`、`width` / `flex-basis`、`align-items`）。
+  让子元素并排（`gap`、`width` / `flex-basis`、`align-items`）；配合
+  `flex-wrap: wrap` 时按子元素宽度换成所需的多行，`flex-direction: column`
+  让它们纵向堆叠。`display: grid` 将子元素逐行排入
+  `grid-template-columns` 定义的列（长度、`%`、`fr`、`auto`、`repeat()`、
+  `minmax()`），`grid-column: span n`（或 `a / b`）跨越多列，
+  `gap` / `row-gap` / `column-gap` 设置间距。
+- 浮动与定位：`float: left / right` 让元素与其后的内容并排，直到带
+  `clear` 的元素为止；浮动提前结束时，文字不会流到其下方。
+  `position: absolute` 按 `top` / `right` / `bottom` / `left` 在页面区域
+  内放置元素——或相对于已定位（`relative` 等）祖先的起点——且不占据
+  空间；`position: fixed` 从该处起在每一页上做同样的放置。
+  `position: relative` 自身的偏移不生效。
+- 任意块上的 `break-inside: avoid`（`page-break-inside`）使其保持在同一页；
+  高于一页的块仍会被拆分。
+- 生成内容：`::before` / `::after`（也支持 `:before` / `:after`）配合
+  `content`——带 CSS 转义的字符串、`attr(name)`、`open-quote` /
+  `close-quote`——由其自身的规则设置样式；不支持 `counter()`。
+- 样式表：`<style>` 与 `<link rel="stylesheet">` 按文档顺序生效；链接可
+  指向本地文件或 `data:text/css` URL——不获取远程样式表（解析器不发起
+  网络请求）。
 - 表格：`width`、`table-layout`（`auto` 像浏览器一样按内容确定列宽）、
   `border-collapse`、`border-spacing`、`border`、`margin`（`auto` 居中）；
   `<col>` 宽度；单元格：`border`、`background-color`、`padding`、
@@ -323,8 +342,9 @@ $doc->toFile('report.pdf');
 `Document::fromHtml()` 的 `$baseFontSizePt`（默认 12）——请把引擎的
 `defaultFontSizePt` 传给它。
 
-**不支持：** 外部样式表（`<link rel="stylesheet">`）、`position`、浮动、
-grid、`::before` / `::after`、`:hover` 等动态伪类、表单、JavaScript。
+**不支持：** 远程样式表与 `@import`、`grid-template-areas` 与显式 grid
+行定位、`position: relative` 偏移、文字流到浮动元素下方、`:hover` 等动态
+伪类、表单、JavaScript。
 
 ---
 
@@ -358,7 +378,9 @@ DocumentBuilder::new()
 包含其全部字形的回退字体排版。
 
 `FontProvider` 为指定了字体族的文本提供字体 —— 即 run 的
-`RunStyle(fontFamily: ...)` 或 CSS `font-family`（列表中的第一个字体族）。
+`RunStyle(fontFamily: ...)` 或 CSS `font-family`（列表中 provider 拥有的
+第一个字体族；没有内嵌字体时，通用名称选择 base-14 字体——`serif` 用
+Times，`monospace` 用 Courier）。
 它不会改变默认字体：
 
 ```php

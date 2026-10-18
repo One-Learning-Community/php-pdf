@@ -180,14 +180,25 @@ file_put_contents('hello.pdf', $doc->toBytes());
 - Inheritance as in a browser: color, font, text-align, line-height and
   the like set on `body`, a `div` or a `td` reach the text inside.
 - `div` containers with margin, padding, background and border;
-  `display: flex` (one row), `display: none`.
+  `display: flex` (rows, `flex-wrap`, `flex-direction: column`, `gap`),
+  `display: grid` (`grid-template-columns` with lengths, `%`, `fr`,
+  `repeat()`, `minmax()`; `grid-column: span n`; `gap`), `display: none`.
+- `float: left / right` with `clear`; `position: absolute` and `fixed`
+  (a fixed element repeats on every page); `break-inside: avoid` keeps a
+  block on one page.
+- `::before` / `::after` with `content` (strings, `attr()`, quotes);
+  `<link rel="stylesheet">` to local files and `data:` URLs;
+  `font-family` lists (the first family that can be used).
 - Table styles: `width`, `table-layout: auto`, `border-collapse` /
   `border-spacing`, cell `padding` and `vertical-align`, `<col>` widths;
   `<thead>` rows repeat on every page.
 - `page-break-*` / `break-*`, `white-space: pre` / `pre-wrap` /
   `pre-line`; solid, dashed, dotted and double borders.
-- Not supported: external stylesheets, floats, positioning, grid,
-  pseudo-elements.
+- Approximations: text beside a float does not run on under it;
+  `position: relative` only anchors its absolute children (its own offsets
+  are not applied); remote style sheets are not fetched. Not supported:
+  `grid-template-areas` and explicit row placement, `@import`, `:hover`
+  and other dynamic pseudo-classes.
 
 ### Layout and typography
 - Knuth–Plass box–glue–penalty line breaker with adaptive penalty.

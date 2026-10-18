@@ -36,14 +36,17 @@ oder veröffentlichen zu müssen.
 | Fluent-Builder (Document → Section)    | ✅      | ❌   | ❌    | ❌     | ❌   |
 | HTML/CSS-Eingabe                       | ✅      | ✅   | ⚠️ einfach | ✅  | ❌   |
 | Inline-`style`-Attribute               | ✅      | ✅   | ⚠️    | ✅     | ❌   |
-| `<style>`-Blöcke / externes CSS        | ✅ `<style>` mit Kaskade (kein externes `<link>`) | ✅   | ⚠️    | ✅     | ❌   |
+| `<style>`-Blöcke / externes CSS        | ✅ `<style>` mit Kaskade, lokales `<link>` (kein entferntes) | ✅   | ⚠️    | ✅     | ❌   |
 | CSS-Selektoren und Spezifität, `@media print` | ✅ | ✅  | ⚠️    | ✅     | ❌   |
 | `@page`-Größe und -Ränder              | ✅      | ✅   | ⚠️    | ✅     | ❌   |
-| Flexbox                                | ⚠️ eine Zeile | ❌ | ❌    | ❌     | ❌   |
-| Float-Layout                           | ❌      | ✅   | ⚠️    | ✅     | ❌   |
+| Flexbox                                | ✅ Zeilen, Umbruch, Spalte | ❌ | ❌    | ❌     | ❌   |
+| CSS-Grid                               | ✅ Spalten, Spans (keine Areas) | ❌ | ❌ | ❌  | ❌   |
+| Float-Layout                           | ⚠️ nebeneinander, kein Umfließen | ✅ | ⚠️ | ✅ | ❌   |
+| `position: absolute / fixed`           | ✅      | ✅   | ⚠️    | ✅     | ❌   |
+| `::before` / `::after`                 | ✅ Text-content | ⚠️ | ❌ | ✅    | ❌   |
 
-Für komplexes HTML oder CSS (Floats, Positionierung, Grid, externe Stylesheets)
-gehen `dompdf` und `mpdf` weiter. Für Geschäftsdokumente (Absätze,
+Für CSS auf Browser-Niveau — Text, der um Floats fließt, Versätze von
+`position: relative`, entfernte Stylesheets — gehen `dompdf` und `mpdf` weiter. Für Geschäftsdokumente (Absätze,
 Tabellen, Listen, Stylesheets (`<style>` mit Kaskade), Überschriften) ist `php-pdf` auf
 Augenhöhe und bietet bessere Performance.
 
@@ -202,8 +205,8 @@ leistet — ist eingebaut und MIT-lizenziert, ohne proprietäres Add-on.
 - Sie es bereits im Stack haben und die Migration nicht gerechtfertigt
   ist.
 - Ihr Projekt GPL-kompatibel ist.
-- Sie umfangreichere CSS-Abdeckung benötigen (Floats, Positionierung,
-  externe Stylesheets).
+- Sie CSS auf Browser-Niveau benötigen (Text, der um Floats fließt,
+  entfernte Stylesheets).
 - Sie die mpdf-Dokumentation und das Stack-Overflow-Korpus bevorzugen.
 
 ### **tecnickcom/tcpdf** wählen, wenn

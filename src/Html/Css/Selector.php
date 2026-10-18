@@ -11,8 +11,11 @@ namespace Dskripchenko\PhpPdf\Html\Css;
  * Supported: type, `*`, `.class`, `#id`, `[attr]`, `[attr=value]` (also
  * `~=`, `^=`, `$=`, `*=`), `:first-child`, `:last-child`, `:only-child`,
  * `:nth-child(n|odd|even|an+b)`, `:not(simple)`, and the combinators
- * descendant, `>`, `+`, `~`. A selector with anything else (hover, pseudo
- * elements, …) matches nothing.
+ * descendant, `>`, `+`, `~`. A trailing `::before` / `::after` (or the
+ * old `:before` / `:after`) makes it a pseudo-element selector: it matches
+ * the same elements, and its rules style the generated content. A
+ * selector with anything else (hover, other pseudo-elements, …) matches
+ * nothing.
  *
  * @internal
  */
@@ -27,11 +30,22 @@ final class Selector
     private function __construct(
         private readonly array $parts,
         public readonly int $specificity,
+        /** 'before' or 'after' for a pseudo-element selector. */
+        public readonly ?string $pseudoElement = null,
     ) {}
 
     public static function parse(string $selector): ?self
     {
         $selector = trim((string) preg_replace('/\s*([>+~])\s*/', ' $1 ', trim($selector)));
+        $pseudoElement = null;
+        if (preg_match('/::?(before|after)$/i', $selector, $m) === 1) {
+            $pseudoElement = strtolower($m[1]);
+            $selector = rtrim(substr($selector, 0, -strlen($m[0])));
+            // "::before" alone applies to every element.
+            if ($selector === '' || in_array(substr($selector, -1), ['>', '+', '~', ' '], true)) {
+                $selector .= '*';
+            }
+        }
         if ($selector === '') {
             return null;
         }
@@ -69,7 +83,7 @@ final class Selector
             ];
         }
 
-        return new self($reversed, $specificity);
+        return new self($reversed, $specificity + ($pseudoElement !== null ? 1 : 0), $pseudoElement);
     }
 
     /**

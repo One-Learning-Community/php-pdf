@@ -164,14 +164,23 @@ file_put_contents('hello.pdf', $doc->toBytes());
 - 与浏览器一致的继承：在 `body`、`div` 或 `td` 上设置的 color、字体、
   text-align、line-height 等属性会作用到其内部文本。
 - `div` 容器支持 margin、padding、background 与 border；
-  `display: flex`（单行）、`display: none`。
+  `display: flex`（多行、`flex-wrap`、`flex-direction: column`、`gap`）、
+  `display: grid`（`grid-template-columns` 支持长度、`%`、`fr`、
+  `repeat()`、`minmax()`；`grid-column: span n`；`gap`）、`display: none`。
+- `float: left / right` 与 `clear`；`position: absolute` 和 `fixed`
+  （fixed 元素在每一页重复）；`break-inside: avoid` 使块保持在同一页。
+- `::before` / `::after` 与 `content`（字符串、`attr()`、引号）；
+  指向本地文件和 `data:` URL 的 `<link rel="stylesheet">`；
+  `font-family` 列表（取第一个可用的字体族）。
 - 表格样式：`width`、`table-layout: auto`、`border-collapse` /
   `border-spacing`、单元格 `padding` 与 `vertical-align`、`<col>` 宽度；
   `<thead>` 行在每一页重复。
 - `page-break-*` / `break-*`、`white-space: pre` / `pre-wrap` /
   `pre-line`；实线、虚线、点线与双线边框。
-- 不支持：外部样式表、浮动、定位、grid、
-  伪元素。
+- 近似实现：浮动元素旁的文字不会流到其下方；`position: relative`
+  仅作为其 absolute 子元素的定位基准（自身偏移不生效）；不获取远程
+  样式表。不支持：`grid-template-areas` 与显式行定位、`@import`、
+  `:hover` 等动态伪类。
 
 ### 布局与排版
 - Knuth–Plass box–glue–penalty 断行算法，带自适应惩罚。

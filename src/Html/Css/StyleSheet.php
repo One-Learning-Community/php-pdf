@@ -30,9 +30,13 @@ final class StyleSheet
     /** @var \WeakMap<\DOMElement, array<string, string>> */
     private \WeakMap $cache;
 
+    /** @var \WeakMap<\DOMElement, array<string, array<string, string>>> */
+    private \WeakMap $pseudoCache;
+
     public function __construct()
     {
         $this->cache = new \WeakMap;
+        $this->pseudoCache = new \WeakMap;
     }
 
     public function add(string $css): void
@@ -127,7 +131,7 @@ final class StyleSheet
 
         $matched = [];
         foreach ($this->rules as $rule) {
-            if ($rule['selector']->matches($element)) {
+            if ($rule['selector']->pseudoElement === null && $rule['selector']->matches($element)) {
                 $matched[] = $rule;
             }
         }
@@ -154,6 +158,44 @@ final class StyleSheet
         }
 
         return $this->cache[$element] = array_merge($normal, $important);
+    }
+
+    /**
+     * The declarations of an element's `::before` or `::after`, by the
+     * cascade; empty when no rule targets it.
+     *
+     * @param  'before'|'after'  $which
+     * @return array<string, string>
+     */
+    public function pseudoDeclarationsFor(\DOMElement $element, string $which): array
+    {
+        $cached = $this->pseudoCache[$element] ?? null;
+        if ($cached !== null && isset($cached[$which])) {
+            return $cached[$which];
+        }
+        $matched = [];
+        foreach ($this->rules as $rule) {
+            if ($rule['selector']->pseudoElement === $which && $rule['selector']->matches($element)) {
+                $matched[] = $rule;
+            }
+        }
+        usort($matched, static fn (array $a, array $b): int => [$a['selector']->specificity, $a['order']] <=> [$b['selector']->specificity, $b['order']]);
+        $normal = [];
+        $important = [];
+        foreach ($matched as $rule) {
+            foreach ($rule['declarations'] as $name => [$value, $isImportant]) {
+                if ($isImportant) {
+                    $important[$name] = $value;
+                } else {
+                    $normal[$name] = $value;
+                }
+            }
+        }
+        $cached ??= [];
+        $cached[$which] = array_merge($normal, $important);
+        $this->pseudoCache[$element] = $cached;
+
+        return $cached[$which];
     }
 
     /**

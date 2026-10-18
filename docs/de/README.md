@@ -177,14 +177,26 @@ file_put_contents('hello.pdf', $doc->toBytes());
   Ähnliches, gesetzt an `body`, einem `div` oder einer `td`, erreichen den
   Text darin.
 - `div`-Container mit margin, padding, background und border;
-  `display: flex` (eine Zeile), `display: none`.
+  `display: flex` (Zeilen, `flex-wrap`, `flex-direction: column`, `gap`),
+  `display: grid` (`grid-template-columns` mit Längen, `%`, `fr`,
+  `repeat()`, `minmax()`; `grid-column: span n`; `gap`), `display: none`.
+- `float: left / right` mit `clear`; `position: absolute` und `fixed`
+  (ein fixed-Element wiederholt sich auf jeder Seite); `break-inside: avoid`
+  hält einen Block auf einer Seite.
+- `::before` / `::after` mit `content` (Strings, `attr()`, Anführungszeichen);
+  `<link rel="stylesheet">` auf lokale Dateien und `data:`-URLs;
+  `font-family`-Listen (die erste verwendbare Familie).
 - Tabellenstile: `width`, `table-layout: auto`, `border-collapse` /
   `border-spacing`, Zellen-`padding` und `vertical-align`, `<col>`-Breiten;
   `<thead>`-Zeilen wiederholen sich auf jeder Seite.
 - `page-break-*` / `break-*`, `white-space: pre` / `pre-wrap` /
   `pre-line`; durchgezogene, gestrichelte, gepunktete und doppelte Rahmen.
-- Nicht unterstützt: externe Stylesheets, Floats, Positionierung, Grid,
-  Pseudo-Elemente.
+- Näherungen: Text neben einem Float läuft nicht unter ihm weiter;
+  `position: relative` dient nur als Bezug für absolute Kinder (die eigenen
+  Versätze werden nicht angewandt); entfernte Stylesheets werden nicht
+  geladen. Nicht unterstützt: `grid-template-areas` und explizite
+  Zeilenplatzierung, `@import`, `:hover` und andere dynamische
+  Pseudoklassen.
 
 ### Layout und Typografie
 - Knuth–Plass-Zeilenumbruch nach dem Box-Glue-Penalty-Modell mit

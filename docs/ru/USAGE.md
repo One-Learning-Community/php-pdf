@@ -322,11 +322,33 @@ $doc->toFile('report.pdf');
 - Блоки: `margin`, `padding`, `border` (сокращение, по сторонам,
   `-width`, `-style`, `-color`), `background-color`, `text-align`,
   `line-height` (множитель, %, длина), `text-indent`,
-  `display: none / block / flex`.
+  `display: none / block / flex / grid`.
 - Контейнеры: `div` (`section`, …) с блоками внутри оставляет их
   блоками; его margin и padding дают отступы, фон или рамка — коробку
   вокруг. `display: flex` ставит детей в ряд (`gap`, `width` /
-  `flex-basis`, `align-items`).
+  `flex-basis`, `align-items`); с `flex-wrap: wrap` они переносятся на
+  столько строк, сколько требуют их ширины, `flex-direction: column`
+  ставит их друг под другом. `display: grid` раскладывает детей ряд за
+  рядом по колонкам `grid-template-columns` (длины, `%`, `fr`, `auto`,
+  `repeat()`, `minmax()`), `grid-column: span n` (или `a / b`) растягивает
+  на несколько колонок, `gap` / `row-gap` / `column-gap` задают зазоры.
+- Обтекание и позиционирование: `float: left / right` ставит элемент и
+  следующее за ним содержимое рядом — до элемента с `clear`; под
+  float, который закончился раньше, текст не перетекает.
+  `position: absolute` размещает элемент по `top` / `right` / `bottom` /
+  `left` в области страницы — или от начала позиционированного
+  (`relative`, …) предка — не занимая места; `position: fixed` делает то
+  же на каждой странице начиная с текущей. Смещения самого
+  `position: relative` не применяются.
+- `break-inside: avoid` (`page-break-inside`) на любом блоке удерживает
+  его на одной странице; блок выше страницы всё равно разбивается.
+- Генерируемое содержимое: `::before` / `::after` (также `:before` /
+  `:after`) с `content` — строки с CSS-экранированием, `attr(name)`,
+  `open-quote` / `close-quote` — со своими собственными правилами стилей; `counter()` не поддерживается.
+- Таблицы стилей: `<style>` и `<link rel="stylesheet">` в порядке
+  документа; ссылка может вести на локальный файл или на
+  `data:text/css`-URL — удалённые таблицы стилей не загружаются (парсер не
+  делает сетевых запросов).
 - Таблицы: `width`, `table-layout` (`auto` подбирает колонки по
   содержимому, как браузер), `border-collapse`, `border-spacing`,
   `border`, `margin` (`auto` центрирует); ширины `<col>`; ячейки:
@@ -344,9 +366,10 @@ $doc->toFile('report.pdf');
 задал, — от `$baseFontSizePt` у `Document::fromHtml()` (по умолчанию 12):
 передайте туда `defaultFontSizePt` движка.
 
-**Не поддерживается:** внешние стили (`<link rel="stylesheet">`),
-`position`, обтекание (float), grid, `::before` / `::after`, `:hover` и
-другие динамические псевдоклассы, формы, JavaScript.
+**Не поддерживается:** удалённые таблицы стилей и `@import`,
+`grid-template-areas` и явное размещение по строкам grid, смещения
+`position: relative`, перетекание текста под float, `:hover` и другие
+динамические псевдоклассы, формы, JavaScript.
 
 ---
 
@@ -383,7 +406,9 @@ DocumentBuilder::new()
 
 `FontProvider` обслуживает текст, в котором названо семейство шрифта, —
 `RunStyle(fontFamily: ...)` у run или CSS `font-family` (первое семейство
-в списке). Шрифт по умолчанию он не меняет:
+из списка, которое есть у провайдера; без встроенного шрифта общие имена
+выбирают начертание base-14 — `serif` Times, `monospace` Courier). Шрифт
+по умолчанию он не меняет:
 
 ```php
 use Dskripchenko\PhpPdf\Document;

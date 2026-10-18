@@ -175,14 +175,26 @@ file_put_contents('hello.pdf', $doc->toBytes());
   подобные свойства, заданные на `body`, `div` или `td`, доходят до текста
   внутри.
 - Контейнеры `div` с margin, padding, фоном и рамкой; `display: flex`
-  (одна строка), `display: none`.
+  (ряды, `flex-wrap`, `flex-direction: column`, `gap`), `display: grid`
+  (`grid-template-columns` с длинами, `%`, `fr`, `repeat()`, `minmax()`;
+  `grid-column: span n`; `gap`), `display: none`.
+- `float: left / right` с `clear`; `position: absolute` и `fixed`
+  (fixed-элемент повторяется на каждой странице); `break-inside: avoid`
+  удерживает блок на одной странице.
+- `::before` / `::after` с `content` (строки, `attr()`, кавычки);
+  `<link rel="stylesheet">` на локальные файлы и `data:`-URL;
+  списки `font-family` (берётся первое доступное семейство).
 - Стили таблиц: `width`, `table-layout: auto`, `border-collapse` /
   `border-spacing`, `padding` и `vertical-align` ячеек, ширины `<col>`;
   строки `<thead>` повторяются на каждой странице.
 - `page-break-*` / `break-*`, `white-space: pre` / `pre-wrap` /
   `pre-line`; сплошные, пунктирные, точечные и двойные рамки.
-- Не поддерживаются: внешние таблицы стилей, float, позиционирование,
-  grid, псевдоэлементы.
+- Приближения: текст рядом с float не перетекает под него;
+  `position: relative` только служит точкой отсчёта для absolute-потомков
+  (собственные смещения не применяются); удалённые таблицы стилей не
+  загружаются. Не поддерживаются: `grid-template-areas` и явное
+  размещение по строкам, `@import`, `:hover` и другие динамические
+  псевдоклассы.
 
 ### Раскладка и типографика
 - Алгоритм переносов Кнута–Пласса (box–glue–penalty) с адаптивным

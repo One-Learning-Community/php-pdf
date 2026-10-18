@@ -312,11 +312,32 @@ $doc->toFile('report.pdf');
   `pre-line`, `nowrap`). `&nbsp;` is kept.
 - Blocks: `margin`, `padding`, `border` (shorthand, per side, `-width`,
   `-style`, `-color`), `background-color`, `text-align`, `line-height`
-  (multiplier, %, length), `text-indent`, `display: none / block / flex`.
+  (multiplier, %, length), `text-indent`, `display: none / block / flex /
+  grid`.
 - Containers: a `div` (`section`, …) holding blocks keeps them as
   blocks; its margin and padding space and indent them, a background or a
   border draws a box around them. `display: flex` puts the children side
-  by side (`gap`, `width` / `flex-basis`, `align-items`).
+  by side (`gap`, `width` / `flex-basis`, `align-items`); with
+  `flex-wrap: wrap` they go into as many lines as their widths need,
+  `flex-direction: column` stacks them. `display: grid` lays the children
+  out row by row in the columns of `grid-template-columns` (lengths, `%`,
+  `fr`, `auto`, `repeat()`, `minmax()`), `grid-column: span n` (or
+  `a / b`) spans columns, `gap` / `row-gap` / `column-gap` separate them.
+- Floats and positioning: `float: left / right` puts the element and the
+  content after it side by side, up to an element with `clear`; the text
+  does not run on under a float that ends early. `position: absolute`
+  places the element by `top` / `right` / `bottom` / `left` in the page
+  area — or from the start of a positioned (`relative`, …) ancestor —
+  without taking room; `position: fixed` does the same on every page from
+  there on. `position: relative` offsets themselves are not applied.
+- `break-inside: avoid` (`page-break-inside`) on any block keeps it on one
+  page; a block taller than a page still splits.
+- Generated content: `::before` / `::after` (also `:before` / `:after`)
+  with `content` — strings with CSS escapes, `attr(name)`, `open-quote` /
+  `close-quote` — styled by their own rules; `counter()` is not supported.
+- Style sheets: `<style>` and `<link rel="stylesheet">` in document order;
+  a link may point to a local file or a `data:text/css` URL — remote style
+  sheets are not fetched (the parser makes no network requests).
 - Tables: `width`, `table-layout` (`auto` sizes columns by their content,
   as browsers do), `border-collapse`, `border-spacing`, `border`, `margin`
   (`auto` centres); `<col>` widths; cells: `border`, `background-color`,
@@ -333,9 +354,10 @@ $doc->toFile('report.pdf');
 `$baseFontSizePt` of `Document::fromHtml()` (12 by default) — pass the
 engine's `defaultFontSizePt` there.
 
-**Not supported:** external stylesheets (`<link rel="stylesheet">`),
-`position`, floats, grid, `::before` / `::after`, `:hover` and other
-dynamic pseudo-classes, forms, JavaScript.
+**Not supported:** remote style sheets and `@import`,
+`grid-template-areas` and explicit grid row placement, `position: relative`
+offsets, text running on under a float, `:hover` and other dynamic
+pseudo-classes, forms, JavaScript.
 
 ---
 
@@ -370,8 +392,9 @@ DocumentBuilder::new()
 is set in the first fallback that has all its glyphs.
 
 A `FontProvider` serves text that names a font family — a run's
-`RunStyle(fontFamily: ...)` or CSS `font-family` (the first family in
-the list). It does not change the default font:
+`RunStyle(fontFamily: ...)` or CSS `font-family` (the first family of
+the list the provider has; without an embedded font, generic names pick
+the base-14 face — `serif` Times, `monospace` Courier). It does not change the default font:
 
 ```php
 use Dskripchenko\PhpPdf\Document;
