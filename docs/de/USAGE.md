@@ -345,7 +345,9 @@ $doc->toFile('report.pdf');
   trotzdem geteilt.
 - Generierter Inhalt: `::before` / `::after` (auch `:before` / `:after`)
   mit `content` — Strings mit CSS-Escapes, `attr(name)`, `open-quote` /
-  `close-quote` —, gestaltet über eigene Regeln; `counter()` wird nicht unterstützt.
+  `close-quote` sowie die Seitenzähler `counter(page)` / `counter(pages)`
+  (Seitenzahl, Seitenanzahl) —, gestaltet über eigene Regeln; andere
+  Zähler werden nicht unterstützt.
 - Stylesheets: `<style>` und `<link rel="stylesheet">` in
   Dokumentreihenfolge; ein Link darf auf eine lokale Datei oder eine
   `data:text/css`-URL zeigen — entfernte Stylesheets werden nicht geladen
@@ -370,6 +372,51 @@ gesetzt ist, auf `$baseFontSizePt` von `Document::fromHtml()`
 `grid-template-areas` und explizite Grid-Zeilenplatzierung, Versätze von
 `position: relative`, Text, der unter einem Float weiterläuft, `:hover`
 und andere dynamische Pseudoklassen, Formulare, JavaScript.
+
+### Den Parser erweitern
+
+Eine Anwendung kann vor dem Parser entscheiden, was aus einem Element
+wird — ein Signaturfeld, eine Fußnote, ein Barcode, ein eigenes Tag —
+und woher Bilder kommen:
+
+```php
+use Dskripchenko\PhpPdf\Document;
+use Dskripchenko\PhpPdf\Element\Footnote;
+use Dskripchenko\PhpPdf\Element\SignatureField;
+use Dskripchenko\PhpPdf\Html\ElementHandler;
+use Dskripchenko\PhpPdf\Html\HtmlContext;
+
+final class TemplateElements implements ElementHandler
+{
+    public function handle(\DOMElement $element, HtmlContext $context): ?array
+    {
+        return match (true) {
+            $element->hasAttribute('data-signature') => [new SignatureField($element->getAttribute('data-signature'))],
+            $context->inline && str_contains($element->getAttribute('class'), 'footnote') => [new Footnote(trim($element->textContent))],
+            default => null, // the parser's own reading
+        };
+    }
+}
+
+$doc = Document::fromHtml($html,
+    elementHandlers: [new TemplateElements],
+    imageSource: fn (string $src): ?string => str_starts_with($src, 'storage://') ? $storage->get(substr($src, 10)) : null,
+);
+```
+
+Handler werden der Reihe nach zu jedem Element befragt — Block-Elemente
+zwischen Blöcken, die übrigen dort, wo Text fließt (`$context->inline`);
+die erste Antwort ungleich null gewinnt. `$context->style` ist der
+Textstil am Element, und `$context->inlines($element)` /
+`$context->blocks($element)` lesen seinen Inhalt so, wie der Parser es
+täte, damit ein Handler ihn umschließen kann. `imageSource` erhält jedes
+`src` zuerst; null fällt auf `data:`-URLs und lesbare lokale Dateien
+zurück.
+
+Seitenzahlen brauchen keinen Handler: `content: counter(page)` und
+`counter(pages)` in `::before` / `::after` drucken Seitenzahl und
+Seitenanzahl —
+`.page-number::after { content: "Seite " counter(page) " von " counter(pages) }`.
 
 ---
 

@@ -107,6 +107,11 @@ final readonly class Document
      * @param  float  $baseFontSizePt  What `em`, `rem` and `%` refer to where no
      *                                 element sets a size; pass the engine's
      *                                 `defaultFontSizePt`.
+     * @param  list<\Dskripchenko\PhpPdf\Html\ElementHandler>  $elementHandlers  Decide what an element becomes
+     *                                                                          before the parser does — signature fields, footnotes,
+     *                                                                          custom tags (see {@see \Dskripchenko\PhpPdf\Html\ElementHandler}).
+     * @param  ?\Closure(string): ?string  $imageSource  The bytes of an image by its `src`; null falls back to `data:` URLs
+     *                                                    and readable local files.
      */
     public static function fromHtml(
         string $html,
@@ -121,8 +126,10 @@ final readonly class Document
         ?\Dskripchenko\PhpPdf\Pdf\SignatureConfig $signature = null,
         ?\Dskripchenko\PhpPdf\Pdf\PdfAConfig $pdfA = null,
         float $baseFontSizePt = 12.0,
+        array $elementHandlers = [],
+        ?\Closure $imageSource = null,
     ): self {
-        $parser = new \Dskripchenko\PhpPdf\Html\HtmlParser($baseFontSizePt);
+        $parser = new \Dskripchenko\PhpPdf\Html\HtmlParser($baseFontSizePt, $elementHandlers, $imageSource);
         $blocks = $parser->parse($html);
 
         if ($sectionTemplate !== null) {
