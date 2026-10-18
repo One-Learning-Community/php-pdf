@@ -198,7 +198,8 @@ file_put_contents('hello.pdf', $doc->toBytes());
 ### Schriftarten
 - 14 Adobe-Base-14-Schriftarten (WinAnsi).
 - Schriften mit TrueType-Outlines (`.ttf`, TrueType-basierte `.otf`) mit
-  On-Demand-Subsetting; CFF-basiertes OpenType wird nicht unterstützt.
+  On-Demand-Subsetting; CFF-basiertes OpenType (`.otf`) wird vollständig,
+  ohne Subsetting eingebettet; CFF2 (variables CFF) wird nicht unterstützt.
 - Kerning, einfache GSUB-Ligaturen, ToUnicode-CMap.
 - Variable-Font-Instanzen (fvar, gvar, MVAR, HVAR, avar).
 - Bidi (UAX#9), Arabische Schaping, einfache indische Schaping.

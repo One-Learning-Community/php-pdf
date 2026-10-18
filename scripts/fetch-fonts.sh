@@ -35,6 +35,8 @@ fi
 # Extra fonts for the torture set (examples/torture): Arabic + CJK coverage.
 #   Amiri (SIL OFL 1.1) — Arabic shaping/bidi reference face.
 #   DroidSansFallback (Apache 2.0) — CJK ideographs + kana, TrueType glyf.
+# And a CFF-outline OpenType font (tests/Pdf/CffFontEmbeddingTest, conformance):
+#   Source Sans 3 (SIL OFL 1.1) — static .otf with a 'CFF ' table.
 fetch_font() {
     local file="$1" url="$2" sha="$3"
     if [ -f "$file" ]; then
@@ -61,3 +63,7 @@ fetch_font "Amiri-Regular.ttf" \
 fetch_font "DroidSansFallback.ttf" \
     "https://raw.githubusercontent.com/aosp-mirror/platform_frameworks_base/nougat-release/data/fonts/DroidSansFallback.ttf" \
     "56d3edfb377a8bc3c4b77f4476405c770173c0e31221ad7c77d0a8e1f3039a3e"
+
+fetch_font "SourceSans3-Regular.otf" \
+    "https://raw.githubusercontent.com/adobe-fonts/source-sans/3.052R/OTF/SourceSans3-Regular.otf" \
+    "08df266400933d3178d081a45f94a08814c3e55b4b7dd2e0ff69cb1329f13ab6"

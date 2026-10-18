@@ -406,9 +406,12 @@ font found — it resolves names, not missing glyphs; per-glyph fallback is
 ships `LiberationFontProvider`: Liberation Sans, Serif and Mono, also
 under the names `Arial`, `Times New Roman` and `Courier New`.
 
-Only TrueType-outline fonts are embedded (`.ttf`, TrueType-flavoured
-`.otf`); CFF-based OpenType fonts are rejected. Embedded fonts are subset on demand — only the glyphs you used end up
-in the file. Kerning, basic ligatures, and ToUnicode CMaps are emitted
+TrueType-outline fonts (`.ttf`, TrueType-flavoured `.otf`) are subset on
+demand — only the glyphs you used end up in the file. CFF-based OpenType
+fonts (`.otf` with a `CFF ` table) are embedded whole, without subsetting,
+as a CIDFontType0 with a `/FontFile3 /CIDFontType0C` program (allowed in
+PDF/A-1 too); expect the full CFF size in the output (100–200 KB for a Latin
+plus Cyrillic face). CFF2 (variable CFF) fonts are rejected. Kerning, basic ligatures, and ToUnicode CMaps are emitted
 automatically.
 
 ---

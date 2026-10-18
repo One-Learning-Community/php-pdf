@@ -21,13 +21,17 @@ namespace Dskripchenko\PhpPdf\Font\Ttf;
  * Does NOT parse: glyf/loca/cvt/fpgm/prep (these contain glyph outlines +
  * hinting and are embedded in the PDF as an opaque FontFile2 stream).
  *
+ * OpenType fonts with CFF outlines ('OTTO', `CFF ` table) are accepted too:
+ * the tables above work the same for them, and the `CFF ` table is embedded
+ * as a FontFile3 stream (see CffTable). CFF2 (variable CFF) is refused.
+ *
  * Reference: ISO/IEC 14496-22 + Apple TrueType Reference Manual.
  */
 final class TtfFile
 {
     /**
      * Scaler type magic. 0x00010000 = TTF (Windows/Adobe).
-     * 'true' = Apple TTF (old). 'OTTO' = OTF with CFF (NOT supported).
+     * 'true' = Apple TTF (old). 'OTTO' = OTF with CFF outlines.
      */
     private const SCALER_TTF = 0x00010000;
 
@@ -63,11 +67,15 @@ final class TtfFile
 
     private bool $isFixedPitch;
 
+    /** Parsed `CFF ` table; null for TrueType outlines. */
+    private ?CffTable $cff = null;
+
     public function __construct(
         private readonly string $bytes,
     ) {
         $this->reader = new BinaryReader($bytes);
         $this->parseTableDirectory();
+        $this->parseCff();
         $this->parseHead();
         $this->parseMaxp();
         $this->parseHhea();
@@ -144,6 +152,33 @@ final class TtfFile
     public function rawBytes(): string
     {
         return $this->bytes;
+    }
+
+    /** True for OpenType fonts with CFF outlines (embedded as FontFile3). */
+    public function isCff(): bool
+    {
+        return $this->cff !== null;
+    }
+
+    /** Raw bytes of the `CFF ` table, for embedding as /CIDFontType0C. */
+    public function cffTableBytes(): string
+    {
+        $info = $this->tableInfo('CFF ');
+        if ($info === null) {
+            throw new \LogicException('Not a CFF-based font.');
+        }
+
+        return substr($this->bytes, $info['offset'], $info['length']);
+    }
+
+    /**
+     * Character code / CID under which the glyph is written into a PDF
+     * content stream. Equal to the glyph index, except for CID-keyed CFF
+     * fonts, where a reader maps CIDs to glyphs through the CFF charset.
+     */
+    public function cidForGlyph(int $glyphId): int
+    {
+        return $this->cff === null ? $glyphId : $this->cff->cidForGlyph($glyphId);
     }
 
     public function unitsPerEm(): int
@@ -504,11 +539,10 @@ final class TtfFile
         $scaler = $this->reader->readUInt32();
 
         // 0x00010000 for standard TTF, 'OTTO' for CFF-based OTF.
+        $magic = substr($this->bytes, 0, 4);
         if ($scaler !== self::SCALER_TTF
-            && substr($this->bytes, 0, 4) !== self::SCALER_APPLE) {
-            if (substr($this->bytes, 0, 4) === self::SCALER_OTF_CFF) {
-                throw new \RuntimeException('CFF-based OTF fonts not supported in POC; need TTF outline-based.');
-            }
+            && $magic !== self::SCALER_APPLE
+            && $magic !== self::SCALER_OTF_CFF) {
             throw new \RuntimeException(sprintf('Unknown font scaler 0x%08X', $scaler));
         }
 
@@ -522,6 +556,32 @@ final class TtfFile
             $length = $this->reader->readUInt32();
             $this->tables[$tag] = ['offset' => $offset, 'length' => $length];
         }
+    }
+
+    /**
+     * Outline format check. 'OTTO' fonts must carry a `CFF ` table; CFF2
+     * (the variable-font flavour) is not embeddable as CIDFontType0C and has
+     * no PDF 1.x font program type, so it is refused up front.
+     */
+    private function parseCff(): void
+    {
+        if (substr($this->bytes, 0, 4) !== self::SCALER_OTF_CFF) {
+            return;
+        }
+        $info = $this->tableInfo('CFF ');
+        if ($info === null) {
+            if ($this->tableInfo('CFF2') !== null) {
+                throw new \RuntimeException(
+                    'OpenType fonts with CFF2 outlines (variable CFF) are not supported; '
+                    .'use a static CFF (.otf) or TrueType (.ttf) build of the font.'
+                );
+            }
+            throw new \RuntimeException("OpenType font has neither a 'CFF ' nor a 'glyf' outline table.");
+        }
+        if ($info['offset'] + $info['length'] > strlen($this->bytes)) {
+            throw new \RuntimeException("Malformed font: 'CFF ' table runs past the end of the file.");
+        }
+        $this->cff = CffTable::parse(substr($this->bytes, $info['offset'], $info['length']));
     }
 
     /**
@@ -562,6 +622,13 @@ final class TtfFile
         $offset = $this->requireTable('maxp');
         $this->reader->seek($offset + 4);
         $this->numGlyphs = $this->reader->readUInt16();
+        if ($this->cff !== null && $this->cff->glyphCount() !== $this->numGlyphs) {
+            throw new \RuntimeException(sprintf(
+                'Malformed font: CFF has %d glyphs, maxp says %d.',
+                $this->cff->glyphCount(),
+                $this->numGlyphs,
+            ));
+        }
     }
 
     /**

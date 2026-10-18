@@ -130,12 +130,13 @@ final class TtfFileTest extends TestCase
     }
 
     #[Test]
-    public function rejects_otf_cff_files(): void
+    public function rejects_otf_without_outline_tables(): void
     {
-        // OTF files with CFF have the magic 'OTTO' (0x4F54544F).
-        $fakeOtf = "OTTO\x00\x01\x00\x00";
+        // 'OTTO' (CFF-flavoured OpenType) header with an empty table directory.
+        // CFF fonts themselves are covered by tests/Pdf/CffFontEmbeddingTest.
+        $fakeOtf = "OTTO\x00\x00\x00\x00\x00\x00\x00\x00";
         $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('CFF-based OTF');
+        $this->expectExceptionMessage("neither a 'CFF ' nor a 'glyf'");
         new TtfFile($fakeOtf);
     }
 

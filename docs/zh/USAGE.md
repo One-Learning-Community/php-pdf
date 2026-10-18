@@ -394,8 +394,11 @@ run 的字重与样式依次请求 `X-BoldItalic`、`X-Bold`、`X-Italic`、`X-R
 提供 `LiberationFontProvider`：Liberation Sans、Serif 和 Mono，也可通过
 `Arial`、`Times New Roman` 和 `Courier New` 这些名称获取。
 
-只有 TrueType 轮廓字体会被内嵌（`.ttf`、TrueType 风格的 `.otf`）；
-基于 CFF 的 OpenType 字体会被拒绝。内嵌字体按需子集化 —— 只有您实际使用过的字形才会进入最终文件。
+TrueType 轮廓字体（`.ttf`、TrueType 风格的 `.otf`）按需子集化 —— 只有您实际使用过的字形才会进入最终文件。
+基于 CFF 的 OpenType 字体（带 `CFF ` 表的 `.otf`）整体内嵌、不做子集化，
+以 CIDFontType0 加 `/FontFile3 /CIDFontType0C` 字体程序的形式写入（PDF/A-1 同样允许）；
+输出中会包含完整的 CFF 大小（含拉丁与西里尔字母的字体约 100–200 KB）。
+CFF2（可变 CFF）字体会被拒绝。
 字距调整、基础连字与 ToUnicode CMap 会自动发射。
 
 ---

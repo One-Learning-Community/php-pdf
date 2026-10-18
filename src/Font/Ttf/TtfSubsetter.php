@@ -78,6 +78,10 @@ final class TtfSubsetter
      */
     public function subset(TtfFile $source, array $usedGlyphIds, ?VariableInstance $variableInstance = null): string
     {
+        if ($source->isCff()) {
+            throw new \LogicException('TtfSubsetter handles TrueType (glyf) outlines only; CFF fonts are embedded whole.');
+        }
+
         // Normalize input into a lookup map.
         $used = $this->normalizeUsedGlyphs($usedGlyphIds);
         // Glyph 0 (.notdef) — ALWAYS.

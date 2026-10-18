@@ -50,7 +50,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .cache/fonts
-          key: fonts-liberation-2.1.5-amiri-droid
+          key: fonts-liberation-2.1.5-amiri-droid-ss3
 
       - name: Fetch fonts
         run: bash scripts/fetch-fonts.sh
@@ -94,7 +94,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .cache/fonts
-          key: fonts-liberation-2.1.5-amiri-droid
+          key: fonts-liberation-2.1.5-amiri-droid-ss3
 
       - name: Fetch fonts
         run: bash scripts/fetch-fonts.sh
