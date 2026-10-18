@@ -341,8 +341,11 @@ dynamic pseudo-classes, forms, JavaScript.
 
 ## Custom fonts
 
-Without an embedded font, text is set in the base-14 Helvetica (Latin
-only). The font for body text is the engine's `defaultFont`, with
+Without an embedded font, text is set in the base-14 fonts (WinAnsi:
+Western European Latin; other characters show as `?`): Helvetica — or
+the `fallbackStandard` family — in the run's weight and slant, Times for a
+serif `fontFamily`, Courier for a monospace one, measured with their real
+widths. The font for body text is the engine's `defaultFont`, with
 optional `boldFont`, `italicFont` and `boldItalicFont`:
 
 ```php

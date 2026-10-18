@@ -349,8 +349,11 @@ dynamische Pseudoklassen, Formulare, JavaScript.
 
 ## Eigene Schriftarten
 
-Ohne eingebettete Schrift wird Text in der Base-14-Helvetica gesetzt (nur
-Latein). Die Schrift für den Fließtext ist `defaultFont` der Engine, mit
+Ohne eingebettete Schrift wird Text in den Base-14-Schriften gesetzt
+(WinAnsi: westeuropäisches Latein, andere Zeichen erscheinen als `?`):
+Helvetica — oder die Familie von `fallbackStandard` — in Stärke und Neigung
+des Laufs, Times für eine Serifen-`fontFamily`, Courier für eine
+Monospace-Familie, gemessen mit ihren echten Breiten. Die Schrift für den Fließtext ist `defaultFont` der Engine, mit
 optionalen `boldFont`, `italicFont` und `boldItalicFont`:
 
 ```php

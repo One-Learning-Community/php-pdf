@@ -330,7 +330,9 @@ grid、`::before` / `::after`、`:hover` 等动态伪类、表单、JavaScript�
 
 ## 自定义字体
 
-没有内嵌字体时，文字使用 base-14 的 Helvetica（仅拉丁字符）排版。
+没有内嵌字体时，文字使用 base-14 字体排版（WinAnsi：西欧拉丁字符，其他字符显示为 `?`）：
+Helvetica（或 `fallbackStandard` 的字族），按文本段的粗细与倾斜选择字形；衬线
+`fontFamily` 用 Times，等宽字族用 Courier；宽度按其真实字宽计算。
 正文字体是引擎的 `defaultFont`，另外可选 `boldFont`、`italicFont` 和
 `boldItalicFont`：
 
