@@ -6,6 +6,7 @@ namespace Dskripchenko\PhpPdf\Html;
 
 use Dskripchenko\PhpPdf\Element\BlockElement;
 use Dskripchenko\PhpPdf\Element\Cell;
+use Dskripchenko\PhpPdf\Element\Field;
 use Dskripchenko\PhpPdf\Element\Heading;
 use Dskripchenko\PhpPdf\Element\HorizontalRule;
 use Dskripchenko\PhpPdf\Element\Hyperlink;
@@ -83,6 +84,12 @@ use Dskripchenko\PhpPdf\Style\VerticalAlignment;
 final class HtmlParser
 {
     /** Elements that are never rendered. */
+    /** A `counter(page)` piece of `content`. */
+    private const PAGE_COUNTER = "\0page";
+
+    /** A `counter(pages)` piece of `content`. */
+    private const PAGES_COUNTER = "\0pages";
+
     private const SKIP = ['head', 'title', 'script', 'style', 'meta', 'link', 'noscript', 'template', 'base'];
 
 
@@ -119,7 +126,17 @@ final class HtmlParser
      *                                 outside any element that sets one — the
      *                                 engine's default size.
      */
-    public function __construct(private readonly float $baseFontSizePt = 12.0)
+    /**
+     * @param  list<ElementHandler>  $elementHandlers  Asked first about every element (see {@see ElementHandler}).
+     * @param  ?\Closure(string): ?string  $imageSource  The bytes of an image by its `src` — from storage,
+     *                                                    a database, an allow-listed host; null falls back
+     *                                                    to `data:` URLs and readable local files.
+     */
+    public function __construct(
+        private readonly float $baseFontSizePt = 12.0,
+        private readonly array $elementHandlers = [],
+        private readonly ?\Closure $imageSource = null,
+    )
     {
         $this->css = new StyleSheet;
     }
@@ -416,6 +433,23 @@ final class HtmlParser
             if ($this->isHidden($node)) {
                 continue;
             }
+            if ($node instanceof \DOMElement && ($this->isBlockTag($node) || $this->isBlockImage($node))
+                && ($handled = $this->handled($node, inline: false)) !== null) {
+                foreach ($handled as $element) {
+                    if ($element instanceof InlineElement && ! $element instanceof BlockElement) {
+                        $pendingInlines[] = $element;
+
+                        continue;
+                    }
+                    if ($pendingInlines !== []) {
+                        $this->pushParagraph($blocks, $pendingInlines);
+                        $pendingInlines = [];
+                    }
+                    $blocks[] = $element;
+                }
+
+                continue;
+            }
             if ($node instanceof \DOMElement && ($position = $this->positioned($node)) !== null) {
                 if ($position->fixed || ! $position->inFlow) {
                     $blocks[] = $position;
@@ -496,6 +530,52 @@ final class HtmlParser
         }
 
         return $out;
+    }
+
+    /**
+     * What the element handlers make of an element; null when none of them
+     * takes it.
+     *
+     * @return list<BlockElement|InlineElement>|null
+     */
+    private function handled(\DOMElement $node, bool $inline): ?array
+    {
+        if ($this->elementHandlers === []) {
+            return null;
+        }
+        $context = new HtmlContext(
+            $this->applyInlineCssStyle($this->currentStyle(), $node, ! $inline),
+            $inline,
+            function (\DOMElement $element): array {
+                $this->enter($element, $this->styleForTag($this->currentStyle(), strtolower($element->nodeName)), false);
+                try {
+                    $out = [];
+                    foreach ($element->childNodes as $child) {
+                        $out = array_merge($out, $this->walkInlines($child));
+                    }
+
+                    return $out;
+                } finally {
+                    $this->leave();
+                }
+            },
+            function (\DOMElement $element): array {
+                $this->enter($element, $this->currentStyle(), true);
+                try {
+                    return $this->walkBlocks($element);
+                } finally {
+                    $this->leave();
+                }
+            },
+        );
+        foreach ($this->elementHandlers as $handler) {
+            $result = $handler->handle($node, $context);
+            if ($result !== null) {
+                return array_values($result);
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -2058,6 +2138,9 @@ final class HtmlParser
         if (! $node instanceof \DOMElement || $this->isHidden($node)) {
             return [];
         }
+        if (($handled = $this->handled($node, inline: true)) !== null) {
+            return array_values(array_filter($handled, static fn (object $e): bool => $e instanceof InlineElement));
+        }
 
         $tag = strtolower($node->nodeName);
 
@@ -2501,8 +2584,11 @@ final class HtmlParser
         }
 
         try {
+            $bytes = $this->imageSource !== null ? ($this->imageSource)($src) : null;
             // Data URL: data:image/png;base64,...
-            if (str_starts_with($src, 'data:')) {
+            if ($bytes !== null && $bytes !== '') {
+                $pdfImg = PdfImage::fromBytes($bytes);
+            } elseif (str_starts_with($src, 'data:')) {
                 $pdfImg = $this->parseDataUrl($src);
             } elseif (is_readable($src)) {
                 $pdfImg = PdfImage::fromPath($src);
@@ -2698,47 +2784,68 @@ final class HtmlParser
         if (! isset($decl['content']) || strtolower(trim($decl['display'] ?? '')) === 'none') {
             return [];
         }
-        $text = self::contentText($decl['content'], $node);
-        if ($text === null || $text === '') {
+        $pieces = self::contentPieces($decl['content'], $node);
+        if ($pieces === []) {
             return [];
         }
         $style = $this->applyInlineCssStyle($this->currentStyle(), $node, false, $decl);
+        $out = [];
+        foreach ($pieces as $piece) {
+            $out[] = match ($piece) {
+                self::PAGE_COUNTER => Field::page($style),
+                self::PAGES_COUNTER => Field::totalPages($style),
+                default => new Run($piece, $style),
+            };
+        }
 
-        return [new Run($text, $style)];
+        return $out;
     }
 
     /**
-     * The text of a CSS `content` value: strings (with CSS escapes),
-     * `attr(name)`, `open-quote` / `close-quote`. `none`, `normal` and
-     * counters give nothing.
+     * A CSS `content` value as text pieces and page counters: strings (with
+     * CSS escapes), `attr(name)`, `open-quote` / `close-quote`, and the
+     * paged-media counters `counter(page)` and `counter(pages)`, which become
+     * page-number fields. `none`, `normal` and other counters give nothing.
+     *
+     * @return list<string>  Text, or {@see self::PAGE_COUNTER} / {@see self::PAGES_COUNTER}.
      */
-    private static function contentText(string $value, \DOMElement $node): ?string
+    private static function contentPieces(string $value, \DOMElement $node): array
     {
         $value = trim($value);
         if (in_array(strtolower($value), ['none', 'normal', ''], true)) {
-            return null;
+            return [];
         }
-        $out = '';
+        $pieces = [];
+        $text = '';
         $offset = 0;
-        $pattern = '/\G\s*(?:"((?:[^"\\\\]|\\\\.)*)"|\'((?:[^\'\\\\]|\\\\.)*)\'|attr\(\s*([\w-]+)\s*\)|(open-quote|close-quote|no-open-quote|no-close-quote)|[a-z-]+\([^)]*\))/i';
+        $pattern = '/\G\s*(?:"((?:[^"\\\\]|\\\\.)*)"|\'((?:[^\'\\\\]|\\\\.)*)\'|attr\(\s*([\w-]+)\s*\)|(open-quote|close-quote|no-open-quote|no-close-quote)|counters?\(\s*([\w-]+)[^)]*\)|[a-z-]+\([^)]*\))/i';
         while ($offset < strlen($value) && preg_match($pattern, $value, $m, 0, $offset) === 1) {
             $offset += strlen($m[0]);
             if (($m[1] ?? '') !== '' || (isset($m[1]) && str_starts_with(ltrim($m[0]), '"'))) {
-                $out .= self::unescape($m[1]);
+                $text .= self::unescape($m[1]);
             } elseif (($m[2] ?? '') !== '' || (isset($m[2]) && str_starts_with(ltrim($m[0]), "'"))) {
-                $out .= self::unescape($m[2]);
+                $text .= self::unescape($m[2]);
             } elseif (($m[3] ?? '') !== '') {
-                $out .= $node->getAttribute($m[3]);
+                $text .= $node->getAttribute($m[3]);
             } elseif (($m[4] ?? '') !== '') {
-                $out .= match (strtolower($m[4])) {
+                $text .= match (strtolower($m[4])) {
                     'open-quote' => "\u{201C}",
                     'close-quote' => "\u{201D}",
                     default => '',
                 };
+            } elseif (in_array(strtolower($m[5] ?? ''), ['page', 'pages'], true)) {
+                if ($text !== '') {
+                    $pieces[] = $text;
+                    $text = '';
+                }
+                $pieces[] = strtolower($m[5]) === 'page' ? self::PAGE_COUNTER : self::PAGES_COUNTER;
             }
         }
+        if ($text !== '') {
+            $pieces[] = $text;
+        }
 
-        return $out;
+        return $pieces;
     }
 
     /** CSS string escapes: `\201C`, `\"`, `\A`. */

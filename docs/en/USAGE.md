@@ -334,7 +334,9 @@ $doc->toFile('report.pdf');
   page; a block taller than a page still splits.
 - Generated content: `::before` / `::after` (also `:before` / `:after`)
   with `content` — strings with CSS escapes, `attr(name)`, `open-quote` /
-  `close-quote` — styled by their own rules; `counter()` is not supported.
+  `close-quote`, and the page counters `counter(page)` / `counter(pages)`
+  (page number, page count) — styled by their own rules; other counters
+  are not supported.
 - Style sheets: `<style>` and `<link rel="stylesheet">` in document order;
   a link may point to a local file or a `data:text/css` URL — remote style
   sheets are not fetched (the parser makes no network requests).
@@ -358,6 +360,50 @@ engine's `defaultFontSizePt` there.
 `grid-template-areas` and explicit grid row placement, `position: relative`
 offsets, text running on under a float, `:hover` and other dynamic
 pseudo-classes, forms, JavaScript.
+
+### Extending the parser
+
+An application can decide what an element becomes before the parser does
+— a signature field, a footnote, a barcode, a custom tag — and where
+images come from:
+
+```php
+use Dskripchenko\PhpPdf\Document;
+use Dskripchenko\PhpPdf\Element\Footnote;
+use Dskripchenko\PhpPdf\Element\SignatureField;
+use Dskripchenko\PhpPdf\Html\ElementHandler;
+use Dskripchenko\PhpPdf\Html\HtmlContext;
+
+final class TemplateElements implements ElementHandler
+{
+    public function handle(\DOMElement $element, HtmlContext $context): ?array
+    {
+        return match (true) {
+            $element->hasAttribute('data-signature') => [new SignatureField($element->getAttribute('data-signature'))],
+            $context->inline && str_contains($element->getAttribute('class'), 'footnote') => [new Footnote(trim($element->textContent))],
+            default => null, // the parser's own reading
+        };
+    }
+}
+
+$doc = Document::fromHtml($html,
+    elementHandlers: [new TemplateElements],
+    imageSource: fn (string $src): ?string => str_starts_with($src, 'storage://') ? $storage->get(substr($src, 10)) : null,
+);
+```
+
+Handlers are asked in order about every element — block-level ones
+between blocks, the rest where text flows (`$context->inline`); the first
+non-null answer wins. `$context->style` is the text style at the element,
+and `$context->inlines($element)` / `$context->blocks($element)` read its
+content as the parser would, so a handler can wrap it. `imageSource` gets
+each `src` first; returning null falls back to `data:` URLs and readable
+local files.
+
+Page numbers need no handler: `content: counter(page)` and
+`counter(pages)` in `::before` / `::after` print the page number and the
+page count —
+`.page-number::after { content: "Page " counter(page) " of " counter(pages) }`.
 
 ---
 

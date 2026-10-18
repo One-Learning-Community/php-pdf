@@ -323,7 +323,8 @@ $doc->toFile('report.pdf');
   高于一页的块仍会被拆分。
 - 生成内容：`::before` / `::after`（也支持 `:before` / `:after`）配合
   `content`——带 CSS 转义的字符串、`attr(name)`、`open-quote` /
-  `close-quote`——由其自身的规则设置样式；不支持 `counter()`。
+  `close-quote`，以及页码计数器 `counter(page)` / `counter(pages)`
+  （页码、总页数）——由其自身的规则设置样式；不支持其他计数器。
 - 样式表：`<style>` 与 `<link rel="stylesheet">` 按文档顺序生效；链接可
   指向本地文件或 `data:text/css` URL——不获取远程样式表（解析器不发起
   网络请求）。
@@ -345,6 +346,47 @@ $doc->toFile('report.pdf');
 **不支持：** 远程样式表与 `@import`、`grid-template-areas` 与显式 grid
 行定位、`position: relative` 偏移、文字流到浮动元素下方、`:hover` 等动态
 伪类、表单、JavaScript。
+
+### 扩展解析器
+
+应用可以在解析器之前决定一个元素变成什么——签名域、脚注、条形码、
+自定义标签——以及图片从哪里获取：
+
+```php
+use Dskripchenko\PhpPdf\Document;
+use Dskripchenko\PhpPdf\Element\Footnote;
+use Dskripchenko\PhpPdf\Element\SignatureField;
+use Dskripchenko\PhpPdf\Html\ElementHandler;
+use Dskripchenko\PhpPdf\Html\HtmlContext;
+
+final class TemplateElements implements ElementHandler
+{
+    public function handle(\DOMElement $element, HtmlContext $context): ?array
+    {
+        return match (true) {
+            $element->hasAttribute('data-signature') => [new SignatureField($element->getAttribute('data-signature'))],
+            $context->inline && str_contains($element->getAttribute('class'), 'footnote') => [new Footnote(trim($element->textContent))],
+            default => null, // the parser's own reading
+        };
+    }
+}
+
+$doc = Document::fromHtml($html,
+    elementHandlers: [new TemplateElements],
+    imageSource: fn (string $src): ?string => str_starts_with($src, 'storage://') ? $storage->get(substr($src, 10)) : null,
+);
+```
+
+处理器按顺序对每个元素进行询问——块级元素在块之间询问，其余元素在文字
+流中询问（`$context->inline`）；第一个非 null 的结果生效。
+`$context->style` 是元素处的文字样式，`$context->inlines($element)` /
+`$context->blocks($element)` 按解析器的方式读取其内容，处理器可以将其
+包装。`imageSource` 最先收到每个 `src`；返回 null 时回退到 `data:` URL
+和可读的本地文件。
+
+页码无需处理器：在 `::before` / `::after` 中使用 `content: counter(page)`
+和 `counter(pages)` 即可输出页码和总页数——
+`.page-number::after { content: "第 " counter(page) " 页，共 " counter(pages) " 页" }`。
 
 ---
 

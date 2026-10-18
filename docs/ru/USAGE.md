@@ -344,7 +344,9 @@ $doc->toFile('report.pdf');
   его на одной странице; блок выше страницы всё равно разбивается.
 - Генерируемое содержимое: `::before` / `::after` (также `:before` /
   `:after`) с `content` — строки с CSS-экранированием, `attr(name)`,
-  `open-quote` / `close-quote` — со своими собственными правилами стилей; `counter()` не поддерживается.
+  `open-quote` / `close-quote`, счётчики страниц `counter(page)` / `counter(pages)`
+  (номер страницы, число страниц) — со своими собственными правилами
+  стилей; другие счётчики не поддерживаются.
 - Таблицы стилей: `<style>` и `<link rel="stylesheet">` в порядке
   документа; ссылка может вести на локальный файл или на
   `data:text/css`-URL — удалённые таблицы стилей не загружаются (парсер не
@@ -370,6 +372,50 @@ $doc->toFile('report.pdf');
 `grid-template-areas` и явное размещение по строкам grid, смещения
 `position: relative`, перетекание текста под float, `:hover` и другие
 динамические псевдоклассы, формы, JavaScript.
+
+### Расширение разбора
+
+Приложение может само решить, чем станет элемент, раньше парсера, —
+полем подписи, сноской, штрихкодом, своим тегом, — и откуда берутся
+картинки:
+
+```php
+use Dskripchenko\PhpPdf\Document;
+use Dskripchenko\PhpPdf\Element\Footnote;
+use Dskripchenko\PhpPdf\Element\SignatureField;
+use Dskripchenko\PhpPdf\Html\ElementHandler;
+use Dskripchenko\PhpPdf\Html\HtmlContext;
+
+final class TemplateElements implements ElementHandler
+{
+    public function handle(\DOMElement $element, HtmlContext $context): ?array
+    {
+        return match (true) {
+            $element->hasAttribute('data-signature') => [new SignatureField($element->getAttribute('data-signature'))],
+            $context->inline && str_contains($element->getAttribute('class'), 'footnote') => [new Footnote(trim($element->textContent))],
+            default => null, // the parser's own reading
+        };
+    }
+}
+
+$doc = Document::fromHtml($html,
+    elementHandlers: [new TemplateElements],
+    imageSource: fn (string $src): ?string => str_starts_with($src, 'storage://') ? $storage->get(substr($src, 10)) : null,
+);
+```
+
+Обработчики опрашиваются по порядку о каждом элементе — блочных между
+блоками, остальных там, где течёт текст (`$context->inline`); побеждает
+первый ответ не null. `$context->style` — стиль текста в точке элемента,
+`$context->inlines($element)` / `$context->blocks($element)` читают его
+содержимое так, как прочитал бы парсер, — обработчик может его обернуть.
+`imageSource` получает каждый `src` первым; null — обычный путь через
+`data:`-URL и локальные файлы.
+
+Номерам страниц обработчик не нужен: `content: counter(page)` и
+`counter(pages)` в `::before` / `::after` печатают номер страницы и
+число страниц —
+`.page-number::after { content: "Стр. " counter(page) " из " counter(pages) }`.
 
 ---
 

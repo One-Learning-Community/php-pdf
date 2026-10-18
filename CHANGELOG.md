@@ -4,6 +4,20 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `Html\ElementHandler` — an application decides what an HTML element
+  becomes before the parser does (a signature field, a footnote, a custom
+  tag); `Html\HtmlContext` gives it the element's style and reads the
+  element's content as the parser would. `Document::fromHtml(...,
+  elementHandlers: [...])`, `new HtmlParser(elementHandlers: [...])`.
+- `imageSource` — a closure that returns an image's bytes by its `src`
+  (storage, a database, an allow-listed host), tried before `data:` URLs and
+  local files.
+- `counter(page)` and `counter(pages)` in `::before` / `::after` `content` —
+  the page number and the page count, as in CSS paged media.
+
 ## [1.21.2] — 2026-10-18
 
 ### Fixed
