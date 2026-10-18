@@ -1137,14 +1137,39 @@ final class HtmlParser
             if ($tag === 'img' || $tag === 'svg') {
                 $image = $tag === 'img' ? $this->parseImage($child, block: true) : $this->parseInlineSvg($child);
                 $blocks = $image !== null ? [$image] : [];
+            } elseif ($this->hasBlockChild($child)) {
+                $blocks = $this->walkBlocks($child);
             } else {
-                $blocks = $this->hasBlockChild($child) ? $this->walkBlocks($child) : [$this->parseParagraph($child)];
+                // The item's box is drawn by the cell; its text goes bare.
+                $p = $this->parseParagraph($child);
+                $blocks = [new Paragraph($p->children, self::withoutBox($p->style), $p->headingLevel, $p->defaultRunStyle)];
+            }
+            if ($blocks === []) {
+                $blocks = [new Paragraph([])];
             }
             [$pt, $pr, $pb, $pl] = $this->sides($childDecl, 'padding');
             [$widthPt, $widthPercent] = $this->widthOf($childDecl['width'] ?? ($childDecl['flex-basis'] ?? null));
             $widthPt ??= $track['pt'] ?? null;
+            $bg = $this->backgroundColor($childDecl);
+            $borders = $this->borders($childDecl);
+            $hasGap = $gaps['left'] + $gaps['right'] + $gaps['top'] + $gaps['bottom'] > 0;
 
-            return new Cell($blocks === [] ? [new Paragraph([])] : $blocks, new CellStyle(
+            if ($hasGap && ($bg !== null || $borders !== null)) {
+                // The gap lies outside the item's box: the box is an inner
+                // cell, the gap the outer cell's padding.
+                $blocks = [new Table(
+                    [new Row([new Cell($blocks, new CellStyle(
+                        paddingTopPt: $pt, paddingRightPt: $pr, paddingBottomPt: $pb, paddingLeftPt: $pl,
+                        verticalAlign: $vAlign, backgroundColor: $bg, borders: $borders,
+                    ))])],
+                    new TableStyle(widthPercent: 100, borderCollapse: true),
+                )];
+                [$pt, $pr, $pb, $pl] = [0.0, 0.0, 0.0, 0.0];
+                $bg = null;
+                $borders = null;
+            }
+
+            return new Cell($blocks, new CellStyle(
                 widthPt: $widthPt,
                 widthPercent: $widthPercent,
                 paddingTopPt: $pt + $gaps['top'],
@@ -1152,12 +1177,24 @@ final class HtmlParser
                 paddingBottomPt: $pb + $gaps['bottom'],
                 paddingLeftPt: $pl + $gaps['left'],
                 verticalAlign: $vAlign,
-                backgroundColor: $this->backgroundColor($childDecl),
-                borders: $this->borders($childDecl),
+                backgroundColor: $bg,
+                borders: $borders,
             ));
         } finally {
             $this->leave();
         }
+    }
+
+    /** A paragraph style without its own box — background, border, padding, outer space. */
+    private static function withoutBox(ParagraphStyle $s): ParagraphStyle
+    {
+        return new ParagraphStyle(
+            alignment: $s->alignment,
+            indentFirstLinePt: $s->indentFirstLinePt,
+            lineHeightMult: $s->lineHeightMult,
+            lineHeightPt: $s->lineHeightPt,
+            keepWithNext: $s->keepWithNext,
+        );
     }
 
     private function styleWithPercent(CellStyle $style, ?float $percent): CellStyle
