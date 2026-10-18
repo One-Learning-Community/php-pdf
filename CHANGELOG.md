@@ -4,6 +4,14 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- A table with a cell merged down (`rowSpan`) failed with "max(): Argument
+  #1 must contain at least one element" from the second row after the
+  merge had run out — since 1.19.0. Found by printable's reference
+  documents.
+
 ## [1.21.0] — 2026-10-18
 
 ### Added

@@ -56,6 +56,22 @@ final class TableGridTest extends TestCase
     }
 
     #[Test]
+    public function rows_after_a_merge_has_run_out_lay_out(): void
+    {
+        // Once the merge is over, every column is free again; the third row
+        // used to fail on an empty max().
+        $pdf = self::render([new Table([
+            new Row([self::cell('Merged', 2), self::cell('Bravo')]),
+            new Row([self::cell('Charlie')]),
+            new Row([self::cell('Delta'), self::cell('Echo')]),
+            new Row([self::cell('Foxtrot'), self::cell('Golf')]),
+        ])]);
+
+        self::assertEqualsWithDelta(PdfGeometry::word($pdf, 'Merged')['xMin'], PdfGeometry::word($pdf, 'Delta')['xMin'], 0.5);
+        self::assertEqualsWithDelta(PdfGeometry::word($pdf, 'Bravo')['xMin'], PdfGeometry::word($pdf, 'Golf')['xMin'], 0.5);
+    }
+
+    #[Test]
     public function a_tall_merged_cell_grows_the_last_row_it_spans(): void
     {
         $tall = new Cell([new Paragraph([
