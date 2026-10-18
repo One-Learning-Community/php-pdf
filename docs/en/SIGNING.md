@@ -88,6 +88,23 @@ new SignatureConfig(signer: $mySigner);
 `sign()` the DER of the signed attributes and expects the raw signature
 value back, so the key never has to be in PHP.
 
+Ready-made `Signer`s live in companion packages:
+[php-pdf-pkcs11](https://github.com/dskripchenko/php-pdf-pkcs11) signs with
+a key on an HSM, a smart card or a USB token through PKCS#11
+(`Pkcs11Signer::open()`), and
+[php-pdf-cloud-kms](https://github.com/dskripchenko/php-pdf-cloud-kms) with
+a key in AWS KMS (`AwsKmsSigner::create()`), Google Cloud KMS
+(`GoogleKmsSigner`) or Azure Key Vault
+(`AzureKeyVaultSigner::fromCertificate()`):
+
+```php
+use Dskripchenko\PhpPdfCloudKms\Aws\AwsKmsSigner;
+use Dskripchenko\PhpPdfPkcs11\Pkcs11Signer;
+
+$signer = Pkcs11Signer::open('/usr/lib/softhsm/libsofthsm2.so', pin: $pin, keyLabel: 'signing-key');
+$signer = AwsKmsSigner::create('alias/pdf-signing', $certificatePem, region: 'eu-central-1');
+```
+
 The digest follows the key: SHA-256 for RSA and P-256, SHA-384 for P-384,
 SHA-512 for P-521, Streebog for GOST. Pass `digest:` to `OpenSslSigner`
 to choose another.
@@ -150,7 +167,21 @@ Some keys are reachable only through software that returns a whole CMS
 rather than a bare signature value: CryptoPro CSP on the server
 (`CadesSignedData.SignHash`, `cryptcp`), a signing service, an HSM front
 end. Implement `CmsSigner` and sign in one call, as with a key in the
-process — no preparing and completing by hand:
+process — no preparing and completing by hand.
+
+For CryptoPro CSP on the server,
+[php-pdf-cryptopro](https://github.com/dskripchenko/php-pdf-cryptopro)
+ships `CryptoProCadesSigner`, a ready `CmsSigner` over CryptoPro's PHP
+extension:
+
+```php
+use Dskripchenko\PhpPdfCryptoPro\CryptoProCadesSigner;
+
+$doc->sign(new SignatureConfig(signer: CryptoProCadesSigner::fromThumbprint('3A 5F … 9C', pin: $pin)));
+```
+
+Implement `CmsSigner` yourself only for other tools — `cryptcp`, a
+signing service:
 
 ```php
 use Dskripchenko\PhpPdf\Pdf\Signature\Signer\{Certificate, CmsSigner, DigestAlgorithm};
@@ -183,9 +214,11 @@ the stamp. It works with `Pdf\Document::sign()`, a laid-out document's
 
 ## Signing outside the server
 
-When the key cannot come to the server — a qualified certificate on a
-token or in CryptoPro on the user's machine, an HSM that signs on request,
-a cloud signing service — sign in two steps:
+An HSM or a cloud KMS the server can call directly needs no two steps —
+use the [PKCS#11 or KMS signers](#keys-and-certificates) above. Two-phase
+signing is for keys only the user can reach: a qualified certificate on a
+token or in CryptoPro on the user's machine (a browser plug-in), or a
+signing service that answers later. Sign in two steps:
 
 ```php
 use Dskripchenko\PhpPdf\Pdf\Signature\External\{ExternalMode, ExternalSigner, PreparedSignature};
@@ -280,8 +313,8 @@ document, or the one added with `addField()`), else the field added with
 `addField()`, else the first empty signature field, else a new invisible
 field on the first page. `signatureFields()` lists the document's signature
 fields and whether they are signed. `prepare()` instead of `sign()` gives a
-`PreparedSignature` for a key outside the server, as above. Encrypted PDFs
-are refused.
+`PreparedSignature` for a key outside the server, as above. An encrypted
+PDF is signed with its password, see [Encrypted PDFs](#encrypted-pdfs).
 
 ## Certification and locked fields
 

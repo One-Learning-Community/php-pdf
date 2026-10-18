@@ -44,11 +44,11 @@ composer bench          # installs pinned competitors, runs, prints tables
 
 Machine-readable output lands in `scripts/bench/out/results.{json,csv}`.
 
-**Environment (2026-07-17):**
+**Environment (2026-10-18):**
 
-- PHP 8.5.8 (CLI, opcache disabled (CLI default))
-- Darwin 25.5.0 arm64
-- dskripchenko/php-pdf v1.1.3
+- PHP 8.5.10 (CLI, opcache disabled (CLI default))
+- Darwin 27.0.0 arm64
+- dskripchenko/php-pdf v1.19.1
 - dompdf/dompdf v3.1.5
 - mpdf/mpdf v8.3.1
 - setasign/fpdf 1.9.0
@@ -61,39 +61,39 @@ Machine-readable output lands in `scripts/bench/out/results.{json,csv}`.
 | Library | Wall time (ms) | Peak memory | Output size |
 |---|---:|---:|---:|
 | fpdf | 0.9 | 4.0 MB | 1.3 KB |
-| phppdf | 4.3 | 6.0 MB | 0.8 KB |
-| dompdf | 11.5 | 8.0 MB | 1.1 KB |
-| tcpdf | 12.9 | 16.0 MB | 6.5 KB |
-| mpdf | 28.4 | 20.0 MB | 14 KB |
+| phppdf | 5.0 | 8.0 MB | 0.8 KB |
+| dompdf | 11.7 | 8.0 MB | 1.1 KB |
+| tcpdf | 15.0 | 16.0 MB | 6.5 KB |
+| mpdf | 29.4 | 20.0 MB | 14 KB |
 
 ### 100-page invoice (50 rows/page)
 
 | Library | Wall time (ms) | Peak memory | Output size |
 |---|---:|---:|---:|
-| fpdf | 27.3 | 6.0 MB | 198 KB |
-| phppdf | 575.8 | 50.0 MB | 192 KB |
-| tcpdf | 1479.1 | 26.0 MB | 462 KB |
-| mpdf | 2639.5 | 30.0 MB | 811 KB |
-| dompdf | 9585.9 | 350.0 MB | 2316 KB |
+| fpdf | 26.4 | 6.0 MB | 198 KB |
+| phppdf | 632.4 | 50.0 MB | 194 KB |
+| tcpdf | 1342.2 | 26.0 MB | 462 KB |
+| mpdf | 2299.5 | 30.0 MB | 811 KB |
+| dompdf | 9156.0 | 350.0 MB | 2316 KB |
 
 ### Image grid (20 pages × 4 JPEGs)
 
 | Library | Wall time (ms) | Peak memory | Output size |
 |---|---:|---:|---:|
 | fpdf | 1.0 | 4.0 MB | 7.0 KB |
-| phppdf | 6.7 | 6.0 MB | 8.8 KB |
-| tcpdf | 14.5 | 16.0 MB | 33 KB |
-| dompdf | 32.8 | 10.0 MB | 4.7 KB |
-| mpdf | 36.3 | 20.0 MB | 24 KB |
+| phppdf | 7.7 | 8.0 MB | 8.8 KB |
+| tcpdf | 16.9 | 16.0 MB | 33 KB |
+| dompdf | 31.8 | 10.0 MB | 4.7 KB |
+| mpdf | 36.5 | 20.0 MB | 24 KB |
 
 ### HTML → PDF article (~5 pages)
 
 | Library | Wall time (ms) | Peak memory | Output size |
 |---|---:|---:|---:|
-| phppdf | 12.0 | 8.0 MB | 8.1 KB |
-| tcpdf | 37.4 | 16.0 MB | 49 KB |
-| dompdf | 51.7 | 12.0 MB | 19 KB |
-| mpdf | 64.1 | 20.0 MB | 55 KB |
+| phppdf | 15.2 | 8.0 MB | 12 KB |
+| tcpdf | 38.0 | 16.0 MB | 49 KB |
+| dompdf | 48.1 | 12.0 MB | 19 KB |
+| mpdf | 61.9 | 20.0 MB | 55 KB |
 | fpdf | _skipped_ (not implemented) | — | — |
 
 ---

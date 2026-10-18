@@ -50,6 +50,11 @@ $engine = new Engine(defaultFont: new PdfFont(TtfFile::fromFile('/path/DejaVuSan
 $mpdf = new Mpdf([], $engine);
 ```
 
+Or install [dskripchenko/php-pdf-fonts-liberation](https://github.com/dskripchenko/php-pdf-fonts-liberation)
+for ready Liberation Sans, Serif and Mono (Latin, Cyrillic, Greek, Hebrew)
+and pass `defaultFont: new PdfFont((new LiberationFontProvider)->resolve('LiberationSans-Regular'))`
+(`Dskripchenko\PhpPdfFontsLiberation\LiberationFontProvider`).
+
 ## Route 2 — the native API
 
 | mpdf | php-pdf |
@@ -86,11 +91,16 @@ $mpdf = new Mpdf([], $engine);
 ## Gotchas
 
 - **Fonts**: nothing is auto-embedded. Base-14 covers Latin (WinAnsi);
-  everything else needs a TTF via `Engine` (see above). Unlike mpdf, TTFs
-  are subset by default — output stays small.
-- **CSS coverage** differs: php-pdf parses an HTML5/inline-CSS subset
-  (see the [usage guide](USAGE.md)); mpdf-specific tags and `@page` rules
-  are not recognized. Complex `@page` setups map to `Section`/`PageSetup`.
+  everything else needs a TTF via `Engine` (see above), or install
+  `dskripchenko/php-pdf-fonts-liberation` for ready Liberation Sans, Serif
+  and Mono (Latin, Cyrillic, Greek, Hebrew). Unlike mpdf, TTFs are subset
+  by default — output stays small.
+- **CSS coverage** differs: php-pdf reads `<style>` blocks with the
+  cascade and takes the page size and margins from `@page` through
+  `Document::fromHtml()` (see the [usage guide](USAGE.md#html--css-input));
+  the compat facade takes the page from its config instead. mpdf-specific
+  tags and extended `@page` features (named pages, margin boxes) are not
+  recognized; such setups map to `Section`/`PageSetup`.
 - **Units**: mpdf configs are mm; the native API is points
   (`1 mm = 72 / 25.4 pt`). The compat facade converts for you.
 - **Temp dirs**: php-pdf writes nothing to disk — no `tempDir` config,

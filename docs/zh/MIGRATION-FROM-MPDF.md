@@ -35,7 +35,7 @@ $mpdf->Output('invoice.pdf', 'F');
 当门面不够用时，`toDocument()` 会交出组装好的原生 `Document`。
 
 **非拉丁文本：** mpdf 自带 DejaVu 并自动选用。门面的默认引擎只使用 PDF
-base-14 字体（WinAnsi，仅拉丁字符）。中文/西里尔/阿拉伯文请传入内嵌
+base-14 字体（WinAnsi，仅拉丁字符）。西里尔/希腊/阿拉伯/中日韩文字请传入内嵌
 TTF 的引擎：
 
 ```php
@@ -44,9 +44,14 @@ use Dskripchenko\PhpPdf\Font\Ttf\TtfFile;
 use Dskripchenko\PhpPdf\Layout\Engine;
 use Dskripchenko\PhpPdf\Pdf\PdfFont;
 
-$engine = new Engine(defaultFont: new PdfFont(TtfFile::fromFile('/path/NotoSansSC.ttf')));
+$engine = new Engine(defaultFont: new PdfFont(TtfFile::fromFile('/path/DejaVuSans.ttf')));
 $mpdf = new Mpdf([], $engine);
 ```
+
+或者安装 [dskripchenko/php-pdf-fonts-liberation](https://github.com/dskripchenko/php-pdf-fonts-liberation)，
+获得现成的 Liberation Sans、Serif 和 Mono（拉丁、西里尔、希腊、希伯来字符），
+并传入 `defaultFont: new PdfFont((new LiberationFontProvider)->resolve('LiberationSans-Regular'))`
+（`Dskripchenko\PhpPdfFontsLiberation\LiberationFontProvider`）。
 
 ## 路线 2 —— 原生 API
 
@@ -84,11 +89,15 @@ $mpdf = new Mpdf([], $engine);
 ## 注意事项
 
 - **字体**：不会自动内嵌任何字体。base-14 覆盖拉丁字符（WinAnsi）；
-  其余文字需要通过 `Engine` 提供 TTF（见上）。与 mpdf 不同，TTF 默认
+  其余文字需要通过 `Engine` 提供 TTF（见上），或安装
+  `dskripchenko/php-pdf-fonts-liberation` 获得现成的 Liberation Sans、Serif
+  和 Mono（拉丁、西里尔、希腊、希伯来字符）。与 mpdf 不同，TTF 默认
   做子集化 —— 输出保持精简。
-- **CSS 覆盖范围**不同：php-pdf 解析 HTML5/内联 CSS 子集（见
-  [使用指南](USAGE.md)）；mpdf 专有标签和 `@page` 规则不被识别，复杂的
-  `@page` 配置请改用 `Section`/`PageSetup`。
+- **CSS 覆盖范围**不同：php-pdf 读取带层叠的 `<style>` 块，并通过
+  `Document::fromHtml()` 从 `@page` 获取页面尺寸与页边距（见
+  [使用指南](USAGE.md#html--css-输入)）；兼容门面则从其配置中获取页面设置。
+  mpdf 专有标签和扩展的 `@page` 特性（命名页面、页边距框）不被识别，
+  此类配置请改用 `Section`/`PageSetup`。
 - **单位**：mpdf 配置用毫米；原生 API 用点（`1 毫米 = 72 / 25.4 pt`）。
   兼容门面会自动换算。
 - **临时目录**：php-pdf 不写磁盘 —— 没有 `tempDir` 配置，也没有需要

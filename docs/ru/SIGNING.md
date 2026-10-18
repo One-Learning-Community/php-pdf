@@ -87,6 +87,23 @@ new SignatureConfig(signer: $mySigner);
 `sign()` DER подписываемых атрибутов и ожидает обратно «сырое» значение
 подписи, поэтому ключу вообще не нужно находиться в PHP.
 
+Готовые `Signer` лежат в пакетах-компаньонах:
+[php-pdf-pkcs11](https://github.com/dskripchenko/php-pdf-pkcs11) подписывает
+ключом на HSM, смарт-карте или USB-токене через PKCS#11
+(`Pkcs11Signer::open()`), а
+[php-pdf-cloud-kms](https://github.com/dskripchenko/php-pdf-cloud-kms) —
+ключом в AWS KMS (`AwsKmsSigner::create()`), Google Cloud KMS
+(`GoogleKmsSigner`) или Azure Key Vault
+(`AzureKeyVaultSigner::fromCertificate()`):
+
+```php
+use Dskripchenko\PhpPdfCloudKms\Aws\AwsKmsSigner;
+use Dskripchenko\PhpPdfPkcs11\Pkcs11Signer;
+
+$signer = Pkcs11Signer::open('/usr/lib/softhsm/libsofthsm2.so', pin: $pin, keyLabel: 'signing-key');
+$signer = AwsKmsSigner::create('alias/pdf-signing', $certificatePem, region: 'eu-central-1');
+```
+
 Хеш выбирается по ключу: SHA-256 для RSA и P-256, SHA-384 для P-384,
 SHA-512 для P-521, Стрибог для ГОСТ. Чтобы выбрать другой, передайте
 `digest:` в `OpenSslSigner`.
@@ -149,7 +166,21 @@ granted, отпечаток и nonce, который был запрошен, �
 не голое значение подписи: КриптоПро CSP на сервере
 (`CadesSignedData.SignHash`, `cryptcp`), сервис подписи, фронтенд HSM.
 Реализуйте `CmsSigner` и подписывайте одним вызовом, как ключом в процессе,
-без ручных prepare и complete:
+без ручных prepare и complete.
+
+Для КриптоПро CSP на сервере
+[php-pdf-cryptopro](https://github.com/dskripchenko/php-pdf-cryptopro)
+поставляет `CryptoProCadesSigner` — готовый `CmsSigner` поверх
+PHP-расширения КриптоПро:
+
+```php
+use Dskripchenko\PhpPdfCryptoPro\CryptoProCadesSigner;
+
+$doc->sign(new SignatureConfig(signer: CryptoProCadesSigner::fromThumbprint('3A 5F … 9C', pin: $pin)));
+```
+
+Реализуйте `CmsSigner` сами только для других инструментов — `cryptcp`,
+сервиса подписи:
 
 ```php
 use Dskripchenko\PhpPdf\Pdf\Signature\Signer\{Certificate, CmsSigner, DigestAlgorithm};
@@ -182,9 +213,12 @@ $doc->sign(new SignatureConfig(signer: new CryptcpSigner($certPem, $thumbprint))
 
 ## Подпись вне сервера
 
-Когда ключ не может попасть на сервер — квалифицированный сертификат на
-токене или в КриптоПро на машине пользователя, HSM, который подписывает по
-запросу, облачный сервис подписи, — подписывайте в два шага:
+HSM или облачному KMS, к которым сервер может обратиться напрямую, два шага
+не нужны — используйте [подписантов PKCS#11 или KMS](#ключи-и-сертификаты)
+выше. Двухфазная подпись — для ключей, до которых может добраться только
+пользователь: квалифицированный сертификат на токене или в КриптоПро на
+машине пользователя (плагин браузера) или сервис подписи, который отвечает
+позже. Подписывайте в два шага:
 
 ```php
 use Dskripchenko\PhpPdf\Pdf\Signature\External\{ExternalMode, ExternalSigner, PreparedSignature};
@@ -277,8 +311,8 @@ $twice = PdfSigner::fromBytes($signed)
 `addField()`, иначе первое пустое поле подписи, иначе новое невидимое поле на
 первой странице. `signatureFields()` перечисляет поля подписи документа и
 показывает, подписаны ли они. `prepare()` вместо `sign()` возвращает
-`PreparedSignature` для ключа вне сервера, как описано выше. Зашифрованные
-PDF отклоняются.
+`PreparedSignature` для ключа вне сервера, как описано выше. Зашифрованный
+PDF подписывается с его паролем, см. [Зашифрованные PDF](#зашифрованные-pdf).
 
 ## Сертифицирующая подпись и заблокированные поля
 

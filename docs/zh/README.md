@@ -24,6 +24,7 @@
 - [快速开始](#快速开始)
 - [核心特性](#核心特性)
 - [文档](#文档)
+- [php-pdf 系列](#php-pdf-系列)
 - [性能](#性能)
 - [运行要求](#运行要求)
 - [测试](#测试)
@@ -59,8 +60,15 @@
   遵循 ISO 32000-2 / PDF 2.0）。
 - **PAdES 签名**（B-B；配合 RFC 3161 时间戳为 B-T）——支持 RSA、ECDSA 与
   GOST R 34.10-2012，密钥可为 PEM / PKCS#12 / 自定义 `Signer`（令牌、HSM），或在服务器之外**两阶段签名**（CryptoPro 插件、HSM、签名服务），并可显示填入证书信息的**签章**；可通过增量更新**签署已有 PDF**（多个签署人、认证、锁定字段），并支持**长期验证**（B-LT 的 DSS、B-LTA 的文档时间戳）以及可防御已知 PDF 签名攻击的**签名验证**；还支持对任意字节生成并验证**分离式 CAdES 签名**（`.p7s`）。
-- **PDF/A-1a / 1b / 2u 与 PDF/X-1a / 3 / 4** 一致性支持，
-  内嵌 sRGB ICC 配置文件与 XMP 元数据。
+  提供现成的签名器：PKCS#11 令牌与 HSM
+  （[php-pdf-pkcs11](https://github.com/dskripchenko/php-pdf-pkcs11)）、云端
+  KMS —— AWS、Google、Azure
+  （[php-pdf-cloud-kms](https://github.com/dskripchenko/php-pdf-cloud-kms)）——
+  以及服务器上的 CryptoPro CSP
+  （[php-pdf-cryptopro](https://github.com/dskripchenko/php-pdf-cryptopro)）。
+- **PDF/A-1a、1b、2b、2u 与 3b**（在 CI 中经 veraPDF 验证）以及
+  **PDF/X-1a / 3 / 4** 一致性支持，内嵌 ICC 配置文件与 XMP
+  元数据。
 - **Tagged PDF / PDF/UA 就绪** 的结构树，支持 H1–H6、Table/TR/TD、
   L/LI、自定义 RoleMap、ParentTree number tree。
 - **流式输出** 到流资源，适合大文档。
@@ -147,21 +155,36 @@ file_put_contents('hello.pdf', $doc->toBytes());
   `<cite>`、`<dfn>`、`<q>`、`<abbr>`。
 - HTML5 语义块（`<header>`、`<footer>`、`<article>`、`<nav>`、
   `<section>` 等）以及历史遗留的 `<center>` / `<font>`。
-- 行内 CSS：color、background、字体属性、text-align、
-  text-decoration、text-transform、margin/padding 简写、边框、
-  line-height、text-indent。
+- 来自 `<style>` 块和 `style` 属性的 CSS，支持层叠：
+  类型、class、id 与属性选择器，`:first-child`、`:last-child`、
+  `:nth-child()`、`:not()`，后代 / `>` / `+` / `~` 组合器，
+  优先级（specificity）、`!important` —— 无需 CSS 内联工具。
+- 应用 `@media print`，跳过 `@media screen`；支持 `@page` 尺寸与
+  页边距。
+- 与浏览器一致的继承：在 `body`、`div` 或 `td` 上设置的 color、字体、
+  text-align、line-height 等属性会作用到其内部文本。
+- `div` 容器支持 margin、padding、background 与 border；
+  `display: flex`（单行）、`display: none`。
+- 表格样式：`width`、`table-layout: auto`、`border-collapse` /
+  `border-spacing`、单元格 `padding` 与 `vertical-align`、`<col>` 宽度；
+  `<thead>` 行在每一页重复。
+- `page-break-*` / `break-*`、`white-space: pre` / `pre-wrap` /
+  `pre-line`；实线、虚线、点线与双线边框。
+- 不支持：外部样式表、浮动、定位、grid、
+  伪元素。
 
 ### 布局与排版
 - Knuth–Plass box–glue–penalty 断行算法，带自适应惩罚。
 - 多栏布局（`ColumnSet`），支持 column-first 流向。
-- 表格支持 rowspan、colspan、边框合并、双线边框、圆角边框、
-  单元格内边距。
+- 表格支持 rowspan、colspan、边框合并、双线、虚线与点线边框、
+  圆角边框、单元格内边距。
 - 页眉、页脚、水印（文字和图片）、分节符。
 - 脚注，定位在页面底部。
 
 ### 字体
 - 14 个 Adobe base-14 字体（WinAnsi）。
-- TTF 嵌入与按需子集化（CFF 和 TrueType）。
+- TrueType 轮廓字体（`.ttf`、TrueType 风格的 `.otf`），支持
+  按需子集化；不支持基于 CFF 的 OpenType。
 - 字距调整、基础 GSUB 连字、ToUnicode CMap。
 - 可变字体实例（fvar、gvar、MVAR、HVAR、avar）。
 - Bidi（UAX#9）、阿拉伯语字形整形、基础印度语系字形整形。
@@ -176,7 +199,8 @@ file_put_contents('hello.pdf', $doc->toBytes());
   Structured Append、FNC1）、Data Matrix ECC 200（全尺寸含
   144×144、矩形、6 种模式）、PDF417（Byte/Text/Numeric、Macro、GS1、ECI）、
   Aztec Compact 1–4L + Full 5–32L（Structured Append、FLG/ECI）。
-- QR 便捷工厂方法：vCard 3.0、WiFi Joinware、mailto。
+- QR 便捷工厂方法：vCard 3.0、WiFi（Joinware）、URL、SMS、
+  电子邮件（`mailto:`）、地理位置。
 
 ### 图表
 - BarChart、LineChart、PieChart、AreaChart、DonutChart、GroupedBarChart、
@@ -193,17 +217,25 @@ file_put_contents('hello.pdf', $doc->toBytes());
 - 加密：RC4-128、AES-128、AES-256（V5 R5 + R6 / PDF 2.0）。
 - PAdES（`ETSI.CAdES.detached`）或 PKCS#7 分离签名，支持原因、位置、签署人名称、证书链与 RFC 3161 时间戳；签章（文本、图片、QR）
   支持证书占位符，可有多个签名字段，支持不可见签名。
-- PDF/A-1a、PDF/A-1b、PDF/A-2u，内嵌 sRGB ICC。
+- 现成的签名器：PKCS#11 令牌与 HSM
+  （[php-pdf-pkcs11](https://github.com/dskripchenko/php-pdf-pkcs11)）、AWS
+  KMS、Google Cloud KMS 与 Azure Key Vault
+  （[php-pdf-cloud-kms](https://github.com/dskripchenko/php-pdf-cloud-kms)）、
+  服务器上的 CryptoPro CSP
+  （[php-pdf-cryptopro](https://github.com/dskripchenko/php-pdf-cryptopro)）。
+- PDF/A-1a、PDF/A-1b、PDF/A-2b、PDF/A-2u、PDF/A-3b，内嵌 sRGB ICC，
+  在 CI 中经 veraPDF 验证。
 - PDF/X-1a、PDF/X-3、PDF/X-4，配 /OutputIntent /S /GTS_PDFX。
 - Tagged PDF / PDF/UA 就绪的结构树。
 
 ### 读取与合并
 - 读取现有 PDF（`ReaderDocument`）—— 经典与流式 xref、对象流、损坏 xref 恢复、
   解密（RC4 / AES-128 / AES-256）。
-- 合并（`PdfMerger`）—— 追加并重排来自多个文件的全部或选定页面；注释与书签
+- 合并（`PdfMerger`）—— 追加并重排来自多个文件的全部或选定页面；页面注释与书签
   会被带入，内部链接和命名目标随之重新映射。
-- 盖印叠加（水印、信头）与 FPDI 风格的页面导入到生成的文档
-  （`PageImporter::intoDocument()`）。参见[读取与合并指南](MERGE.md)。
+- 盖印叠加（水印、信头）与 FPDI 风格的页面导入，通过
+  `PageImporter::intoDocument()` 导入到新生成的文档。
+- 参见[读取与合并指南](MERGE.md)。
 
 完整的使用演练请参阅 [使用指南](USAGE.md)。
 
@@ -214,16 +246,56 @@ file_put_contents('hello.pdf', $doc->toBytes());
 - 📖 [使用指南](USAGE.md) —— 段落、表格、图表、
   条形码、表单、加密、签名、PDF/A。
 - ✍️ [数字签名](SIGNING.md) —— PAdES 与 GOST 签名、签章、在服务器之外签名
-  （CryptoPro、HSM）、签署已有 PDF 与多个签署人、认证、长期验证、签名验证。
+  （CryptoPro、HSM）、签署已有 PDF 与多个签署人、认证、长期验证、签名验证、
+  分离式 `.p7s` 签名。
 - 🔗 [读取与合并 PDF](MERGE.md) —— 读取现有文件、追加/重排页面、
-  盖印叠加、FPDI 风格导入。
+  盖印叠加、处理加密输入。
 - ⚖️ [与 mpdf / tcpdf / dompdf / FPDF 的对比](COMPARISON.md) ——
   特性矩阵，以及如何选型。
 - 📊 [基准测试](BENCHMARKS.md) —— 可复现的墙钟时间、内存
   与输出大小测量。
-- 🔀 [从 mpdf 迁移](MIGRATION-FROM-MPDF.md) —— 兼容门面与完整映射表。
-- 🔀 [从 FPDI 迁移](MIGRATION-FROM-FPDI.md) —— 导入/盖印，支持
+- ✅ [一致性](../en/CONFORMANCE.md) —— PDF/A 经 veraPDF 验证，
+  PDF/X 经 Ghostscript 检查，渲染结果与基准图（golden）比对，
+  签名经 OpenSSL 与 pyHanko 验证 —— 每次推送都会执行。
+- 🔀 [从 mpdf 迁移](MIGRATION-FROM-MPDF.md) —— 兼容
+  门面（`WriteHTML`/`Output` 照常可用）+ 完整映射表。
+- 🔀 [从 FPDI 迁移](MIGRATION-FROM-FPDI.md) ——
+  `setSourceFile`/`importPage`/`useTemplate` 门面；无需商业解析器即可读取
   xref-stream 与加密源。
+
+### 示例
+
+可运行的脚本位于 [`examples/`](../../examples/)，输出已提交到
+[`samples/`](../../samples/) —— 每一个都在 CI 中进行渲染检查：
+
+| 运行 | 输出 | 展示内容 |
+|---|---|---|
+| `php examples/01-html-to-pdf.php` | [PDF](../../samples/01-html-to-pdf.pdf) | HTML/CSS 子集 → PDF |
+| `php examples/02-builder.php` | [PDF](../../samples/02-builder.pdf) | 流式构建器、表格 |
+| `php examples/03-barcodes.php` | [PDF](../../samples/03-barcodes.pdf) | QR、Code 128、EAN-13、DataMatrix |
+| `php examples/04-charts.php` | [PDF](../../samples/04-charts.pdf) | 矢量饼图/柱状图/折线图 |
+| `php examples/05-forms.php` | [PDF](../../samples/05-forms.pdf) | 可填写的 AcroForm 字段 |
+| `php examples/06-signature.php` | [PDF](../../samples/06-signature.pdf) | 带可见签章的 PAdES 数字签名 |
+| `php examples/07-pdfa.php` | [PDF](../../samples/07-pdfa.pdf) | PDF/A-2u（通过 veraPDF 验证）；需要先运行 `scripts/fetch-fonts.sh` |
+| `php examples/08-merge.php` | [PDF](../../samples/08-merge.pdf) | 追加并重排现有 PDF |
+| `php examples/09-stamp.php` | [PDF](../../samples/09-stamp.pdf) | 水印/信头盖印 |
+
+[压力测试集](../../examples/torture/)覆盖了疑难路径（阿拉伯语、
+CJK、矩形 DataMatrix 等）—— 参见 [VIEWER-MATRIX](../en/VIEWER-MATRIX.md)。
+
+---
+
+## php-pdf 系列
+
+| 包 | 提供的功能 |
+|---|---|
+| **php-pdf**（本包） | 核心：用 HTML 加 CSS 或构建器生成 PDF，读取、合并、填写表单、签名和验证。 |
+| [laravel-php-pdf](https://github.com/dskripchenko/laravel-php-pdf) | Laravel 桥接：Blade 视图直接生成 PDF、`response()->pdf()`、按配置签名。 |
+| [php-pdf-fonts-liberation](https://github.com/dskripchenko/php-pdf-fonts-liberation) | Liberation Sans、Serif 和 Mono，与 Arial、Times New Roman 和 Courier New 度量兼容（OFL 许可，独立于 MIT 核心之外）。 |
+| [php-pdf-cryptopro](https://github.com/dskripchenko/php-pdf-cryptopro) | 使用服务器上 CryptoPro CSP 中的密钥签名：GOST R 34.10-2012，俄罗斯合格电子签名。 |
+| [php-pdf-pkcs11](https://github.com/dskripchenko/php-pdf-pkcs11) | 通过 PKCS#11 使用 HSM、智能卡或 USB 令牌上的密钥签名。 |
+| [php-pdf-cloud-kms](https://github.com/dskripchenko/php-pdf-cloud-kms) | 使用 AWS KMS、Google Cloud KMS 或 Azure Key Vault 中的密钥签名。 |
+
 ---
 
 ## 性能
@@ -234,10 +306,10 @@ file_put_contents('hello.pdf', $doc->toBytes());
 <!-- bench:table:start — generated by scripts/bench/run.php, do not edit -->
 | Scenario | dskripchenko/php-pdf | mpdf | tcpdf | dompdf | FPDF |
 |---|---:|---:|---:|---:|---:|
-| HTML → PDF article (~5 pages) | **12.0 ms** | 64.1 ms | 37.4 ms | 51.7 ms | _n/a_ |
-| 100-page invoice (50 rows/page) | **576 ms** | 2640 ms | 1479 ms | 9586 ms | 27.3 ms |
-| Image grid (20 pages × 4 JPEGs) | **6.7 ms** | 36.3 ms | 14.5 ms | 32.8 ms | 1.0 ms |
-| Hello world (single page, one paragraph) | **4.3 ms** | 28.4 ms | 12.9 ms | 11.5 ms | 0.9 ms |
+| HTML → PDF article (~5 pages) | **15.2 ms** | 61.9 ms | 38.0 ms | 48.1 ms | _n/a_ |
+| 100-page invoice (50 rows/page) | **632 ms** | 2300 ms | 1342 ms | 9156 ms | 26.4 ms |
+| Image grid (20 pages × 4 JPEGs) | **7.7 ms** | 36.5 ms | 16.9 ms | 31.8 ms | 1.0 ms |
+| Hello world (single page, one paragraph) | **5.0 ms** | 29.4 ms | 15.0 ms | 11.7 ms | 0.9 ms |
 <!-- bench:table:end -->
 
 FPDF 在最简单的场景中胜出（没有 HTML、没有换行、没有表格流），
@@ -262,7 +334,7 @@ composer install
 vendor/bin/phpunit
 ```
 
-2,000+ 个测试，约 119k 个断言，在 PHP 8.2 / 8.3 / 8.4 上全部通过。
+2,480+ 个测试，约 120k 个断言，在 CI 中于 PHP 8.2 / 8.3 / 8.4 / 8.5 上运行（见 [tests workflow](https://github.com/dskripchenko/php-pdf/actions/workflows/tests.yml)）。
 
 ---
 

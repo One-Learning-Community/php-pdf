@@ -36,12 +36,15 @@ publishing your own.
 | Fluent builders (Document → Section)   | ✅      | ❌   | ❌    | ❌     | ❌   |
 | HTML/CSS input                         | ✅      | ✅   | ⚠️ basic | ✅  | ❌   |
 | Inline `style` attributes              | ✅      | ✅   | ⚠️    | ✅     | ❌   |
-| `<style>` blocks / external CSS        | ⚠️ `<style>` only | ✅   | ⚠️    | ✅     | ❌   |
+| `<style>` blocks / external CSS        | ✅ `<style>` with cascade (no external `<link>`) | ✅   | ⚠️    | ✅     | ❌   |
+| CSS selectors and specificity, `@media print` | ✅ | ✅  | ⚠️    | ✅     | ❌   |
+| `@page` size and margins               | ✅      | ✅   | ⚠️    | ✅     | ❌   |
+| Flexbox                                | ⚠️ one row | ❌ | ❌    | ❌     | ❌   |
 | Float layout                           | ❌      | ✅   | ⚠️    | ✅     | ❌   |
 
 For complex HTML or CSS (floats, positioning, grid, external stylesheets),
 `dompdf` and `mpdf` go further. For business documents (paragraphs,
-tables, lists, inline styling, headings), `php-pdf` is on par with
+tables, lists, stylesheets (`<style>` with cascade), headings), `php-pdf` is on par with
 better performance.
 
 ## Reading & merging existing PDFs
@@ -69,7 +72,7 @@ built in and MIT-licensed, with no proprietary add-on.
 | Variable fonts (fvar/gvar/MVAR/HVAR)   | ✅      | ❌   | ❌    | ❌     | ❌   |
 | Bidi (UAX#9, X1–X10 explicit)          | ✅      | partial | partial | ❌  | ❌   |
 | Arabic shaping                         | ✅      | ✅   | ✅    | ⚠️      | ❌   |
-| Indic shaping (Devanagari, Bengali, Gujarati) | ✅ | partial | ❌ | ❌     | ❌   |
+| Indic shaping, basic (Devanagari, Bengali, Gurmukhi, Gujarati, Oriya, Tamil, Telugu, Kannada, Malayalam, Sinhala) | ✅ | partial | ❌ | ❌     | ❌   |
 | Vertical writing mode                  | ✅      | ❌   | ⚠️    | ❌     | ❌   |
 | Knuth–Plass line breaking              | ✅      | ❌   | ❌    | ❌     | ❌   |
 | Hyphenation / soft hyphen              | ✅      | ✅   | ⚠️    | ⚠️      | ❌   |
@@ -150,6 +153,7 @@ built in and MIT-licensed, with no proprietary add-on.
 | Certification signature (DocMDP) | ✅ | ❌ | ✅ | ❌ | ❌ |
 | Signing existing PDFs / several signers | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Signing outside the server (HSM, CryptoPro) | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Ready signers: PKCS#11 tokens / HSMs, cloud KMS, CryptoPro CSP | ✅ via companion packages ([pkcs11](https://github.com/dskripchenko/php-pdf-pkcs11), [cloud-kms](https://github.com/dskripchenko/php-pdf-cloud-kms), [cryptopro](https://github.com/dskripchenko/php-pdf-cryptopro)) | ❌ | ❌ | ❌ | ❌ |
 | Long-term validation (DSS, document timestamps) | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Signature validation | ✅ | ❌ | ❌ | ❌ | ❌ |
 | Public-key encryption (/PubSec)        | ❌      | ❌   | ✅    | ❌     | ❌   |
@@ -160,7 +164,9 @@ built in and MIT-licensed, with no proprietary add-on.
 |----------------------------------------|:-------:|:----:|:-----:|:------:|:----:|
 | PDF/A-1b                               | ✅      | ✅   | ✅    | ❌     | ❌   |
 | PDF/A-1a (accessibility variant)       | ✅      | ⚠️    | ⚠️    | ❌     | ❌   |
+| PDF/A-2b                               | ✅      | ⚠️    | ⚠️    | ❌     | ❌   |
 | PDF/A-2u                               | ✅      | ✅   | ⚠️    | ❌     | ❌   |
+| PDF/A-3b                               | ✅      | ⚠️    | ⚠️    | ❌     | ❌   |
 | PDF/X-1a / X-3 / X-4                   | ✅      | ⚠️    | ⚠️    | ❌     | ❌   |
 | Tagged PDF (H1–H6, Table, L)           | ✅      | partial | ⚠️ | ❌     | ❌   |
 | Custom RoleMap                         | ✅      | ❌   | ❌    | ❌     | ❌   |

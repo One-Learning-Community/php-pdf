@@ -1,5 +1,8 @@
 # Benchmarks
 
+> Erzeugt von `scripts/bench/run.php` — die Zahlen nicht von Hand ändern.
+> Reproduzierbar mit `composer bench` aus einem sauberen Klon.
+
 Ein reproduzierbarer Vergleich von `dskripchenko/php-pdf` mit den vier
 am häufigsten genutzten PHP-PDF-Bibliotheken auf Packagist:
 `mpdf/mpdf`, `tecnickcom/tcpdf`, `dompdf/dompdf` und `setasign/fpdf`.
@@ -18,17 +21,9 @@ ausgeführt wird. Das Starten eines frischen Prozesses pro Lauf macht
 die Speicherspalte aussagekräftig.
 
 Die Wall-Time wird mit `hrtime(true)` gemessen, der Speicher mit
-`memory_get_peak_usage(true)`.
-
-**Testumgebung:**
-- macOS 25.4 (Darwin), Apple Silicon.
-- PHP 8.4 CLI (Zend OPcache aktiviert, JIT-Standardkonfiguration).
-- Bibliotheksversionen (Packagist):
-  - dskripchenko/php-pdf 1.0.0
-  - mpdf/mpdf ^8.2
-  - tecnickcom/tcpdf ^6.7
-  - dompdf/dompdf ^3.0
-  - setasign/fpdf ^1.8
+`memory_get_peak_usage(true)`. Die Versionen der Vergleichsbibliotheken
+sind in `scripts/bench/composer.lock` festgeschrieben, das im Repository
+eingecheckt ist.
 
 ## Szenarien
 
@@ -42,108 +37,68 @@ Die Wall-Time wird mit `hrtime(true)` gemessen, der Speicher mit
 FPDF unterstützt kein HTML und wird daher beim `html`-Szenario
 übersprungen.
 
+## Reproduktion
+
+```bash
+git clone https://github.com/dskripchenko/php-pdf.git && cd php-pdf
+composer install
+composer bench          # installs pinned competitors, runs, prints tables
+```
+
+Maschinenlesbare Ergebnisse landen in `scripts/bench/out/results.{json,csv}`.
+
+**Umgebung (2026-10-18):**
+
+- PHP 8.5.10 (CLI, OPcache deaktiviert (CLI-Standard))
+- Darwin 27.0.0 arm64
+- dskripchenko/php-pdf v1.19.1
+- dompdf/dompdf v3.1.5
+- mpdf/mpdf v8.3.1
+- setasign/fpdf 1.9.0
+- tecnickcom/tcpdf 6.11.3
+
 ## Ergebnisse
 
 ### Hello world (eine Seite, ein Absatz)
 
 | Bibliothek | Wall-Time (ms) | Speicherspitze | Ausgabegröße |
 |---|---:|---:|---:|
-| fpdf | 0.9 | 4.0 MB | 1 KB |
-| **phppdf** | **4.6** | **6.0 MB** | 0.8 KB |
-| dompdf | 12.0 | 8.0 MB | 1 KB |
-| tcpdf | 14.8 | 16.0 MB | 6 KB |
-| mpdf | 29.8 | 20.0 MB | 14 KB |
+| fpdf | 0.9 | 4.0 MB | 1.3 KB |
+| phppdf | 5.0 | 8.0 MB | 0.8 KB |
+| dompdf | 11.7 | 8.0 MB | 1.1 KB |
+| tcpdf | 15.0 | 16.0 MB | 6.5 KB |
+| mpdf | 29.4 | 20.0 MB | 14 KB |
 
 ### 100-seitige Rechnung (50 Zeilen/Seite)
 
 | Bibliothek | Wall-Time (ms) | Speicherspitze | Ausgabegröße |
 |---|---:|---:|---:|
-| fpdf | 26.0 | 6.0 MB | 198 KB |
-| **phppdf** | **518.2** | 50.0 MB | **192 KB** |
-| tcpdf | 1348.9 | 26.0 MB | 462 KB |
-| mpdf | 2366.9 | 30.0 MB | 811 KB |
-| dompdf | 8890.6 | 350.0 MB | 2316 KB |
-
-`phppdf` ist **~2.6× schneller als tcpdf**, **~4.6× schneller als
-mpdf** und **~17× schneller als dompdf** bei einer Tabellen-Workload
-mit 5000 Zeilen und erzeugt dabei die kleinste Ausgabe unter den
-HTML-fähigen Bibliotheken.
+| fpdf | 26.4 | 6.0 MB | 198 KB |
+| phppdf | 632.4 | 50.0 MB | 194 KB |
+| tcpdf | 1342.2 | 26.0 MB | 462 KB |
+| mpdf | 2299.5 | 30.0 MB | 811 KB |
+| dompdf | 9156.0 | 350.0 MB | 2316 KB |
 
 ### Bildraster (20 Seiten × 4 JPEGs)
 
 | Bibliothek | Wall-Time (ms) | Speicherspitze | Ausgabegröße |
 |---|---:|---:|---:|
-| fpdf | 1.0 | 4.0 MB | 6 KB |
-| **phppdf** | **6.4** | 6.0 MB | 8 KB |
-| tcpdf | 15.3 | 16.0 MB | 33 KB |
-| dompdf | 30.4 | 10.0 MB | 4 KB |
-| mpdf | 35.9 | 20.0 MB | 24 KB |
-
-Die Identitäts-Deduplizierung über den Inhalts-Hash bedeutet, dass
-dasselbe JPEG, das 80-mal auf 20 Seiten verwendet wird, als ein
-einziges XObject eingebettet wird.
+| fpdf | 1.0 | 4.0 MB | 7.0 KB |
+| phppdf | 7.7 | 8.0 MB | 8.8 KB |
+| tcpdf | 16.9 | 16.0 MB | 33 KB |
+| dompdf | 31.8 | 10.0 MB | 4.7 KB |
+| mpdf | 36.5 | 20.0 MB | 24 KB |
 
 ### HTML → PDF Artikel (~5 Seiten)
 
 | Bibliothek | Wall-Time (ms) | Speicherspitze | Ausgabegröße |
 |---|---:|---:|---:|
-| **phppdf** | **10.8** | 8.0 MB | 8 KB |
-| tcpdf | 36.1 | 16.0 MB | 49 KB |
-| dompdf | 46.9 | 12.0 MB | 19 KB |
-| mpdf | 61.1 | 20.0 MB | 55 KB |
-| fpdf | _übersprungen_ (kein HTML) | — | — |
+| phppdf | 15.2 | 8.0 MB | 12 KB |
+| tcpdf | 38.0 | 16.0 MB | 49 KB |
+| dompdf | 48.1 | 12.0 MB | 19 KB |
+| mpdf | 61.9 | 20.0 MB | 55 KB |
+| fpdf | _übersprungen_ (nicht implementiert) | — | — |
 
-## Reproduktion
+---
 
-```bash
-git clone https://github.com/dskripchenko/php-pdf.git
-cd php-pdf
-
-# Install the library under test.
-composer install
-
-# Install the comparison harness with mpdf, tcpdf, dompdf, FPDF as
-# isolated dev dependencies (does not pollute the library's composer.json).
-cd scripts/bench
-composer install
-
-# Run all scenarios; ~30 seconds total wall time.
-php run.php             # JSON to stdout
-php run.php --md        # Markdown table form
-```
-
-Die Speicherlimits in `run.php` / `one.php` sind auf 1 GB festgelegt,
-um dompdf im Rechnungsszenario genügend Platz zu geben.
-
-## Hinweise und Einschränkungen
-
-- **FPDF-Vorteile.** FPDF gewinnt bei `hello` und `images`, weil es
-  eine minimale imperative API ist — kein HTML-Parsing, kein
-  Textumbruch, kein Tabellenfluss, kein UTF-8. Es ist nur in gleich
-  minimalistischen Szenarien ein fairer Benchmark; vergleichbare
-  Funktionsabdeckung (HTML-Eingabe, Diagramme, Barcodes,
-  Verschlüsselung, Signing, PDF/A, AcroForms) ist in FPDF nicht
-  verfügbar.
-
-- **Speicher bei dompdf-Rechnung.** dompdf baut vor dem Layout den
-  vollständigen DOM- und CSS-Boxbaum im Speicher auf, was mit der
-  gesamten HTML-Größe statt pro Seite skaliert. Der Spitzenwert von
-  350 MB bei der 100-seitigen Rechnung spiegelt diese
-  Architekturentscheidung wider.
-
-- **Ausgabegröße.** Kleiner ist nicht immer besser — einige
-  Bibliotheken betten aggressivere Schrift-Subsets ein oder nutzen
-  unkomprimierte Streams. Alle obigen Szenarien verwenden die
-  Standard-Schrift-/Komprimierungseinstellungen der jeweiligen
-  Bibliothek.
-
-- **HTML-Abdeckung.** Das HTML-Szenario nutzt Elemente (`<h1>`,
-  `<h2>`, `<p>`, `<strong>`, `<em>`, `<a>`, `<ul>`, `<li>`), die alle
-  Bibliotheken unterstützen. Komplexes CSS (Flexbox, Multi-Column,
-  Floats) wird nicht gemessen.
-
-- **Overhead beim ersten Lauf.** Die Wall-Time umfasst den Start des
-  Subprozesses und den Bootstrap des Autoloaders, was für
-  Serverless- bzw. Per-Request-Workloads realistisch ist. Lang
-  laufende Worker sehen für alle Bibliotheken proportional kleineren
-  Overhead pro Rendervorgang.
+Sprache: [English](../en/BENCHMARKS.md) · [Русский](../ru/BENCHMARKS.md) · [中文](../zh/BENCHMARKS.md) · [Deutsch](BENCHMARKS.md)
