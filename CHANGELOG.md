@@ -4,6 +4,23 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- A table row carried over to a new page because nothing of it fitted the
+  rest of the old one was drawn whole there, even when taller than the
+  page: everything past the bottom was lost (a long clause of a contract
+  lost 343 words). It now splits on the new page like any other row.
+- A paragraph was measured by a simplified copy of the line breaking: tabs,
+  inline images, the first-line indent of leading spaces, long-word and
+  soft-hyphen breaks were left out, so a cell could be measured shorter
+  than it laid out. Layout and measurement now share one line breaker and
+  one line-height rule — rows are as tall as their content, and nothing
+  overlaps the row below.
+- A word split into runs ("настояще" + "му", as Word cuts text at
+  formatting changes) could break between its pieces at the end of a line;
+  it now moves to the next line whole.
+
 ## [1.21.1] — 2026-10-18
 
 ### Fixed

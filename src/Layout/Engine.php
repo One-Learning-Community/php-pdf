@@ -3177,159 +3177,12 @@ final class Engine
         $availableWidth = $ctx->contentWidth - $p->style->indentLeftPt - $p->style->indentRightPt;
         $firstLineExtraIndent = $p->style->indentFirstLinePt + $this->leadingSpaceIndent($p, $effectiveDefault);
 
-        // Greedy line breaking.
-        /** @var list<array{type: string, text?: string, style?: RunStyle}> $currentLine */
-        $currentLine = [];
-        $currentWidth = 0;
-        $effectiveAvail = $availableWidth - ($isFirstLine ? $firstLineExtraIndent : 0);
-
-        // While-loop with explicit index because soft-hyphen
-        // overflow handling uses array_splice() to re-enqueue
-        // remainder into the same items array.
-        $i = -1;
-        while (++$i < count($items)) {
-            $item = $items[$i];
-            if ($item['type'] === 'br') {
-                $this->emitLine($currentLine, $p, $ctx, $effectiveDefault, $isFirstLine, $firstLineExtraIndent);
-                $currentLine = [];
-                $currentWidth = 0;
-                $isFirstLine = false;
-                $effectiveAvail = $availableWidth;
-
-                continue;
-            }
-            if ($item['type'] === 'pagebreak') {
-                $this->emitLine($currentLine, $p, $ctx, $effectiveDefault, $isFirstLine, $firstLineExtraIndent);
-                $currentLine = [];
-                $currentWidth = 0;
-                $isFirstLine = false;
-                $effectiveAvail = $availableWidth;
+        foreach ($this->breakLines($items, $effectiveDefault, $availableWidth, $firstLineExtraIndent) as $n => $line) {
+            $this->emitLine($line['items'], $p, $ctx, $effectiveDefault, $n === 0, $firstLineExtraIndent, isLastLine: $line['kind'] !== 'wrap');
+            if ($line['kind'] === 'pagebreak') {
                 $this->forcePageBreak($ctx);
-
-                continue;
-            }
-            if ($item['type'] === 'bookmark') {
-                // Bookmark — zero-width marker; attaches to the current line's
-                // top-Y during emitLine(). If the current line is empty,
-                // attached to the next line.
-                $currentLine[] = $item;
-
-                continue;
-            }
-
-            if ($item['type'] === 'image') {
-                // Image atom — width is known, sep behaves like a word.
-                $atomWidth = $item['width'];
-                $sepWidth = $currentLine === [] ? 0 : $this->measureWidth(' ', $effectiveDefault);
-                if ($currentLine !== [] && $currentWidth + $sepWidth + $atomWidth > $effectiveAvail) {
-                    $this->emitLine($currentLine, $p, $ctx, $effectiveDefault, $isFirstLine, $firstLineExtraIndent, isLastLine: false);
-                    $currentLine = [$item];
-                    $currentWidth = $atomWidth;
-                    $isFirstLine = false;
-                    $effectiveAvail = $availableWidth;
-                } else {
-                    $currentLine[] = $item;
-                    $currentWidth += $sepWidth + $atomWidth;
-                }
-
-                continue;
-            }
-
-            $word = $item['text'] ?? '';
-            $style = $item['style'] ?? $effectiveDefault;
-            $wordWidth = $this->measureWidth($word, $style);
-            $sepWidth = ($currentLine === [] || ($item['glue'] ?? false))
-                ? 0
-                : $this->measureWidth(' ', $style);
-
-            // Hanging punctuation — trailing punct discounted from
-            // the wrap decision (it visually overflows past the margin).
-            $effectiveWordWidth = $wordWidth;
-            if ($this->hangingPunctuation) {
-                $lastChar = mb_substr($word, -1, 1, 'UTF-8');
-                if (in_array($lastChar, ['.', ',', ';', ':', '!', '?', '。', '，', '；', '：', '！', '？'], true)) {
-                    $effectiveWordWidth -= $this->measureWidth($lastChar, $style);
-                }
-            }
-
-            // A word that does not fit even on an empty line is broken by
-            // characters. Otherwise it prints as is and runs past the column: a
-            // long URL in a narrow cell crawled onto the neighbouring one. Word
-            // and the browser both do this — breaking a long string is better
-            // than losing the column boundary.
-            if ($wordWidth > $availableWidth && $availableWidth > 0) {
-                if ($currentLine !== []) {
-                    $this->emitLine($currentLine, $p, $ctx, $effectiveDefault, $isFirstLine, $firstLineExtraIndent, isLastLine: false);
-                    $currentLine = [];
-                    $currentWidth = 0;
-                    $isFirstLine = false;
-                    $effectiveAvail = $availableWidth;
-                }
-                // A soft hyphen is a real division point, and it beats a blind
-                // cut between characters.
-                $shy = $this->trySplitOnSoftHyphen($word, $style, $effectiveAvail);
-                [$head, $tail] = $shy ?? $this->splitOverlongWord($word, $style, $effectiveAvail);
-                if ($tail !== '') {
-                    $headItem = $item;
-                    $headItem['text'] = $head;
-                    $currentLine[] = $headItem;
-                    $this->emitLine($currentLine, $p, $ctx, $effectiveDefault, $isFirstLine, $firstLineExtraIndent, isLastLine: false);
-                    $currentLine = [];
-                    $currentWidth = 0;
-                    $isFirstLine = false;
-                    $effectiveAvail = $availableWidth;
-
-                    $tailItem = $item;
-                    $tailItem['text'] = $tail;
-                    // The tail is already glued on: there is no space before it.
-                    $tailItem['glue'] = true;
-                    array_splice($items, $i + 1, 0, [$tailItem]);
-
-                    continue;
-                }
-            }
-
-            if ($currentLine !== [] && $currentWidth + $sepWidth + $effectiveWordWidth > $effectiveAvail) {
-                // Try soft-hyphen split — if the word can be broken at SHY
-                // marker such that prefix + '-' fits in remaining space, place
-                // the prefix here and put the remainder as a new item on the next line.
-                $remainingSpace = $effectiveAvail - $currentWidth - $sepWidth;
-                $shySplit = $this->trySplitOnSoftHyphen($word, $style, $remainingSpace);
-                if ($shySplit !== null) {
-                    [$firstWithHyphen, $remainder] = $shySplit;
-                    $firstItem = $item;
-                    $firstItem['text'] = $firstWithHyphen;
-                    $currentLine[] = $firstItem;
-                    // Emit line with the split prefix.
-                    $this->emitLine($currentLine, $p, $ctx, $effectiveDefault, $isFirstLine, $firstLineExtraIndent, isLastLine: false);
-                    $currentLine = [];
-                    $currentWidth = 0;
-                    $isFirstLine = false;
-                    $effectiveAvail = $availableWidth;
-                    // Re-enqueue remainder for the next iteration.
-                    $remainderItem = $item;
-                    $remainderItem['text'] = $remainder;
-                    array_splice($items, $i + 1, 0, [$remainderItem]);
-
-                    continue;
-                }
-                // Overflow-driven line break — line followed by more content,
-                // so isLastLine = false (justify candidate).
-                $this->emitLine($currentLine, $p, $ctx, $effectiveDefault, $isFirstLine, $firstLineExtraIndent, isLastLine: false);
-                $currentLine = [$item];
-                $currentWidth = $wordWidth;
-                $isFirstLine = false;
-                $effectiveAvail = $availableWidth;
-            } else {
-                $currentLine[] = $item;
-                $currentWidth += $sepWidth + $wordWidth;
             }
         }
-        // Flush last line.
-        if ($currentLine !== []) {
-            $this->emitLine($currentLine, $p, $ctx, $effectiveDefault, $isFirstLine, $firstLineExtraIndent);
-        }
-
         // Restore leftX/contentWidth, step past padding and border.
         if ($hasBox) {
             $ctx->leftX = $savedLeftX;
@@ -3535,6 +3388,224 @@ final class Engine
     }
 
     /**
+     * Breaks a paragraph's items into lines — the one place it is decided, so
+     * the layout and the measurement of a paragraph cannot disagree (a cell
+     * measured shorter than it lays out ran past the bottom of the page and
+     * lost its text).
+     *
+     * A line ends by wrapping, at a `<br>`, at a page break, or with the
+     * paragraph ('last').
+     *
+     * @param  list<array<string, mixed>>  $items
+     * @return list<array{items: list<array<string, mixed>>, kind: 'wrap'|'br'|'pagebreak'|'last'}>
+     */
+    private function breakLines(array $items, RunStyle $effectiveDefault, float $availableWidth, float $firstLineExtraIndent): array
+    {
+        $lines = [];
+        $isFirstLine = true;
+        // Greedy line breaking.
+        /** @var list<array{type: string, text?: string, style?: RunStyle}> $currentLine */
+        $currentLine = [];
+        $currentWidth = 0;
+        $effectiveAvail = $availableWidth - ($isFirstLine ? $firstLineExtraIndent : 0);
+
+        // While-loop with explicit index because soft-hyphen
+        // overflow handling uses array_splice() to re-enqueue
+        // remainder into the same items array.
+        $i = -1;
+        while (++$i < count($items)) {
+            $item = $items[$i];
+            if ($item['type'] === 'br') {
+                $lines[] = ['items' => $currentLine, 'kind' => 'br'];
+                $currentLine = [];
+                $currentWidth = 0;
+                $isFirstLine = false;
+                $effectiveAvail = $availableWidth;
+
+                continue;
+            }
+            if ($item['type'] === 'pagebreak') {
+                $lines[] = ['items' => $currentLine, 'kind' => 'pagebreak'];
+                $currentLine = [];
+                $currentWidth = 0;
+                $isFirstLine = false;
+                $effectiveAvail = $availableWidth;
+
+                continue;
+            }
+            if ($item['type'] === 'bookmark') {
+                // Bookmark — zero-width marker; attaches to the current line's
+                // top-Y during emitLine(). If the current line is empty,
+                // attached to the next line.
+                $currentLine[] = $item;
+
+                continue;
+            }
+
+            if ($item['type'] === 'image') {
+                // Image atom — width is known, sep behaves like a word.
+                $atomWidth = $item['width'];
+                $sepWidth = $currentLine === [] ? 0 : $this->measureWidth(' ', $effectiveDefault);
+                if ($currentLine !== [] && $currentWidth + $sepWidth + $atomWidth > $effectiveAvail) {
+                    $lines[] = ['items' => $currentLine, 'kind' => 'wrap'];
+                    $currentLine = [$item];
+                    $currentWidth = $atomWidth;
+                    $isFirstLine = false;
+                    $effectiveAvail = $availableWidth;
+                } else {
+                    $currentLine[] = $item;
+                    $currentWidth += $sepWidth + $atomWidth;
+                }
+
+                continue;
+            }
+
+            $word = $item['text'] ?? '';
+            $style = $item['style'] ?? $effectiveDefault;
+            $wordWidth = $this->measureWidth($word, $style);
+            $sepWidth = ($currentLine === [] || ($item['glue'] ?? false))
+                ? 0
+                : $this->measureWidth(' ', $style);
+
+            // Hanging punctuation — trailing punct discounted from
+            // the wrap decision (it visually overflows past the margin).
+            $effectiveWordWidth = $wordWidth;
+            if ($this->hangingPunctuation) {
+                $lastChar = mb_substr($word, -1, 1, 'UTF-8');
+                if (in_array($lastChar, ['.', ',', ';', ':', '!', '?', '。', '，', '；', '：', '！', '？'], true)) {
+                    $effectiveWordWidth -= $this->measureWidth($lastChar, $style);
+                }
+            }
+
+            // A word that does not fit even on an empty line is broken by
+            // characters. Otherwise it prints as is and runs past the column: a
+            // long URL in a narrow cell crawled onto the neighbouring one. Word
+            // and the browser both do this — breaking a long string is better
+            // than losing the column boundary.
+            if ($wordWidth > $availableWidth && $availableWidth > 0) {
+                if ($currentLine !== []) {
+                    $lines[] = ['items' => $currentLine, 'kind' => 'wrap'];
+                    $currentLine = [];
+                    $currentWidth = 0;
+                    $isFirstLine = false;
+                    $effectiveAvail = $availableWidth;
+                }
+                // A soft hyphen is a real division point, and it beats a blind
+                // cut between characters.
+                $shy = $this->trySplitOnSoftHyphen($word, $style, $effectiveAvail);
+                [$head, $tail] = $shy ?? $this->splitOverlongWord($word, $style, $effectiveAvail);
+                if ($tail !== '') {
+                    $headItem = $item;
+                    $headItem['text'] = $head;
+                    $currentLine[] = $headItem;
+                    $lines[] = ['items' => $currentLine, 'kind' => 'wrap'];
+                    $currentLine = [];
+                    $currentWidth = 0;
+                    $isFirstLine = false;
+                    $effectiveAvail = $availableWidth;
+
+                    $tailItem = $item;
+                    $tailItem['text'] = $tail;
+                    // The tail is already glued on: there is no space before it.
+                    $tailItem['glue'] = true;
+                    array_splice($items, $i + 1, 0, [$tailItem]);
+
+                    continue;
+                }
+            }
+
+            if ($currentLine !== [] && $currentWidth + $sepWidth + $effectiveWordWidth > $effectiveAvail) {
+                // Try soft-hyphen split — if the word can be broken at SHY
+                // marker such that prefix + '-' fits in remaining space, place
+                // the prefix here and put the remainder as a new item on the next line.
+                $remainingSpace = $effectiveAvail - $currentWidth - $sepWidth;
+                $shySplit = $this->trySplitOnSoftHyphen($word, $style, $remainingSpace);
+                if ($shySplit !== null) {
+                    [$firstWithHyphen, $remainder] = $shySplit;
+                    $firstItem = $item;
+                    $firstItem['text'] = $firstWithHyphen;
+                    $currentLine[] = $firstItem;
+                    // Emit line with the split prefix.
+                    $lines[] = ['items' => $currentLine, 'kind' => 'wrap'];
+                    $currentLine = [];
+                    $currentWidth = 0;
+                    $isFirstLine = false;
+                    $effectiveAvail = $availableWidth;
+                    // Re-enqueue remainder for the next iteration.
+                    $remainderItem = $item;
+                    $remainderItem['text'] = $remainder;
+                    array_splice($items, $i + 1, 0, [$remainderItem]);
+
+                    continue;
+                }
+                // A word made of several runs ("настояще" + "му", as Word
+                // splits text at formatting changes) moves to the next line
+                // whole: the line breaks before the first of its pieces, not
+                // between them.
+                $carry = [];
+                if ($item['glue'] ?? false) {
+                    $start = count($currentLine) - 1;
+                    while ($start > 0 && ($currentLine[$start]['glue'] ?? false) && ($currentLine[$start]['type'] ?? null) === 'word') {
+                        $start--;
+                    }
+                    if ($start > 0 && ($currentLine[$start]['type'] ?? null) === 'word') {
+                        $carry = array_splice($currentLine, $start);
+                    }
+                }
+                // Overflow-driven line break — line followed by more content,
+                // so isLastLine = false (justify candidate).
+                $lines[] = ['items' => $currentLine, 'kind' => 'wrap'];
+                $currentWidth = $wordWidth;
+                foreach ($carry as $piece) {
+                    $currentWidth += $this->measureWidth($piece['text'] ?? '', $piece['style'] ?? $effectiveDefault);
+                }
+                $currentLine = [...$carry, $item];
+                $isFirstLine = false;
+                $effectiveAvail = $availableWidth;
+            } else {
+                $currentLine[] = $item;
+                $currentWidth += $sepWidth + $wordWidth;
+            }
+        }
+        // Flush last line.
+        if ($currentLine !== []) {
+            $lines[] = ['items' => $currentLine, 'kind' => 'last'];
+        }
+
+        return $lines;
+    }
+
+    /**
+     * The height of a line and what it is made of — shared by the layout and
+     * the measurement. The largest font sets the text line height; an inline
+     * image taller than that sets the line. An empty line takes the default
+     * font's height.
+     *
+     * @param  list<array<string, mixed>>  $wordItems  The line without its bookmarks.
+     * @return array{0: float, 1: float, 2: float, 3: float} line height, largest font size, text line height, tallest image
+     */
+    private function lineMetrics(array $wordItems, Paragraph $p, RunStyle $defaultStyle): array
+    {
+        $maxSizePt = 0.0;
+        $maxImageHeight = 0.0;
+        foreach ($wordItems as $item) {
+            if (($item['type'] ?? null) === 'image') {
+                $maxImageHeight = max($maxImageHeight, (float) $item['height']);
+
+                continue;
+            }
+            $maxSizePt = max($maxSizePt, (float) (($item['style'] ?? $defaultStyle)->sizePt ?? $this->defaultFontSizePt));
+        }
+        if ($maxSizePt === 0.0) {
+            // An empty line, or one of images only: the default font's height.
+            $maxSizePt = $defaultStyle->sizePt ?? $this->defaultFontSizePt;
+        }
+        $textLineHeight = $this->effectiveLineHeightPt($p, $maxSizePt);
+
+        return [max($textLineHeight, $maxImageHeight > 0 ? $maxImageHeight + 2 : 0.0), $maxSizePt, $textLineHeight, $maxImageHeight];
+    }
+
+    /**
      * Emits a line — positions words, updates cursorY.
      *
      * @param  list<array{type: string, text?: string, style?: RunStyle}>  $items
@@ -3563,8 +3634,7 @@ final class Engine
         if ($wordItems === []) {
             // Empty line — advance cursorY by the default height, attach bookmarks
             // to the current top-Y.
-            $sizePt = $defaultStyle->sizePt ?? $this->defaultFontSizePt;
-            $lineHeight = $this->effectiveLineHeightPt($p, $sizePt);
+            [$lineHeight] = $this->lineMetrics($wordItems, $p, $defaultStyle);
             $this->ensureRoomFor($ctx, $lineHeight);
             $this->registerBookmarksAt($ctx, $bookmarks, $ctx->cursorY);
             $ctx->cursorY -= $lineHeight;
@@ -3572,30 +3642,7 @@ final class Engine
             return;
         }
 
-        // Max font size in this line determines line height. Images
-        // also contribute via height (inline image increases
-        // line-height if taller than text).
-        $maxSizePt = 0;
-        $maxImageHeight = 0;
-        foreach ($wordItems as $item) {
-            if (($item['type'] ?? null) === 'image') {
-                if ($item['height'] > $maxImageHeight) {
-                    $maxImageHeight = $item['height'];
-                }
-
-                continue;
-            }
-            $size = ($item['style'] ?? $defaultStyle)->sizePt ?? $this->defaultFontSizePt;
-            if ($size > $maxSizePt) {
-                $maxSizePt = $size;
-            }
-        }
-        if ($maxSizePt === 0) {
-            // Line contains only images — line-height = image-height.
-            $maxSizePt = $defaultStyle->sizePt ?? $this->defaultFontSizePt;
-        }
-        $textLineHeight = $this->effectiveLineHeightPt($p, $maxSizePt);
-        $lineHeight = max($textLineHeight, $maxImageHeight + 2);
+        [$lineHeight, $maxSizePt, $textLineHeight, $maxImageHeight] = $this->lineMetrics($wordItems, $p, $defaultStyle);
 
         $this->ensureRoomFor($ctx, $lineHeight);
 
@@ -4317,6 +4364,51 @@ final class Engine
         // Cross-row border priority tracking. Reset on page break
         // (repeated header rows form a fresh row sequence).
         $prevRowBottomByCol = [];
+        // A row taller than what is left of the page: split, the head drawn,
+        // the tail carried to the next page and split again as long as it does
+        // not fit.
+        $flowRow = function (Row $first, int $rowIdx, bool $isLastRow) use ($t, $colWidths, $cols, $ctx, $tableLeftX, $tableWidth, &$segmentTop, &$prevRowBottomByCol): void {
+            $rowsToProcess = [$first];
+            while ($rowsToProcess !== []) {
+                $current = array_shift($rowsToProcess);
+                $currentHeight = $this->measureRowHeight($t, $current, $colWidths, $cols[$rowIdx]);
+                $room = $ctx->cursorY - $ctx->bottomY;
+                if ($currentHeight <= $room) {
+                    $this->renderRow($t, $current, $colWidths, $tableLeftX, $currentHeight, $ctx, $isLastRow, $prevRowBottomByCol, $cols[$rowIdx]);
+                    $ctx->cursorY -= $currentHeight;
+
+                    continue;
+                }
+                $next = $this->splitRowForPage($t, $current, $colWidths, $room, $cols[$rowIdx]);
+                if ($next === null) {
+                    // Nothing of it fits here. On a fresh page there is
+                    // nowhere better to go: it is drawn as it is.
+                    if ($ctx->cursorY < $ctx->topY - 0.01) {
+                        $this->closeTableSegment($t, $ctx, $tableLeftX, $tableWidth, $segmentTop);
+                        $this->forcePageBreak($ctx);
+                        $segmentTop = $ctx->cursorY;
+                        $prevRowBottomByCol = [];
+                        if ($this->measureRowHeight($t, $current, $colWidths, $cols[$rowIdx]) > $ctx->cursorY - $ctx->bottomY) {
+                            $rowsToProcess = [$current, ...$rowsToProcess];
+
+                            continue;
+                        }
+                    }
+                    $this->renderRow($t, $current, $colWidths, $tableLeftX, $currentHeight, $ctx, $isLastRow, $prevRowBottomByCol, $cols[$rowIdx]);
+                    $ctx->cursorY -= $currentHeight;
+
+                    continue;
+                }
+                [$nextHead, $nextTail] = $next;
+                $this->renderRow($t, $nextHead, $colWidths, $tableLeftX, $room, $ctx, false, $prevRowBottomByCol, $cols[$rowIdx]);
+                $ctx->cursorY -= $room;
+                $this->closeTableSegment($t, $ctx, $tableLeftX, $tableWidth, $segmentTop);
+                $this->forcePageBreak($ctx);
+                $segmentTop = $ctx->cursorY;
+                $prevRowBottomByCol = [];
+                $rowsToProcess[] = $nextTail;
+            }
+        };
         foreach ($t->rows as $rowIdx => $row) {
             $rowHeight = $heights[$rowIdx];
             $isLastRow = $rowIdx === $totalRows - 1;
@@ -4389,38 +4481,7 @@ final class Engine
                     $row = $tail;
                     $rowHeight = $this->measureRowHeight($t, $row, $colWidths, $cols[$rowIdx]);
                     if ($ctx->cursorY - $rowHeight < $ctx->bottomY) {
-                        $rowsToProcess = [$tail];
-                        while ($rowsToProcess !== []) {
-                            $current = array_shift($rowsToProcess);
-                            $currentHeight = $this->measureRowHeight($t, $current, $colWidths, $cols[$rowIdx]);
-                            $room = $ctx->cursorY - $ctx->bottomY;
-                            if ($currentHeight <= $room) {
-                                $this->renderRow($t, $current, $colWidths, $tableLeftX, $currentHeight, $ctx, $isLastRow, $prevRowBottomByCol, $cols[$rowIdx]);
-                                $ctx->cursorY -= $currentHeight;
-
-                                continue;
-                            }
-                            $next = $this->splitRowForPage($t, $current, $colWidths, $room, $cols[$rowIdx]);
-                            if ($next === null) {
-                                $this->closeTableSegment($t, $ctx, $tableLeftX, $tableWidth, $segmentTop);
-                                $this->forcePageBreak($ctx);
-                                $segmentTop = $ctx->cursorY;
-                                $prevRowBottomByCol = [];
-                                $this->renderRow($t, $current, $colWidths, $tableLeftX, $currentHeight, $ctx, $isLastRow, $prevRowBottomByCol, $cols[$rowIdx]);
-                                $ctx->cursorY -= $currentHeight;
-
-                                continue;
-                            }
-                            [$nextHead, $nextTail] = $next;
-                            $this->renderRow($t, $nextHead, $colWidths, $tableLeftX, $room, $ctx, false, $prevRowBottomByCol, $cols[$rowIdx]);
-                            $ctx->cursorY -= $room;
-                            $this->closeTableSegment($t, $ctx, $tableLeftX, $tableWidth, $segmentTop);
-                            $this->forcePageBreak($ctx);
-                            $segmentTop = $ctx->cursorY;
-                            $prevRowBottomByCol = [];
-                            $rowsToProcess[] = $nextTail;
-                        }
-
+                        $flowRow($tail, $rowIdx, $isLastRow);
                         continue;
                     }
 
@@ -4436,6 +4497,15 @@ final class Engine
                 $prevRowBottomByCol = [];
                 if (! $row->isHeader) {
                     $repeatHeaders($prevRowBottomByCol);
+                }
+                // Carried over to a fresh page and still taller than what is
+                // left of it: it is split here, as a row that started on
+                // the page would be — drawn whole, it ran past the bottom and
+                // its text was lost.
+                if (! $row->isHeader && $ctx->cursorY - $rowHeight < $ctx->bottomY && $groupEnd === $rowIdx) {
+                    $flowRow($row, $rowIdx, $isLastRow);
+
+                    continue;
                 }
             }
 
@@ -5494,65 +5564,23 @@ final class Engine
         $headingStyle = $this->headingStyle($p->headingLevel);
         $effectiveDefault = $p->defaultRunStyle->inheritFrom($headingStyle);
 
-        // Build items list (same approach as in renderParagraph).
+        // The same items and the same line breaking as renderParagraph.
         /** @var list<array<string, mixed>> $items */
         $items = [];
         $this->tokenizeChildren($p->children, $effectiveDefault, $items, null);
-        // Skip bookmark items for measurement — zero-width markers.
-        $items = array_values(array_filter($items, fn ($it): bool => $it['type'] !== 'bookmark'));
-
         $availableWidth = $contentWidth - $p->style->indentLeftPt - $p->style->indentRightPt;
-        $firstLineExtraIndent = $p->style->indentFirstLinePt;
-        $isFirstLine = true;
-        $effectiveAvail = $availableWidth - $firstLineExtraIndent;
-        $currentWidth = 0;
-        $hasContent = false;
-        $maxSizeInLine = 0;
+        $firstLineExtraIndent = $p->style->indentFirstLinePt + $this->leadingSpaceIndent($p, $effectiveDefault);
 
-        $lineMaxSizes = [];
-        $flushLine = function () use (&$lineMaxSizes, &$maxSizeInLine, &$currentWidth, &$isFirstLine, &$hasContent, &$effectiveAvail, $availableWidth, $effectiveDefault) {
-            $lineMaxSizes[] = $maxSizeInLine > 0
-                ? $maxSizeInLine
-                : ($effectiveDefault->sizePt ?? $this->defaultFontSizePt);
-            $maxSizeInLine = 0;
-            $currentWidth = 0;
-            $isFirstLine = false;
-            $hasContent = false;
-            $effectiveAvail = $availableWidth;
-        };
-
-        foreach ($items as $item) {
-            if ($item['type'] === 'br') {
-                $flushLine();
-
-                continue;
-            }
-            $word = $item['text'] ?? '';
-            $style = $item['style'] ?? $effectiveDefault;
-            $wordWidth = $this->measureWidth($word, $style);
-            $sepWidth = $hasContent ? $this->measureWidth(' ', $style) : 0;
-            $size = $style->sizePt ?? $this->defaultFontSizePt;
-
-            if ($hasContent && $currentWidth + $sepWidth + $wordWidth > $effectiveAvail) {
-                $flushLine();
-                $currentWidth = $wordWidth;
-                $maxSizeInLine = $size;
-                $hasContent = true;
-            } else {
-                $currentWidth += $sepWidth + $wordWidth;
-                if ($size > $maxSizeInLine) {
-                    $maxSizeInLine = $size;
-                }
-                $hasContent = true;
-            }
-        }
-        if ($hasContent || $lineMaxSizes === []) {
-            $flushLine();
+        $lines = $this->breakLines($items, $effectiveDefault, $availableWidth, $firstLineExtraIndent);
+        if ($lines === []) {
+            // An empty paragraph still takes a line.
+            return $this->lineMetrics([], $p, $effectiveDefault)[0];
         }
 
         $total = 0.0;
-        foreach ($lineMaxSizes as $s) {
-            $total += $this->effectiveLineHeightPt($p, $s);
+        foreach ($lines as $line) {
+            $wordItems = array_values(array_filter($line['items'], static fn (array $it): bool => $it['type'] !== 'bookmark'));
+            $total += $this->lineMetrics($wordItems, $p, $effectiveDefault)[0];
         }
 
         return $total;

@@ -91,12 +91,6 @@ parameters:
 			path: src/Font/Ttf/VariableInstance.php
 
 		-
-			message: '#^Comparison operation "\>" between 0 and 0 is always false\.$#'
-			identifier: greater.alwaysFalse
-			count: 1
-			path: src/Layout/Engine.php
-
-		-
 			message: '#^Method Dskripchenko\\PhpPdf\\Layout\\Engine\:\:drawTextDecorations\(\) is unused\.$#'
 			identifier: method.unused
 			count: 1
@@ -105,7 +99,7 @@ parameters:
 		-
 			message: '#^Offset ''height'' does not exist on array\{type\: ''image'', text\?\: string, style\?\: Dskripchenko\\PhpPdf\\Style\\RunStyle\}\.$#'
 			identifier: offsetAccess.notFound
-			count: 2
+			count: 1
 			path: src/Layout/Engine.php
 
 		-
