@@ -5815,9 +5815,20 @@ final class Engine
         $format = $list->effectiveFormat();
         $baseIndent = ($level + 1) * self::LIST_LEVEL_INDENT_PT;
 
-        foreach ($list->items as $i => $item) {
-            $number = $list->startAt + $i;
-            $marker = $this->formatListMarker($number, $format);
+        $number = $list->startAt - 1;
+        foreach ($list->items as $item) {
+            $number = $item->value ?? $number + 1;
+            $marker = $item->marker ?? $this->formatListMarker($number, $format);
+
+            // An item with no label and no content only carries its nested
+            // list (it stands for a parent outside the list).
+            if ($marker === '' && $item->children === []) {
+                if ($item->nestedList !== null) {
+                    $this->renderListNode($item->nestedList, $ctx, $level + 1);
+                }
+
+                continue;
+            }
 
             // Per-item /LI wrap.
             $itemMcid = null;
@@ -5930,51 +5941,7 @@ final class Engine
 
     private function formatListMarker(int $n, ListFormat $f): string
     {
-        return match ($f) {
-            ListFormat::Bullet => "\u{2022}  ",   // •
-            ListFormat::Decimal => $n.'. ',
-            ListFormat::LowerLetter => $this->toLetter($n, false).'. ',
-            ListFormat::UpperLetter => $this->toLetter($n, true).'. ',
-            ListFormat::LowerRoman => strtolower($this->toRoman($n)).'. ',
-            ListFormat::UpperRoman => $this->toRoman($n).'. ',
-        };
-    }
-
-    private function toLetter(int $n, bool $upper): string
-    {
-        if ($n < 1) {
-            return '';
-        }
-        $base = $upper ? 65 : 97;
-        $result = '';
-        while ($n > 0) {
-            $n--;
-            $result = chr($base + ($n % 26)).$result;
-            $n = (int) ($n / 26);
-        }
-
-        return $result;
-    }
-
-    private function toRoman(int $n): string
-    {
-        if ($n < 1) {
-            return '';
-        }
-        $map = [
-            ['M', 1000], ['CM', 900], ['D', 500], ['CD', 400],
-            ['C', 100], ['XC', 90], ['L', 50], ['XL', 40],
-            ['X', 10], ['IX', 9], ['V', 5], ['IV', 4], ['I', 1],
-        ];
-        $result = '';
-        foreach ($map as [$sym, $val]) {
-            while ($n >= $val) {
-                $result .= $sym;
-                $n -= $val;
-            }
-        }
-
-        return $result;
+        return $f === ListFormat::Bullet ? "\u{2022}  " : $f->number($n).'. ';
     }
 
     /**

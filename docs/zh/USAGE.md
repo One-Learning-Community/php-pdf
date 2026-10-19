@@ -354,6 +354,11 @@ $doc->toFile('report.pdf');
   `<col>` 宽度；单元格：`border`、`background-color`、`padding`、
   `vertical-align`、`width`、`height`、`colspan`、`rowspan`；行：
   `height`、`break-inside: avoid`。`<thead>` 行在每一页重复。
+- 列表：`<ol start>`、`type` 与 `list-style-type`（decimal、alpha、roman、
+  `none`）、`<li value>`；带字符串、`counter(list-item)` 和
+  `counters(list-item, ".")` 的 `::marker { content }` 为列表项加标签——在第 3 项
+  下显示 `3.1.`，与 Word 多级编号的写法一致；`list-style-type: none` 且自身无
+  内容的列表项只承载其嵌套列表。
 - 图片：`width` / `height`（`%` 相对于行宽），`display: block` 配合
   `margin: auto` 居中。文字行中的 `<svg>` 作为独立的块绘制：段落在其周围
   拆分，它沿用文字的对齐方式。

@@ -4,6 +4,20 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- HTML lists: `<ol start>`, `type` and `list-style-type` (decimal, alpha,
+  roman, `none`), `<li value>`, and `::marker { content }` labels with
+  strings, `counter(list-item)` and `counters(list-item, ".")` — Word's
+  multilevel numbering (`3.1.`, `4.1.`) as an import writes it. An item with
+  no label and no content draws only its nested list. `ListItem::$marker`
+  and `ListItem::$value`; `ListFormat::number()`.
+
+### Fixed
+- HTML: `<ol start>` and `type` were ignored — every list counted from 1
+  in decimal.
+
 ## [1.23.0] — 2026-10-18
 
 ### Added

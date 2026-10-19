@@ -369,6 +369,12 @@ $doc->toFile('report.pdf');
   `padding`, `vertical-align`, `width`, `height`, `colspan`, `rowspan`;
   rows: `height`, `break-inside: avoid`. `<thead>` rows repeat on every
   page.
+- Lists: `<ol start>`, `type` and `list-style-type` (decimal, alpha,
+  roman, `none`), `<li value>`; `::marker { content }` with strings,
+  `counter(list-item)` and `counters(list-item, ".")` labels the items —
+  `3.1.` under item 3, the way Word's multilevel numbering is written; an
+  item with `list-style-type: none` and no content of its own only carries
+  its nested list.
 - Images: `width` / `height` (`%` of the line), `display: block` with
   `margin: auto` centres. An `<svg>` in a line of text is drawn as a block
   of its own: the paragraph splits around it, and it takes the text-align.

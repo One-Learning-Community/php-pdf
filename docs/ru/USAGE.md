@@ -381,6 +381,12 @@ $doc->toFile('report.pdf');
   `height`, `colspan`, `rowspan`; строки: `height`,
   `break-inside: avoid`. Строки `<thead>` повторяются на каждой
   странице.
+- Списки: `<ol start>`, `type` и `list-style-type` (decimal, alpha,
+  roman, `none`), `<li value>`; `::marker { content }` со строками,
+  `counter(list-item)` и `counters(list-item, ".")` подписывает пункты —
+  `3.1.` под пунктом 3, как записывается многоуровневая нумерация Word;
+  пункт с `list-style-type: none` без собственного содержимого только несёт
+  вложенный список.
 - Картинки: `width` / `height` (`%` от строки), `display: block` с
   `margin: auto` центрирует. `<svg>` в строке текста рисуется отдельным
   блоком: абзац делится вокруг него, а он берёт выравнивание текста.
