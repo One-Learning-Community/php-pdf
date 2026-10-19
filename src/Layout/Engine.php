@@ -109,6 +109,9 @@ final class Engine
     /** @var array<int, string> footnote number → its text */
     private array $footnoteTexts = [];
 
+    /** @var array<int, RunStyle|null> The notes' own text styles, by number. */
+    private array $footnoteStyles = [];
+
     /** @var array<int, list<int>> page spl_object_id → numbers placed on it */
     private array $pageFootnotes = [];
 
@@ -267,6 +270,7 @@ final class Engine
     {
         $this->footnoteNumbers = [];
         $this->footnoteTexts = [];
+        $this->footnoteStyles = [];
         $this->pageFootnotes = [];
         $this->pageFootnoteRoom = [];
 
@@ -285,6 +289,7 @@ final class Engine
                     $number = count($this->footnoteNumbers) + 1;
                     $this->footnoteNumbers[$id] = $number;
                     $this->footnoteTexts[$number] = $node->content;
+                    $this->footnoteStyles[$number] = $node->style;
                 }
 
                 continue;
@@ -309,6 +314,7 @@ final class Engine
             $number = count($this->footnoteNumbers) + 1;
             $this->footnoteNumbers[$id] = $number;
             $this->footnoteTexts[$number] = $footnote->content;
+            $this->footnoteStyles[$number] = $footnote->style;
         }
 
         return $this->footnoteNumbers[$id];
@@ -332,7 +338,7 @@ final class Engine
     /** A note as it is drawn at the foot of the page. */
     private function footnoteParagraph(int $number): Paragraph
     {
-        return new Paragraph([new Run($number.'. '.($this->footnoteTexts[$number] ?? ''))]);
+        return new Paragraph([new Run($number.'. '.($this->footnoteTexts[$number] ?? ''), $this->footnoteStyles[$number] ?? new RunStyle)]);
     }
 
     /**
@@ -3144,9 +3150,8 @@ final class Engine
         );
         $ctx->cursorY -= 8.0;
 
-        foreach ($this->footnoteTexts as $number => $content) {
-            $marker = $number.'. ';
-            $p = new Paragraph([new Run($marker.$content)]);
+        foreach (array_keys($this->footnoteTexts) as $number) {
+            $p = $this->footnoteParagraph($number);
             $this->renderBlock($p, $ctx);
         }
     }
@@ -5177,6 +5182,15 @@ final class Engine
 
                     continue;
                 }
+                // A list splits between its items: a long list in a cell
+                // would otherwise carry its whole row to the next page.
+                if ($tail === [] && $block instanceof ListNode && ($parts = $this->splitListForHeight($block, $room - $used, $contentWidth)) !== null) {
+                    $head[] = $parts[0];
+                    $tail[] = $parts[1];
+                    $used = $room;
+
+                    continue;
+                }
                 $tail[] = $block;
             }
 
@@ -5206,6 +5220,59 @@ final class Engine
         }
 
         return [new Row($headCells, false), new Row($tailCells, false)];
+    }
+
+    /**
+     * A list cut to a height: the items that fit, and the rest numbering on
+     * from them. An item whose nested list does not fit is cut inside that
+     * list, its rest going on under a label-less item of the same number.
+     * Null when not even the first item's own text fits.
+     *
+     * @return array{0: ListNode, 1: ListNode}|null
+     */
+    private function splitListForHeight(ListNode $list, float $room, float $contentWidth, int $level = 0): ?array
+    {
+        $used = $list->spaceBeforePt;
+        $number = $list->startAt - 1;
+        $head = [];
+        foreach ($list->items as $i => $item) {
+            $number = $item->value ?? $number + 1;
+            $single = static fn (ListItem $it, int $n): ListNode => new ListNode([$it], $list->format, $n, 0, 0, $list->indentPt);
+            $height = $this->measureListNodeHeight($single($item, $number), $contentWidth, $level);
+            if ($used + $height <= $room) {
+                $head[] = $item;
+                $used += $height;
+
+                continue;
+            }
+
+            $rest = array_slice($list->items, $i + 1);
+            $tailFirst = null;
+            if ($item->nestedList !== null) {
+                $own = $this->measureListNodeHeight($single(new ListItem($item->children, null, $item->marker, null, $item->indentPt), $number), $contentWidth, $level);
+                $indent = ($list->indentPt ?? self::LIST_LEVEL_INDENT_PT) + $item->indentPt;
+                $nested = $used + $own < $room
+                    ? $this->splitListForHeight($item->nestedList, $room - $used - $own, $contentWidth - $indent, $level + 1)
+                    : null;
+                if ($nested !== null) {
+                    $head[] = new ListItem($item->children, $nested[0], $item->marker, $item->value, $item->indentPt);
+                    $tailFirst = new ListItem([], $nested[1], '', $number, $item->indentPt);
+                }
+            }
+            if ($tailFirst === null) {
+                if ($head === []) {
+                    return null;
+                }
+                $tailFirst = new ListItem($item->children, $item->nestedList, $item->marker, $number, $item->indentPt);
+            }
+
+            return [
+                new ListNode($head, $list->format, $list->startAt, $list->spaceBeforePt, 0, $list->indentPt),
+                new ListNode([$tailFirst, ...$rest], $list->format, $number, 0, $list->spaceAfterPt, $list->indentPt),
+            ];
+        }
+
+        return null;
     }
 
     /**

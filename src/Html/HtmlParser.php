@@ -1879,10 +1879,16 @@ final class HtmlParser
             ? $this->sides($listDecl, 'padding')[3] + $this->sides($listDecl, 'margin')[3]
             : null;
 
+        // The space around the list as its CSS says; without a word about
+        // it, the usual gap after a list.
+        [$marginTop, , $marginBottom] = $this->sides($listDecl, 'margin');
+
         return new ListNode(
             items: $items,
             format: $format,
             startAt: $startAt,
+            spaceBeforePt: $marginTop,
+            spaceAfterPt: isset($listDecl['margin-bottom']) ? $marginBottom : 6.0,
             indentPt: $indent,
         );
     }
@@ -1974,8 +1980,24 @@ final class HtmlParser
         if ($pendingInlines !== []) {
             $this->pushParagraph($blocks, $pendingInlines);
         }
-        if ($blocks === []) {
+        // An item with only a nested list has no paragraph of its own: an
+        // empty one would print as a blank line.
+        if ($blocks === [] && $nestedList === null) {
             $blocks[] = new Paragraph([new Run('')]);
+        }
+
+        // The item's own vertical margins are its paragraphs' space — Word's
+        // spacing before and after a numbered paragraph.
+        [$marginTop, , $marginBottom] = $this->sides($this->decl($node), 'margin');
+        $last = count($blocks) - 1;
+        foreach ($blocks as $i => $block) {
+            if ($block instanceof Paragraph && (($i === 0 && $marginTop > 0) || ($i === $last && $marginBottom > 0))) {
+                $blocks[$i] = new Paragraph($block->children, $this->styleCopy(
+                    $block->style,
+                    spaceBefore: $i === 0 && $marginTop > 0 ? $marginTop : null,
+                    spaceAfter: $i === $last && $marginBottom > 0 ? $marginBottom : null,
+                ), $block->headingLevel, $block->defaultRunStyle);
+            }
         }
 
         return new ListItem(children: $blocks, nestedList: $nestedList);

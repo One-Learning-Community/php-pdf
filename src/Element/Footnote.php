@@ -17,5 +17,12 @@ namespace Dskripchenko\PhpPdf\Element;
  */
 final readonly class Footnote implements InlineElement
 {
-    public function __construct(public string $content) {}
+    public function __construct(
+        public string $content,
+        /**
+         * How the note's text is set where it is printed — notes are usually
+         * smaller than the body. Null for the engine's default.
+         */
+        public ?\Dskripchenko\PhpPdf\Style\RunStyle $style = null,
+    ) {}
 }

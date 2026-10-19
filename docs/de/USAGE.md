@@ -252,6 +252,8 @@ new Section($body);                               // Endnoten nach dem Abschnitt
 Mit `footnotesAtPageFoot` verliert eine Seite ohne Fußnoten nichts, und
 eine Zeile, deren Fußnoten nicht mehr auf ihre Seite passen, wandert mit
 ihnen weiter — so, wie eine Textverarbeitung sie setzt.
+`new Footnote('Text', new RunStyle(sizePt: 8))` legt den eigenen Textstil
+der Fußnote fest.
 
 ### Seitenaufbau und Abschnittsumbrüche
 
@@ -391,6 +393,8 @@ $doc->toFile('report.pdf');
   `margin-left` einer Liste und `margin-left` eines Eintrags legen fest, wo
   der Text der Einträge beginnt; die Beschriftung hängt davor, und ein
   Tabulator danach setzt den Text auf den Einzug, wie in Word.
+  `margin-top` / `margin-bottom` einer Liste und die Ränder eines Eintrags
+  bestimmen den Abstand um sie herum.
 - Bilder: `width` / `height` (`%` der Zeile), `display: block` mit
   `margin: auto` zentriert. Ein `<svg>` in einer Textzeile wird als eigener
   Block gezeichnet: der Absatz wird um ihn geteilt, und er übernimmt die

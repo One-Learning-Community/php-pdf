@@ -17,6 +17,14 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`ListNode::$indentPt`) and an item's `margin-left` (`ListItem::$indentPt`)
   instead of the fixed indent per level — Word places a level by its
   numbering's indent, not by its depth.
+- HTML lists keep the vertical space their CSS gives them: a list's
+  `margin-top` / `margin-bottom` (the 6 pt gap after a list only when the
+  list says nothing), an item's own margins on its paragraphs.
+- `Footnote::$style`: the text style a note is printed in at the foot of
+  the page or among the endnotes — notes are usually smaller than the body.
+- A list in a table cell splits between its items (and inside a nested
+  list) when its row is split across pages; the rest numbers on. Before, a
+  long list carried its whole row to the next page.
 - A hanging indent is a tab stop on a paragraph's first line, as in Word,
   and a list label is followed by a tab: the item's text starts on the
   indent whatever the label's width (`1.` or `3.12.`).
@@ -24,6 +32,8 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 - HTML: `<ol start>` and `type` were ignored — every list counted from 1
   in decimal.
+- HTML: a list item holding only a nested list printed an empty line
+  before it.
 
 ## [1.23.0] — 2026-10-18
 
