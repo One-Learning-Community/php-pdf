@@ -4,6 +4,25 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- SVG `<text>` was always set in base-14 Helvetica, so Cyrillic and any
+  other non-Latin text printed as `?` — a stamp "ОПЛАЧЕНО" came out as
+  "????????". It is set in the document's fonts now: the family chain, the
+  fallbacks and the bold/italic faces a paragraph uses.
+- SVG `<text>` ignored `text-anchor` (centred labels started at their
+  anchor), a group's `transform` (rotated stamps printed level) and the font
+  properties of its group or `style`. `font-family`, `font-weight`,
+  `font-style`, `font-size`, `fill` and `text-anchor` are inherited as SVG
+  defines, and the glyphs are placed by a text matrix that follows the
+  group's rotation, scale and skew.
+
+### Added
+- `Page::showTextWithMatrix()` — text placed by a full text matrix, in a
+  base-14 or an embedded font; `SvgRenderer::render()` takes an optional
+  font resolver.
+
 ## [1.24.1] — 2026-10-19
 
 ### Fixed

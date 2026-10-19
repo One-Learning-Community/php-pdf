@@ -611,6 +611,13 @@ DocumentBuilder::new()
 （`translate`、`scale`、`rotate`、`skewX`、`skewY`、`matrix`）、
 `<use>` / `<defs>`、CSS 类样式。
 
+`<text>` 使用文档的字体排版 —— 与段落相同的字体族链、后备字体以及粗体/斜体
+字形 —— 因此西里尔字母及其他非拉丁文字的显示与正文一致；没有嵌入字体时，
+会退回到只含拉丁字形的 base-14 字体。`font-family`、`font-weight`、
+`font-style`、`font-size`、`fill` 与 `text-anchor` 从元素本身、其 `style`
+或最近的祖先元素读取；组的 `transform` 会让字形随图形一起旋转和缩放。
+不支持：`<tspan>` 定位、`<textPath>`、`dx`/`dy`。
+
 行内 SVG 在 HTML 中同样有效 —— `<svg>` 标签会直接交给 SVG
 渲染器处理。
 

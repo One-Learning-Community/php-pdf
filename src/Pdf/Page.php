@@ -362,6 +362,33 @@ final class Page implements AppearanceResources
     }
 
     /**
+     * Text placed by a text matrix `[a, b, c, d, e, f]`: the glyphs are
+     * rotated, skewed or scaled with it — an SVG `<text>` under a
+     * `transform`. A base-14 font shows WinAnsi only; an embedded one shows
+     * any script it has glyphs for, with kerning.
+     *
+     * @param  array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float}  $matrix
+     */
+    public function showTextWithMatrix(
+        string $text, array $matrix, StandardFont|PdfFont $font, float $sizePt,
+        ?float $r = null, ?float $g = null, ?float $b = null,
+    ): self {
+        if ($font instanceof PdfFont) {
+            $resourceName = $this->registerEmbeddedFont($font);
+            $tjOps = $font->encodeTextTjArray($text);
+            $shown = count($tjOps) === 1
+                ? $tjOps[0].' Tj'
+                : '['.implode(' ', array_map(static fn (string|int $op): string => (string) $op, $tjOps)).'] TJ';
+        } else {
+            $resourceName = $this->registerStandardFont($font);
+            $shown = $this->stream->literalString(self::standardFontBytes($font, $text)).' Tj';
+        }
+        $this->stream->textWithMatrix($resourceName, $sizePt, $matrix, $shown, $r, $g, $b);
+
+        return $this;
+    }
+
+    /**
      * Vertical text (CJK/East-Asian writing mode).
      *
      * Stacks chars top-to-bottom from (x, y), each char placed individually

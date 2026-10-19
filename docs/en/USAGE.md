@@ -637,6 +637,15 @@ shapes (`<rect>`, `<circle>`, `<ellipse>`, `<line>`, `<polyline>`,
 (`translate`, `scale`, `rotate`, `skewX`, `skewY`, `matrix`),
 `<use>` / `<defs>`, CSS class styling.
 
+`<text>` is set in the document's fonts — the same family chain, fallbacks
+and bold/italic faces as a paragraph — so Cyrillic and other non-Latin text
+prints as it does in the body; without an embedded font it falls back to a
+base-14 face, which has Latin glyphs only. `font-family`, `font-weight`,
+`font-style`, `font-size`, `fill` and `text-anchor` are read from the
+element, its `style` or the nearest ancestor; a group's `transform` turns and
+scales the glyphs with the shapes. Not supported: `<tspan>` positioning,
+`<textPath>`, `dx`/`dy`.
+
 Inline SVG works inside HTML too — `<svg>` tags pass through to the
 SVG renderer.
 

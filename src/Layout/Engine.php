@@ -1111,7 +1111,16 @@ final class Engine
         };
         $blockY = $ctx->cursorY - $h;
 
-        \Dskripchenko\PhpPdf\Svg\SvgRenderer::render($svg->svgXml, $ctx->currentPage, $blockX, $blockY, $w, $h);
+        // SVG text takes the document's fonts — the family chain and the
+        // fallbacks — like any other run: a base-14 face has no Cyrillic.
+        \Dskripchenko\PhpPdf\Svg\SvgRenderer::render(
+            $svg->svgXml, $ctx->currentPage, $blockX, $blockY, $w, $h,
+            function (?string $family, bool $bold, bool $italic, string $text): PdfFont|StandardFont {
+                $style = new RunStyle(fontFamily: $family, bold: $bold, italic: $italic);
+
+                return $this->resolveEmbeddedFont($style, $text) ?? $this->standardFontFor($style);
+            },
+        );
 
         $ctx->cursorY -= $h;
         $ctx->cursorY -= $svg->spaceAfterPt;

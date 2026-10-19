@@ -660,6 +660,16 @@ Bézierkurven), Formen (`<rect>`, `<circle>`, `<ellipse>`, `<line>`,
 Transformationen (`translate`, `scale`, `rotate`, `skewX`, `skewY`,
 `matrix`), `<use>` / `<defs>`, Styling über CSS-Klassen.
 
+`<text>` wird in den Schriften des Dokuments gesetzt — dieselbe
+Familienkette, dieselben Ersatzschriften und Fett-/Kursivschnitte wie ein
+Absatz —, kyrillischer und anderer nicht-lateinischer Text erscheint also wie
+im Fließtext; ohne eingebettete Schrift fällt er auf eine Base-14-Schrift
+zurück, die nur lateinische Glyphen hat. `font-family`, `font-weight`,
+`font-style`, `font-size`, `fill` und `text-anchor` werden vom Element, seinem
+`style` oder dem nächsten Vorfahren gelesen; das `transform` einer Gruppe
+dreht und skaliert die Glyphen mit den Formen. Nicht unterstützt:
+Positionierung über `<tspan>`, `<textPath>`, `dx`/`dy`.
+
 Inline-SVG funktioniert auch innerhalb von HTML — `<svg>`-Tags werden
 an den SVG-Renderer durchgereicht.
 
