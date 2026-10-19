@@ -4,6 +4,14 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- An absolutely placed block inside a table cell was drawn from where the
+  cell's vertical alignment put its content: a logo anchored in a
+  bottom-aligned cell landed at the cell's bottom, over the next row. It is
+  placed from the cell's own top now, as in CSS.
+
 ## [1.24.0] — 2026-10-19
 
 ### Added
