@@ -5478,6 +5478,17 @@ final class Engine
         );
 
         foreach ($cell->children as $block) {
+            // An absolutely placed block counts from the cell's own box, not
+            // from where the vertical alignment put its content: a logo
+            // anchored in a bottom-aligned cell was drawn at its bottom.
+            if ($block instanceof Positioned && $block->inFlow && ! $block->fixed) {
+                $savedY = $sub->cursorY;
+                $sub->cursorY = $cellTopY - $cs->paddingTopPt;
+                $this->renderBlock($block, $sub);
+                $sub->cursorY = $savedY;
+
+                continue;
+            }
             $this->renderBlock($block, $sub);
         }
 

@@ -138,6 +138,18 @@ final class HtmlCssLayoutModelTest extends TestCase
     }
 
     #[Test]
+    public function absolute_inside_a_bottom_aligned_cell_starts_from_the_cell_top(): void
+    {
+        $pdf = self::render('<table><tr style="height: 80pt">'
+            .'<td style="position: relative; vertical-align: bottom"><div style="position: absolute; top: 0; left: 0">Logo</div></td>'
+            .'<td style="vertical-align: top">Top</td></tr></table>');
+
+        // The placed block is at the cell's top, not where bottom alignment
+        // would put the cell's content.
+        self::assertEqualsWithDelta(self::at($pdf, 'Top')['yMin'], self::at($pdf, 'Logo')['yMin'], 2.0);
+    }
+
+    #[Test]
     public function a_block_kept_together_moves_to_the_next_page_whole(): void
     {
         $filler = '';
