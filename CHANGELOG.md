@@ -4,7 +4,7 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.24.1] — 2026-10-19
 
 ### Fixed
 - An absolutely placed block inside a table cell was drawn from where the
