@@ -38,7 +38,7 @@ final class Selector
     {
         $selector = trim((string) preg_replace('/\s*([>+~])\s*/', ' $1 ', trim($selector)));
         $pseudoElement = null;
-        if (preg_match('/::?(before|after)$/i', $selector, $m) === 1) {
+        if (preg_match('/::?(before|after)$/i', $selector, $m) === 1 || preg_match('/::(marker)$/i', $selector, $m) === 1) {
             $pseudoElement = strtolower($m[1]);
             $selector = rtrim(substr($selector, 0, -strlen($m[0])));
             // "::before" alone applies to every element.

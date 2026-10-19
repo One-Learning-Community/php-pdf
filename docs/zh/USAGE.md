@@ -237,7 +237,7 @@ new Section($body);                               // 分节结束后的尾注
 
 使用 `footnotesAtPageFoot` 时，没有脚注的页面不会损失空间；而当某行的脚注
 在本页放不下时，该行会连同脚注一起移到下一页——与文字处理软件的排版方式
-相同。
+相同。`new Footnote('文本', new RunStyle(sizePt: 8))` 为脚注设置自己的文字样式。
 
 ### 页面设置与分节符
 
@@ -354,6 +354,14 @@ $doc->toFile('report.pdf');
   `<col>` 宽度；单元格：`border`、`background-color`、`padding`、
   `vertical-align`、`width`、`height`、`colspan`、`rowspan`；行：
   `height`、`break-inside: avoid`。`<thead>` 行在每一页重复。
+- 列表：`<ol start>`、`type` 与 `list-style-type`（decimal、alpha、roman、
+  `none`）、`<li value>`；带字符串、`counter(list-item)` 和
+  `counters(list-item, ".")` 的 `::marker { content }` 为列表项加标签——在第 3 项
+  下显示 `3.1.`，与 Word 多级编号的写法一致；`list-style-type: none` 且自身无
+  内容的列表项只承载其嵌套列表。列表的 `padding-left` / `margin-left` 与列表项的
+  `margin-left` 决定列表项文字的起点；标签悬挂在其前方，标签后的制表位把文字
+  放到缩进处，与 Word 一致。列表的 `margin-top` / `margin-bottom` 与列表项的外边距
+  决定其周围的间距。
 - 图片：`width` / `height`（`%` 相对于行宽），`display: block` 配合
   `margin: auto` 居中。文字行中的 `<svg>` 作为独立的块绘制：段落在其周围
   拆分，它沿用文字的对齐方式。

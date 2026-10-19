@@ -163,10 +163,10 @@ final class StyleSheet
     }
 
     /**
-     * The declarations of an element's `::before` or `::after`, by the
+     * The declarations of an element's `::before`, `::after` or `::marker`, by the
      * cascade; empty when no rule targets it.
      *
-     * @param  'before'|'after'  $which
+     * @param  'before'|'after'|'marker'  $which
      * @return array<string, string>
      */
     public function pseudoDeclarationsFor(\DOMElement $element, string $which): array

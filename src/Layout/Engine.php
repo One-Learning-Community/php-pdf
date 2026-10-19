@@ -109,6 +109,9 @@ final class Engine
     /** @var array<int, string> footnote number → its text */
     private array $footnoteTexts = [];
 
+    /** @var array<int, RunStyle|null> The notes' own text styles, by number. */
+    private array $footnoteStyles = [];
+
     /** @var array<int, list<int>> page spl_object_id → numbers placed on it */
     private array $pageFootnotes = [];
 
@@ -267,6 +270,7 @@ final class Engine
     {
         $this->footnoteNumbers = [];
         $this->footnoteTexts = [];
+        $this->footnoteStyles = [];
         $this->pageFootnotes = [];
         $this->pageFootnoteRoom = [];
 
@@ -285,6 +289,7 @@ final class Engine
                     $number = count($this->footnoteNumbers) + 1;
                     $this->footnoteNumbers[$id] = $number;
                     $this->footnoteTexts[$number] = $node->content;
+                    $this->footnoteStyles[$number] = $node->style;
                 }
 
                 continue;
@@ -309,6 +314,7 @@ final class Engine
             $number = count($this->footnoteNumbers) + 1;
             $this->footnoteNumbers[$id] = $number;
             $this->footnoteTexts[$number] = $footnote->content;
+            $this->footnoteStyles[$number] = $footnote->style;
         }
 
         return $this->footnoteNumbers[$id];
@@ -332,7 +338,7 @@ final class Engine
     /** A note as it is drawn at the foot of the page. */
     private function footnoteParagraph(int $number): Paragraph
     {
-        return new Paragraph([new Run($number.'. '.($this->footnoteTexts[$number] ?? ''))]);
+        return new Paragraph([new Run($number.'. '.($this->footnoteTexts[$number] ?? ''), $this->footnoteStyles[$number] ?? new RunStyle)]);
     }
 
     /**
@@ -541,7 +547,7 @@ final class Engine
             $block instanceof HorizontalRule => $this->renderHorizontalRule($ctx),
             $block instanceof Image => $this->renderImage($block, $ctx),
             $block instanceof Table => $this->renderTable($block, $ctx),
-            $block instanceof ListNode => $this->renderListNode($block, $ctx, 0),
+            $block instanceof ListNode => $this->renderListNode($block, $ctx, 0, 0.0),
             $block instanceof Barcode => $this->renderBarcode($block, $ctx),
             $block instanceof ColumnSet => $this->renderColumnSet($block, $ctx),
             $block instanceof FormField => $this->renderFormField($block, $ctx),
@@ -3144,9 +3150,8 @@ final class Engine
         );
         $ctx->cursorY -= 8.0;
 
-        foreach ($this->footnoteTexts as $number => $content) {
-            $marker = $number.'. ';
-            $p = new Paragraph([new Run($marker.$content)]);
+        foreach (array_keys($this->footnoteTexts) as $number) {
+            $p = $this->footnoteParagraph($number);
             $this->renderBlock($p, $ctx);
         }
     }
@@ -3954,6 +3959,14 @@ final class Engine
             // Tab item — advance x to next tab stop.
             if (($item['type'] ?? null) === 'tab') {
                 $flushBatch();
+                // A hanging indent is a tab stop of its own on the first line,
+                // as in Word: a list label and a tab put the text on the indent.
+                $hangingStop = $ctx->leftX + $p->style->indentLeftPt;
+                if ($isFirstLine && $p->style->indentFirstLinePt < 0 && $x < $hangingStop - 0.01) {
+                    $x = $hangingStop;
+
+                    continue;
+                }
                 $relativeX = $x - $startX;
                 $nextStop = ((int) ($relativeX / $this->tabStopPt) + 1) * $this->tabStopPt;
                 $newX = $startX + $nextStop;
@@ -5169,6 +5182,15 @@ final class Engine
 
                     continue;
                 }
+                // A list splits between its items: a long list in a cell
+                // would otherwise carry its whole row to the next page.
+                if ($tail === [] && $block instanceof ListNode && ($parts = $this->splitListForHeight($block, $room - $used, $contentWidth)) !== null) {
+                    $head[] = $parts[0];
+                    $tail[] = $parts[1];
+                    $used = $room;
+
+                    continue;
+                }
                 $tail[] = $block;
             }
 
@@ -5198,6 +5220,59 @@ final class Engine
         }
 
         return [new Row($headCells, false), new Row($tailCells, false)];
+    }
+
+    /**
+     * A list cut to a height: the items that fit, and the rest numbering on
+     * from them. An item whose nested list does not fit is cut inside that
+     * list, its rest going on under a label-less item of the same number.
+     * Null when not even the first item's own text fits.
+     *
+     * @return array{0: ListNode, 1: ListNode}|null
+     */
+    private function splitListForHeight(ListNode $list, float $room, float $contentWidth, int $level = 0): ?array
+    {
+        $used = $list->spaceBeforePt;
+        $number = $list->startAt - 1;
+        $head = [];
+        foreach ($list->items as $i => $item) {
+            $number = $item->value ?? $number + 1;
+            $single = static fn (ListItem $it, int $n): ListNode => new ListNode([$it], $list->format, $n, 0, 0, $list->indentPt);
+            $height = $this->measureListNodeHeight($single($item, $number), $contentWidth, $level);
+            if ($used + $height <= $room) {
+                $head[] = $item;
+                $used += $height;
+
+                continue;
+            }
+
+            $rest = array_slice($list->items, $i + 1);
+            $tailFirst = null;
+            if ($item->nestedList !== null) {
+                $own = $this->measureListNodeHeight($single(new ListItem($item->children, null, $item->marker, null, $item->indentPt), $number), $contentWidth, $level);
+                $indent = ($list->indentPt ?? self::LIST_LEVEL_INDENT_PT) + $item->indentPt;
+                $nested = $used + $own < $room
+                    ? $this->splitListForHeight($item->nestedList, $room - $used - $own, $contentWidth - $indent, $level + 1)
+                    : null;
+                if ($nested !== null) {
+                    $head[] = new ListItem($item->children, $nested[0], $item->marker, $item->value, $item->indentPt);
+                    $tailFirst = new ListItem([], $nested[1], '', $number, $item->indentPt);
+                }
+            }
+            if ($tailFirst === null) {
+                if ($head === []) {
+                    return null;
+                }
+                $tailFirst = new ListItem($item->children, $item->nestedList, $item->marker, $number, $item->indentPt);
+            }
+
+            return [
+                new ListNode($head, $list->format, $list->startAt, $list->spaceBeforePt, 0, $list->indentPt),
+                new ListNode([$tailFirst, ...$rest], $list->format, $number, 0, $list->spaceAfterPt, $list->indentPt),
+            ];
+        }
+
+        return null;
     }
 
     /**
@@ -5755,15 +5830,14 @@ final class Engine
             return 0;
         }
         $total = $list->spaceBeforePt;
-        $baseIndent = ($level + 1) * self::LIST_LEVEL_INDENT_PT;
-        $itemContentWidth = $contentWidth - $baseIndent;
 
         foreach ($list->items as $item) {
+            $baseIndent = ($list->indentPt ?? self::LIST_LEVEL_INDENT_PT) + $item->indentPt;
             foreach ($item->children as $child) {
-                $total += $this->measureBlockHeight($child, $itemContentWidth);
+                $total += $this->measureBlockHeight($child, $contentWidth - $baseIndent);
             }
             if ($item->nestedList !== null) {
-                $total += $this->measureListNodeHeight($item->nestedList, $contentWidth, $level + 1);
+                $total += $this->measureListNodeHeight($item->nestedList, $contentWidth - $baseIndent, $level + 1);
             }
         }
         $total += $list->spaceAfterPt;
@@ -5799,7 +5873,10 @@ final class Engine
      * Nested ListNode (via ListItem.nestedList) is rendered recursively
      * with an increased $level.
      */
-    private function renderListNode(ListNode $list, LayoutContext $ctx, int $level): void
+    /**
+     * @param  float  $parentIndent  Where the enclosing item's text starts, from the content edge.
+     */
+    private function renderListNode(ListNode $list, LayoutContext $ctx, int $level, float $parentIndent): void
     {
         if ($list->isEmpty()) {
             return;
@@ -5813,11 +5890,24 @@ final class Engine
         }
 
         $format = $list->effectiveFormat();
-        $baseIndent = ($level + 1) * self::LIST_LEVEL_INDENT_PT;
 
-        foreach ($list->items as $i => $item) {
-            $number = $list->startAt + $i;
-            $marker = $this->formatListMarker($number, $format);
+        $number = $list->startAt - 1;
+        foreach ($list->items as $item) {
+            $number = $item->value ?? $number + 1;
+            $marker = $item->marker ?? $this->formatListMarker($number, $format);
+            // The list's indent (the usual one per level, or its CSS) plus
+            // the item's own, from where the enclosing item's text starts.
+            $baseIndent = $parentIndent + ($list->indentPt ?? self::LIST_LEVEL_INDENT_PT) + $item->indentPt;
+
+            // An item with no label and no content only carries its nested
+            // list (it stands for a parent outside the list).
+            if ($marker === '' && $item->children === []) {
+                if ($item->nestedList !== null) {
+                    $this->renderListNode($item->nestedList, $ctx, $level + 1, $baseIndent);
+                }
+
+                continue;
+            }
 
             // Per-item /LI wrap.
             $itemMcid = null;
@@ -5864,10 +5954,13 @@ final class Engine
         if ($firstChild instanceof Paragraph) {
             // Prepend marker to first paragraph's first child by injecting
             // a new Run. Hanging indent via indentLeftPt+indentFirstLinePt.
-            $newFirstChildren = [new Run($marker), ...$firstChild->children];
+            // The label and a tab: the hanging indent stops the tab, and the
+            // text starts on the indent whatever the label's width.
+            $newFirstChildren = [new Run($marker === '' ? '' : rtrim($marker)."\t"), ...$firstChild->children];
+            // The label hangs in front of the text, never past the content edge.
             $newStyle = $firstChild->style->copy(
                 indentLeftPt: $baseIndent,
-                indentFirstLinePt: -self::LIST_LEVEL_INDENT_PT,
+                indentFirstLinePt: -min(self::LIST_LEVEL_INDENT_PT, $baseIndent),
             );
             $modified = new Paragraph(
                 children: $newFirstChildren,
@@ -5898,18 +5991,20 @@ final class Engine
         } else {
             // First child is not a paragraph. Render marker as a standalone
             // paragraph + then all children with indent.
-            $markerP = new Paragraph(
-                children: [new Run(trim($marker))],
-                style: new ParagraphStyle(indentLeftPt: $baseIndent - self::LIST_LEVEL_INDENT_PT),
-            );
-            $this->renderBlock($markerP, $ctx);
+            if ($marker !== '') {
+                $markerP = new Paragraph(
+                    children: [new Run(trim($marker))],
+                    style: new ParagraphStyle(indentLeftPt: max(0.0, $baseIndent - self::LIST_LEVEL_INDENT_PT)),
+                );
+                $this->renderBlock($markerP, $ctx);
+            }
             foreach ($children as $child) {
                 $this->renderIndentedBlock($child, $baseIndent, $ctx);
             }
         }
 
         if ($item->nestedList !== null) {
-            $this->renderListNode($item->nestedList, $ctx, $level + 1);
+            $this->renderListNode($item->nestedList, $ctx, $level + 1, $baseIndent);
         }
     }
 
@@ -5930,51 +6025,7 @@ final class Engine
 
     private function formatListMarker(int $n, ListFormat $f): string
     {
-        return match ($f) {
-            ListFormat::Bullet => "\u{2022}  ",   // •
-            ListFormat::Decimal => $n.'. ',
-            ListFormat::LowerLetter => $this->toLetter($n, false).'. ',
-            ListFormat::UpperLetter => $this->toLetter($n, true).'. ',
-            ListFormat::LowerRoman => strtolower($this->toRoman($n)).'. ',
-            ListFormat::UpperRoman => $this->toRoman($n).'. ',
-        };
-    }
-
-    private function toLetter(int $n, bool $upper): string
-    {
-        if ($n < 1) {
-            return '';
-        }
-        $base = $upper ? 65 : 97;
-        $result = '';
-        while ($n > 0) {
-            $n--;
-            $result = chr($base + ($n % 26)).$result;
-            $n = (int) ($n / 26);
-        }
-
-        return $result;
-    }
-
-    private function toRoman(int $n): string
-    {
-        if ($n < 1) {
-            return '';
-        }
-        $map = [
-            ['M', 1000], ['CM', 900], ['D', 500], ['CD', 400],
-            ['C', 100], ['XC', 90], ['L', 50], ['XL', 40],
-            ['X', 10], ['IX', 9], ['V', 5], ['IV', 4], ['I', 1],
-        ];
-        $result = '';
-        foreach ($map as [$sym, $val]) {
-            while ($n >= $val) {
-                $result .= $sym;
-                $n -= $val;
-            }
-        }
-
-        return $result;
+        return $f === ListFormat::Bullet ? "\u{2022}  " : $f->number($n).'. ';
     }
 
     /**

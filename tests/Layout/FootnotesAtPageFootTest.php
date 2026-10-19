@@ -93,4 +93,14 @@ final class FootnotesAtPageFootTest extends TestCase
         self::assertSame($noted['page'], $cell['page']);
         self::assertGreaterThan($noted['yMax'], $cell['yMin']); // the note below the row, not over it
     }
+
+    #[Test]
+    public function a_note_is_set_in_its_own_style(): void
+    {
+        $pdf = self::render([new Paragraph([new Run('Body'), new Footnote('Small note', new \Dskripchenko\PhpPdf\Style\RunStyle(sizePt: 7))])]);
+
+        $body = PdfGeometry::word($pdf, 'Body');
+        $note = PdfGeometry::word($pdf, 'Small');
+        self::assertLessThan($body['yMax'] - $body['yMin'], $note['yMax'] - $note['yMin']);
+    }
 }

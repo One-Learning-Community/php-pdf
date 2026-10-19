@@ -121,6 +121,9 @@ final class HtmlParser
 
     private StyleSheet $css;
 
+    /** @var list<int> The numbers of the list items being read, outermost first. */
+    private array $listNumbers = [];
+
     /**
      * @param  float  $baseFontSizePt  The font size `em`, `rem` and `%` refer to
      *                                 outside any element that sets one — the
@@ -1839,7 +1842,14 @@ final class HtmlParser
 
     private function parseList(\DOMElement $node, bool $ordered): ListNode
     {
+        $listDecl = $this->decl($node);
+        $type = strtolower(trim($listDecl['list-style-type'] ?? ''));
+        $format = self::listFormat($type)
+            ?? ($ordered ? (self::listFormat($node->getAttribute('type')) ?? ListFormat::Decimal) : ListFormat::Bullet);
+        $startAt = $ordered && is_numeric($node->getAttribute('start')) ? (int) $node->getAttribute('start') : 1;
+
         $items = [];
+        $number = $startAt - 1;
         foreach ($node->childNodes as $child) {
             if (! $child instanceof \DOMElement || $this->isHidden($child)) {
                 continue;
@@ -1847,18 +1857,91 @@ final class HtmlParser
             if (strtolower($child->nodeName) !== 'li') {
                 continue;
             }
+            $value = is_numeric($child->getAttribute('value')) ? (int) $child->getAttribute('value') : null;
+            $number = $value ?? $number + 1;
+            $marker = $this->listMarker($child, $number, $type === 'none');
             $this->enter($child, $this->currentStyle(), true);
+            // The numbers of the enclosing items, for counters(list-item).
+            $this->listNumbers[] = $number;
             try {
-                $items[] = $this->parseListItem($child);
+                $item = $this->parseListItem($child);
             } finally {
+                array_pop($this->listNumbers);
                 $this->leave();
             }
+            $itemIndent = isset($this->decl($child)['margin-left']) ? $this->sides($this->decl($child), 'margin')[3] : 0.0;
+            $items[] = new ListItem($item->children, $item->nestedList, $marker, $value, $itemIndent);
         }
+
+        // A list that says where its items stand (padding, margin) is placed
+        // there; otherwise by the usual indent per level.
+        $indent = isset($listDecl['padding-left']) || isset($listDecl['margin-left'])
+            ? $this->sides($listDecl, 'padding')[3] + $this->sides($listDecl, 'margin')[3]
+            : null;
+
+        // The space around the list as its CSS says; without a word about
+        // it, the usual gap after a list.
+        [$marginTop, , $marginBottom] = $this->sides($listDecl, 'margin');
 
         return new ListNode(
             items: $items,
-            format: $ordered ? ListFormat::Decimal : ListFormat::Bullet,
+            format: $format,
+            startAt: $startAt,
+            spaceBeforePt: $marginTop,
+            spaceAfterPt: isset($listDecl['margin-bottom']) ? $marginBottom : 6.0,
+            indentPt: $indent,
         );
+    }
+
+    /** A CSS list-style-type or an HTML `type` as a format; null for others. */
+    private static function listFormat(string $type): ?ListFormat
+    {
+        return match ($type) {
+            'decimal', '1' => ListFormat::Decimal,
+            'lower-alpha', 'lower-latin', 'a' => ListFormat::LowerLetter,
+            'upper-alpha', 'upper-latin', 'A' => ListFormat::UpperLetter,
+            'lower-roman', 'i' => ListFormat::LowerRoman,
+            'upper-roman', 'I' => ListFormat::UpperRoman,
+            'disc', 'circle', 'square' => ListFormat::Bullet,
+            default => null,
+        };
+    }
+
+    /**
+     * An item's label when it is not the list's plain one: '' for
+     * `list-style-type: none`, the text of a `::marker` rule's content —
+     * strings, `counter(list-item)`, `counters(list-item, ".")` — else
+     * null.
+     */
+    private function listMarker(\DOMElement $li, int $number, bool $listHasNone): ?string
+    {
+        $own = strtolower(trim($this->decl($li)['list-style-type'] ?? ''));
+        if ($own === 'none' || ($own === '' && $listHasNone)) {
+            return '';
+        }
+        $content = trim($this->css->pseudoDeclarationsFor($li, 'marker')['content'] ?? '');
+        if ($content === '' || in_array(strtolower($content), ['normal', 'none'], true)) {
+            return strtolower($content) === 'none' ? '' : null;
+        }
+
+        $text = '';
+        $rest = $content;
+        $styleOf = static fn (?string $style): ListFormat => self::listFormat(strtolower(trim((string) $style))) ?? ListFormat::Decimal;
+        while ($rest !== '') {
+            if (preg_match('/^(["\'])((?:(?!\1)[^\\\\]|\\\\.)*)\1\s*/', $rest, $m) === 1) {
+                $text .= stripcslashes($m[2]);
+            } elseif (preg_match('/^counters\(\s*list-item\s*,\s*(["\'])((?:(?!\1)[^\\\\]|\\\\.)*)\1\s*(?:,\s*([\w-]+)\s*)?\)\s*/', $rest, $m) === 1) {
+                $format = $styleOf($m[3] ?? null);
+                $text .= implode(stripcslashes($m[2]), array_map(static fn (int $n): string => $format->number($n), [...$this->listNumbers, $number]));
+            } elseif (preg_match('/^counter\(\s*list-item\s*(?:,\s*([\w-]+)\s*)?\)\s*/', $rest, $m) === 1) {
+                $text .= $styleOf($m[1] ?? null)->number($number);
+            } else {
+                return null; // a content the parser cannot say: the list's own label
+            }
+            $rest = substr($rest, strlen($m[0]));
+        }
+
+        return $text;
     }
 
     private function parseListItem(\DOMElement $node): ListItem
@@ -1897,8 +1980,24 @@ final class HtmlParser
         if ($pendingInlines !== []) {
             $this->pushParagraph($blocks, $pendingInlines);
         }
-        if ($blocks === []) {
+        // An item with only a nested list has no paragraph of its own: an
+        // empty one would print as a blank line.
+        if ($blocks === [] && $nestedList === null) {
             $blocks[] = new Paragraph([new Run('')]);
+        }
+
+        // The item's own vertical margins are its paragraphs' space — Word's
+        // spacing before and after a numbered paragraph.
+        [$marginTop, , $marginBottom] = $this->sides($this->decl($node), 'margin');
+        $last = count($blocks) - 1;
+        foreach ($blocks as $i => $block) {
+            if ($block instanceof Paragraph && (($i === 0 && $marginTop > 0) || ($i === $last && $marginBottom > 0))) {
+                $blocks[$i] = new Paragraph($block->children, $this->styleCopy(
+                    $block->style,
+                    spaceBefore: $i === 0 && $marginTop > 0 ? $marginTop : null,
+                    spaceAfter: $i === $last && $marginBottom > 0 ? $marginBottom : null,
+                ), $block->headingLevel, $block->defaultRunStyle);
+            }
         }
 
         return new ListItem(children: $blocks, nestedList: $nestedList);

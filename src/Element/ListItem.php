@@ -18,5 +18,14 @@ final readonly class ListItem
     public function __construct(
         public array $children,
         public ?ListNode $nestedList = null,
+        /**
+         * The label as written — `3.1. ` from a `::marker` rule; '' for no
+         * label; null for the list's own format.
+         */
+        public ?string $marker = null,
+        /** The item's number when it does not follow the previous one (`<li value>`). */
+        public ?int $value = null,
+        /** The item's own extra indent (its CSS margin-left), on top of the list's. */
+        public float $indentPt = 0.0,
     ) {}
 }

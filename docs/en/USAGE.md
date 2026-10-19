@@ -242,7 +242,8 @@ new Section($body);                               // endnotes after the section
 
 With `footnotesAtPageFoot` a page without notes loses nothing, and a line
 whose notes do not fit on its page moves on with them — the way a word
-processor places them.
+processor places them. `new Footnote('text', new RunStyle(sizePt: 8))` sets
+the note's own text style.
 
 ### Page setup and section breaks
 
@@ -369,6 +370,16 @@ $doc->toFile('report.pdf');
   `padding`, `vertical-align`, `width`, `height`, `colspan`, `rowspan`;
   rows: `height`, `break-inside: avoid`. `<thead>` rows repeat on every
   page.
+- Lists: `<ol start>`, `type` and `list-style-type` (decimal, alpha,
+  roman, `none`), `<li value>`; `::marker { content }` with strings,
+  `counter(list-item)` and `counters(list-item, ".")` labels the items —
+  `3.1.` under item 3, the way Word's multilevel numbering is written; an
+  item with `list-style-type: none` and no content of its own only carries
+  its nested list. A list's `padding-left` / `margin-left` and an item's
+  `margin-left` place the items' text; the label hangs in front of it and
+  a tab after it puts the text on the indent, as Word does. A list's
+  `margin-top` / `margin-bottom` and an item's margins give the space
+  around them.
 - Images: `width` / `height` (`%` of the line), `display: block` with
   `margin: auto` centres. An `<svg>` in a line of text is drawn as a block
   of its own: the paragraph splits around it, and it takes the text-align.
