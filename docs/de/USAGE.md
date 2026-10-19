@@ -387,7 +387,10 @@ $doc->toFile('report.pdf');
   `counter(list-item)` und `counters(list-item, ".")` beschriftet die
   Einträge — `3.1.` unter Eintrag 3, so wie die mehrstufige Nummerierung
   von Word geschrieben wird; ein Eintrag mit `list-style-type: none` ohne
-  eigenen Inhalt trägt nur seine verschachtelte Liste.
+  eigenen Inhalt trägt nur seine verschachtelte Liste. `padding-left` /
+  `margin-left` einer Liste und `margin-left` eines Eintrags legen fest, wo
+  der Text der Einträge beginnt; die Beschriftung hängt davor, und ein
+  Tabulator danach setzt den Text auf den Einzug, wie in Word.
 - Bilder: `width` / `height` (`%` der Zeile), `display: block` mit
   `margin: auto` zentriert. Ein `<svg>` in einer Textzeile wird als eigener
   Block gezeichnet: der Absatz wird um ihn geteilt, und er übernimmt die

@@ -358,7 +358,9 @@ $doc->toFile('report.pdf');
   `none`）、`<li value>`；带字符串、`counter(list-item)` 和
   `counters(list-item, ".")` 的 `::marker { content }` 为列表项加标签——在第 3 项
   下显示 `3.1.`，与 Word 多级编号的写法一致；`list-style-type: none` 且自身无
-  内容的列表项只承载其嵌套列表。
+  内容的列表项只承载其嵌套列表。列表的 `padding-left` / `margin-left` 与列表项的
+  `margin-left` 决定列表项文字的起点；标签悬挂在其前方，标签后的制表位把文字
+  放到缩进处，与 Word 一致。
 - 图片：`width` / `height`（`%` 相对于行宽），`display: block` 配合
   `margin: auto` 居中。文字行中的 `<svg>` 作为独立的块绘制：段落在其周围
   拆分，它沿用文字的对齐方式。

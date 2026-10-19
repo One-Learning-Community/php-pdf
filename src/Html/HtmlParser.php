@@ -1842,7 +1842,8 @@ final class HtmlParser
 
     private function parseList(\DOMElement $node, bool $ordered): ListNode
     {
-        $type = strtolower(trim($this->decl($node)['list-style-type'] ?? ''));
+        $listDecl = $this->decl($node);
+        $type = strtolower(trim($listDecl['list-style-type'] ?? ''));
         $format = self::listFormat($type)
             ?? ($ordered ? (self::listFormat($node->getAttribute('type')) ?? ListFormat::Decimal) : ListFormat::Bullet);
         $startAt = $ordered && is_numeric($node->getAttribute('start')) ? (int) $node->getAttribute('start') : 1;
@@ -1868,13 +1869,21 @@ final class HtmlParser
                 array_pop($this->listNumbers);
                 $this->leave();
             }
-            $items[] = new ListItem($item->children, $item->nestedList, $marker, $value);
+            $itemIndent = isset($this->decl($child)['margin-left']) ? $this->sides($this->decl($child), 'margin')[3] : 0.0;
+            $items[] = new ListItem($item->children, $item->nestedList, $marker, $value, $itemIndent);
         }
+
+        // A list that says where its items stand (padding, margin) is placed
+        // there; otherwise by the usual indent per level.
+        $indent = isset($listDecl['padding-left']) || isset($listDecl['margin-left'])
+            ? $this->sides($listDecl, 'padding')[3] + $this->sides($listDecl, 'margin')[3]
+            : null;
 
         return new ListNode(
             items: $items,
             format: $format,
             startAt: $startAt,
+            indentPt: $indent,
         );
     }
 

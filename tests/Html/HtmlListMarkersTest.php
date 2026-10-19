@@ -26,6 +26,10 @@ final class HtmlListMarkersTest extends TestCase
         $words = PdfGeometry::words(Document::fromHtml($html)->toBytes(new Engine(compressStreams: false)))
             ?? self::markTestSkipped('pdftotext is not available');
 
+        // Reading order by line, then left to right: a label and its text
+        // sit on one line with a gap pdftotext may read as two columns.
+        usort($words, static fn (array $a, array $b): int => [$a['page'], round($a['yMin']), $a['xMin']] <=> [$b['page'], round($b['yMin']), $b['xMin']]);
+
         return implode(' ', array_column($words, 'text'));
     }
 
@@ -67,5 +71,24 @@ final class HtmlListMarkersTest extends TestCase
         self::assertSame('xiv', ListFormat::LowerRoman->number(14));
         self::assertSame('AB', ListFormat::UpperLetter->number(28));
         self::assertSame('c', ListFormat::LowerLetter->number(3));
+    }
+
+    #[Test]
+    public function a_list_that_says_its_indent_is_placed_there(): void
+    {
+        $default = (new HtmlParser)->parse('<ol><li>x</li></ol>')[0];
+        $placed = (new HtmlParser)->parse('<ol style="margin:0;padding-left:0"><li style="margin-left:30pt">x</li></ol>')[0];
+
+        self::assertInstanceOf(ListNode::class, $default);
+        self::assertInstanceOf(ListNode::class, $placed);
+        self::assertNull($default->indentPt);
+        self::assertSame(0.0, $placed->indentPt);
+        self::assertSame(30.0, $placed->items[0]->indentPt);
+
+        $pdf = Document::fromHtml('<p>Edge</p><ol style="margin:0;padding-left:0"><li style="margin-left:60pt">Placed</li></ol>')->toBytes(new Engine(compressStreams: false));
+        $edge = PdfGeometry::word($pdf, 'Edge');
+        $text = PdfGeometry::word($pdf, 'Placed');
+        // The label hangs in front; the text starts past the 60pt indent.
+        self::assertGreaterThan($edge['xMin'] + 55, $text['xMin']);
     }
 }

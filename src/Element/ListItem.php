@@ -25,5 +25,7 @@ final readonly class ListItem
         public ?string $marker = null,
         /** The item's number when it does not follow the previous one (`<li value>`). */
         public ?int $value = null,
+        /** The item's own extra indent (its CSS margin-left), on top of the list's. */
+        public float $indentPt = 0.0,
     ) {}
 }

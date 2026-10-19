@@ -541,7 +541,7 @@ final class Engine
             $block instanceof HorizontalRule => $this->renderHorizontalRule($ctx),
             $block instanceof Image => $this->renderImage($block, $ctx),
             $block instanceof Table => $this->renderTable($block, $ctx),
-            $block instanceof ListNode => $this->renderListNode($block, $ctx, 0),
+            $block instanceof ListNode => $this->renderListNode($block, $ctx, 0, 0.0),
             $block instanceof Barcode => $this->renderBarcode($block, $ctx),
             $block instanceof ColumnSet => $this->renderColumnSet($block, $ctx),
             $block instanceof FormField => $this->renderFormField($block, $ctx),
@@ -3954,6 +3954,14 @@ final class Engine
             // Tab item — advance x to next tab stop.
             if (($item['type'] ?? null) === 'tab') {
                 $flushBatch();
+                // A hanging indent is a tab stop of its own on the first line,
+                // as in Word: a list label and a tab put the text on the indent.
+                $hangingStop = $ctx->leftX + $p->style->indentLeftPt;
+                if ($isFirstLine && $p->style->indentFirstLinePt < 0 && $x < $hangingStop - 0.01) {
+                    $x = $hangingStop;
+
+                    continue;
+                }
                 $relativeX = $x - $startX;
                 $nextStop = ((int) ($relativeX / $this->tabStopPt) + 1) * $this->tabStopPt;
                 $newX = $startX + $nextStop;
@@ -5755,15 +5763,14 @@ final class Engine
             return 0;
         }
         $total = $list->spaceBeforePt;
-        $baseIndent = ($level + 1) * self::LIST_LEVEL_INDENT_PT;
-        $itemContentWidth = $contentWidth - $baseIndent;
 
         foreach ($list->items as $item) {
+            $baseIndent = ($list->indentPt ?? self::LIST_LEVEL_INDENT_PT) + $item->indentPt;
             foreach ($item->children as $child) {
-                $total += $this->measureBlockHeight($child, $itemContentWidth);
+                $total += $this->measureBlockHeight($child, $contentWidth - $baseIndent);
             }
             if ($item->nestedList !== null) {
-                $total += $this->measureListNodeHeight($item->nestedList, $contentWidth, $level + 1);
+                $total += $this->measureListNodeHeight($item->nestedList, $contentWidth - $baseIndent, $level + 1);
             }
         }
         $total += $list->spaceAfterPt;
@@ -5799,7 +5806,10 @@ final class Engine
      * Nested ListNode (via ListItem.nestedList) is rendered recursively
      * with an increased $level.
      */
-    private function renderListNode(ListNode $list, LayoutContext $ctx, int $level): void
+    /**
+     * @param  float  $parentIndent  Where the enclosing item's text starts, from the content edge.
+     */
+    private function renderListNode(ListNode $list, LayoutContext $ctx, int $level, float $parentIndent): void
     {
         if ($list->isEmpty()) {
             return;
@@ -5813,18 +5823,20 @@ final class Engine
         }
 
         $format = $list->effectiveFormat();
-        $baseIndent = ($level + 1) * self::LIST_LEVEL_INDENT_PT;
 
         $number = $list->startAt - 1;
         foreach ($list->items as $item) {
             $number = $item->value ?? $number + 1;
             $marker = $item->marker ?? $this->formatListMarker($number, $format);
+            // The list's indent (the usual one per level, or its CSS) plus
+            // the item's own, from where the enclosing item's text starts.
+            $baseIndent = $parentIndent + ($list->indentPt ?? self::LIST_LEVEL_INDENT_PT) + $item->indentPt;
 
             // An item with no label and no content only carries its nested
             // list (it stands for a parent outside the list).
             if ($marker === '' && $item->children === []) {
                 if ($item->nestedList !== null) {
-                    $this->renderListNode($item->nestedList, $ctx, $level + 1);
+                    $this->renderListNode($item->nestedList, $ctx, $level + 1, $baseIndent);
                 }
 
                 continue;
@@ -5875,10 +5887,13 @@ final class Engine
         if ($firstChild instanceof Paragraph) {
             // Prepend marker to first paragraph's first child by injecting
             // a new Run. Hanging indent via indentLeftPt+indentFirstLinePt.
-            $newFirstChildren = [new Run($marker), ...$firstChild->children];
+            // The label and a tab: the hanging indent stops the tab, and the
+            // text starts on the indent whatever the label's width.
+            $newFirstChildren = [new Run($marker === '' ? '' : rtrim($marker)."\t"), ...$firstChild->children];
+            // The label hangs in front of the text, never past the content edge.
             $newStyle = $firstChild->style->copy(
                 indentLeftPt: $baseIndent,
-                indentFirstLinePt: -self::LIST_LEVEL_INDENT_PT,
+                indentFirstLinePt: -min(self::LIST_LEVEL_INDENT_PT, $baseIndent),
             );
             $modified = new Paragraph(
                 children: $newFirstChildren,
@@ -5909,18 +5924,20 @@ final class Engine
         } else {
             // First child is not a paragraph. Render marker as a standalone
             // paragraph + then all children with indent.
-            $markerP = new Paragraph(
-                children: [new Run(trim($marker))],
-                style: new ParagraphStyle(indentLeftPt: $baseIndent - self::LIST_LEVEL_INDENT_PT),
-            );
-            $this->renderBlock($markerP, $ctx);
+            if ($marker !== '') {
+                $markerP = new Paragraph(
+                    children: [new Run(trim($marker))],
+                    style: new ParagraphStyle(indentLeftPt: max(0.0, $baseIndent - self::LIST_LEVEL_INDENT_PT)),
+                );
+                $this->renderBlock($markerP, $ctx);
+            }
             foreach ($children as $child) {
                 $this->renderIndentedBlock($child, $baseIndent, $ctx);
             }
         }
 
         if ($item->nestedList !== null) {
-            $this->renderListNode($item->nestedList, $ctx, $level + 1);
+            $this->renderListNode($item->nestedList, $ctx, $level + 1, $baseIndent);
         }
     }
 

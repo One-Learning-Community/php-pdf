@@ -374,7 +374,9 @@ $doc->toFile('report.pdf');
   `counter(list-item)` and `counters(list-item, ".")` labels the items —
   `3.1.` under item 3, the way Word's multilevel numbering is written; an
   item with `list-style-type: none` and no content of its own only carries
-  its nested list.
+  its nested list. A list's `padding-left` / `margin-left` and an item's
+  `margin-left` place the items' text; the label hangs in front of it and
+  a tab after it puts the text on the indent, as Word does.
 - Images: `width` / `height` (`%` of the line), `display: block` with
   `margin: auto` centres. An `<svg>` in a line of text is drawn as a block
   of its own: the paragraph splits around it, and it takes the text-align.

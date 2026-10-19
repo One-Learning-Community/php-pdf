@@ -13,6 +13,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   multilevel numbering (`3.1.`, `4.1.`) as an import writes it. An item with
   no label and no content draws only its nested list. `ListItem::$marker`
   and `ListItem::$value`; `ListFormat::number()`.
+- HTML lists are placed by CSS: a list's `padding-left` / `margin-left`
+  (`ListNode::$indentPt`) and an item's `margin-left` (`ListItem::$indentPt`)
+  instead of the fixed indent per level — Word places a level by its
+  numbering's indent, not by its depth.
+- A hanging indent is a tab stop on a paragraph's first line, as in Word,
+  and a list label is followed by a tab: the item's text starts on the
+  indent whatever the label's width (`1.` or `3.12.`).
 
 ### Fixed
 - HTML: `<ol start>` and `type` were ignored — every list counted from 1

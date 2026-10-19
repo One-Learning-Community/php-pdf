@@ -24,6 +24,12 @@ final readonly class ListNode implements BlockElement
         public int $startAt = 1,
         public float $spaceBeforePt = 0,
         public float $spaceAfterPt = 6,
+        /**
+         * How far the items' text sits in from the enclosing content (CSS
+         * padding and margin of the list); null for the usual indent per
+         * level.
+         */
+        public ?float $indentPt = null,
     ) {}
 
     public function effectiveFormat(): ListFormat
