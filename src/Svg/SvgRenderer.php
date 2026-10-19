@@ -4,7 +4,12 @@ declare(strict_types=1);
 
 namespace Dskripchenko\PhpPdf\Svg;
 
+use Dskripchenko\PhpPdf\Layout\TextMeasurer;
+use Dskripchenko\PhpPdf\Pdf\Forms\Appearance\StandardFontMetrics;
+use Dskripchenko\PhpPdf\Pdf\Forms\Appearance\WinAnsi;
 use Dskripchenko\PhpPdf\Pdf\Page;
+use Dskripchenko\PhpPdf\Pdf\PdfFont;
+use Dskripchenko\PhpPdf\Pdf\StandardFont;
 
 /**
  * SVG → PDF native paths renderer.
@@ -180,7 +185,33 @@ final class SvgRenderer
         }
     }
 
-    public static function render(string $svgXml, Page $page, float $boxX, float $boxY, float $boxW, float $boxH): void
+    /**
+     * The font for an SVG `<text>`: (font-family, bold, italic, the text) →
+     * a font that has the text's glyphs, or null for the base-14 fallback.
+     *
+     * @var (\Closure(?string, bool, bool, string): (StandardFont|PdfFont|null))|null
+     */
+    private static ?\Closure $fontResolver = null;
+
+    /**
+     * `$fontResolver` picks the font of a `<text>`. Without one — or when it
+     * gives null — the text is shown in a base-14 face, which has Latin
+     * glyphs only.
+     *
+     * @param  (\Closure(?string, bool, bool, string): (StandardFont|PdfFont|null))|null  $fontResolver
+     */
+    public static function render(string $svgXml, Page $page, float $boxX, float $boxY, float $boxW, float $boxH, ?\Closure $fontResolver = null): void
+    {
+        $previous = self::$fontResolver;
+        self::$fontResolver = $fontResolver;
+        try {
+            self::renderDocument($svgXml, $page, $boxX, $boxY, $boxW, $boxH);
+        } finally {
+            self::$fontResolver = $previous;
+        }
+    }
+
+    private static function renderDocument(string $svgXml, Page $page, float $boxX, float $boxY, float $boxW, float $boxH): void
     {
         // SimpleXML's xpath() cannot address the default namespace without
         // a registered prefix, which silently disabled every //style,
@@ -821,57 +852,116 @@ final class SvgRenderer
      */
     private static function renderTextXY(\SimpleXMLElement $el, Page $page, callable $px, callable $py, float $scaleX): void
     {
-        $x = (float) ($el['x'] ?? 0);
-        $y = (float) ($el['y'] ?? 0);
-        $fontSize = (float) ($el['font-size'] ?? 16);
-        [$fr, $fg, $fb, $hasFill] = self::parseColor(isset($el['fill']) ? (string) $el['fill'] : '#000');
-        if (! $hasFill) {
-            return;
-        }
-        $text = trim((string) $el);
-        if ($text === '') {
-            return;
-        }
-        $page->showText(
-            $text, $px($x, $y), $py($x, $y),
-            \Dskripchenko\PhpPdf\Pdf\StandardFont::Helvetica,
-            $fontSize * $scaleX,
-            $fr, $fg, $fb,
-        );
+        self::drawText($el, $page, static fn (float $x, float $y): array => [$px($x, $y), $py($x, $y)]);
     }
 
     /**
-     * SVG <text>. Basic support: x, y, font-size, fill.
-     *
-     * Limitations:
-     *  - Uses StandardFont::Helvetica (no font-family resolution).
-     *  - text-anchor: middle/end ignored (default = start).
-     *  - tspan / nested elements skipped.
-     *
      * @param  callable(float): float  $tx
      * @param  callable(float): float  $ty
      */
     private static function renderText(\SimpleXMLElement $el, Page $page, callable $tx, callable $ty, float $scaleX): void
     {
-        $x = (float) ($el['x'] ?? 0);
-        $y = (float) ($el['y'] ?? 0);
-        $fontSize = (float) ($el['font-size'] ?? 16);
-        [$fr, $fg, $fb, $hasFill] = self::parseColor(isset($el['fill']) ? (string) $el['fill'] : '#000');
-        if (! $hasFill) {
-            return;
-        }
-        // SVG text positioned at baseline; in PDF showText X-Y are used
-        // the same way (Y = baseline).
-        $text = trim((string) $el);
+        self::drawText($el, $page, static fn (float $x, float $y): array => [$tx($x), $ty($y)]);
+    }
+
+    /**
+     * SVG `<text>`: x, y, font-size, fill, font-family, font-weight,
+     * font-style and text-anchor — taken from the element, its inline
+     * `style` or the nearest ancestor that sets them, as SVG inherits them.
+     *
+     * The glyphs are placed by a text matrix built from the SVG→PDF mapping
+     * of the text's own origin, so a `rotate()`, `scale()` or skew of a
+     * group turns and stretches the text with the shapes around it.
+     *
+     * Not supported: `<tspan>` with its own position, `<textPath>`,
+     * `dx`/`dy`, letter-spacing.
+     *
+     * @param  callable(float, float): array{0: float, 1: float}  $point  SVG (x, y) → PDF (x, y)
+     */
+    private static function drawText(\SimpleXMLElement $el, Page $page, callable $point): void
+    {
+        $text = trim((string) preg_replace('/\s+/u', ' ', (string) $el));
         if ($text === '') {
             return;
         }
-        $page->showText(
-            $text, $tx($x), $ty($y),
-            \Dskripchenko\PhpPdf\Pdf\StandardFont::Helvetica,
-            $fontSize * $scaleX, // Scale font size with x-scale.
-            $fr, $fg, $fb,
-        );
+        [$fr, $fg, $fb, $hasFill] = self::parseColor(self::inheritedProperty($el, 'fill') ?? '#000');
+        if (! $hasFill) {
+            return;
+        }
+        $fontSize = (float) (self::inheritedProperty($el, 'font-size') ?? 16);
+        if ($fontSize <= 0) {
+            return;
+        }
+        $weight = strtolower((string) self::inheritedProperty($el, 'font-weight'));
+        $bold = $weight === 'bold' || $weight === 'bolder' || (is_numeric($weight) && (int) $weight >= 600);
+        $italic = in_array(strtolower((string) self::inheritedProperty($el, 'font-style')), ['italic', 'oblique'], true);
+        $family = self::inheritedProperty($el, 'font-family');
+        $family = $family !== null ? trim($family) : null;
+
+        $font = self::$fontResolver !== null ? (self::$fontResolver)($family !== '' ? $family : null, $bold, $italic, $text) : null;
+        $font ??= match (true) {
+            $bold && $italic => StandardFont::HelveticaBoldOblique,
+            $bold => StandardFont::HelveticaBold,
+            $italic => StandardFont::HelveticaOblique,
+            default => StandardFont::Helvetica,
+        };
+
+        // Lengths in SVG user units: the text matrix maps them onto the page.
+        $x = (float) ($el['x'] ?? 0);
+        $y = (float) ($el['y'] ?? 0);
+        $anchor = strtolower((string) self::inheritedProperty($el, 'text-anchor'));
+        if ($anchor === 'middle' || $anchor === 'end') {
+            $width = self::textWidth($text, $font, $fontSize);
+            $x -= $anchor === 'middle' ? $width / 2 : $width;
+        }
+
+        // One SVG unit along the baseline and one up the glyph (SVG Y grows
+        // down, so "up" is -y), both mapped onto the page: the text matrix.
+        [$ox, $oy] = $point($x, $y);
+        [$rx, $ry] = $point($x + 1, $y);
+        [$ux, $uy] = $point($x, $y - 1);
+        $matrix = [$rx - $ox, $ry - $oy, $ux - $ox, $uy - $oy, $ox, $oy];
+
+        $page->showTextWithMatrix($text, $matrix, $font, $fontSize, $fr, $fg, $fb);
+    }
+
+    /** Width of the text at the size, in the same units as the size. */
+    private static function textWidth(string $text, StandardFont|PdfFont $font, float $size): float
+    {
+        if ($font instanceof PdfFont) {
+            return (new TextMeasurer($font, $size))->widthPt($text);
+        }
+        if (! StandardFontMetrics::has($font->value)) {
+            return mb_strlen($text, 'UTF-8') * $size * 0.5;
+        }
+        $units = 0;
+        $bytes = WinAnsi::encodeLossy($text);
+        for ($i = 0, $n = strlen($bytes); $i < $n; $i++) {
+            $units += StandardFontMetrics::width($font->value, ord($bytes[$i]));
+        }
+
+        return $units * $size / 1000;
+    }
+
+    /**
+     * A presentation property as SVG resolves it: the element's inline
+     * `style`, then its attribute, then the same on the nearest ancestor.
+     */
+    private static function inheritedProperty(\SimpleXMLElement $el, string $name): ?string
+    {
+        // xpath() gives document order, root first: the nearest is the last.
+        $chain = array_reverse($el->xpath('ancestor-or-self::*') ?: []);
+        foreach ($chain as $node) {
+            $style = (string) ($node['style'] ?? '');
+            if ($style !== '' && preg_match('/(?:^|;)\s*'.preg_quote($name, '/').'\s*:\s*([^;]+)/i', $style, $m) === 1) {
+                return trim($m[1]);
+            }
+            if (isset($node[$name])) {
+                return (string) $node[$name];
+            }
+        }
+
+        return null;
     }
 
     /**

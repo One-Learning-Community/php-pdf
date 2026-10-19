@@ -132,6 +132,38 @@ final class ContentStream
     }
 
     /**
+     * Text placed by a full text matrix — rotated, skewed or scaled glyphs,
+     * as an SVG `transform` asks for. `$matrix` is `[a, b, c, d, e, f]` of
+     * `Tm`; `$shown` is the ready showing operand and operator: `(…) Tj`,
+     * `<…> Tj` or `[…] TJ`.
+     *
+     * @param  array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float}  $matrix
+     */
+    public function textWithMatrix(
+        string $fontName, float $sizePt, array $matrix, string $shown,
+        ?float $r = null, ?float $g = null, ?float $b = null,
+    ): self {
+        $this->openTextColor($r, $g, $b);
+        $this->body .= 'BT'."\n";
+        $this->body .= sprintf("/%s %s Tf\n", $fontName, $this->formatNumber($sizePt));
+        $this->applyCharSpacing(0.0);
+        $this->body .= implode(' ', array_map($this->formatNumber(...), $matrix))." Tm\n";
+        $this->body .= $shown."\n";
+        $this->body .= 'ET'."\n";
+        $this->closeTextColor($r);
+
+        return $this;
+    }
+
+    /**
+     * A string operand of `Tj`, escaped.
+     */
+    public function literalString(string $text): string
+    {
+        return '('.$this->escapeString($text).')';
+    }
+
+    /**
      * Writes `Tc` only when the spacing changed — including a return to zero.
      */
     private function applyCharSpacing(float $letterSpacingPt): void
