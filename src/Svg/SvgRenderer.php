@@ -761,28 +761,7 @@ final class SvgRenderer
             $rx = (float) ($el['rx'] ?? 0);
             $ry = (float) ($el['ry'] ?? 0);
         }
-        [$fr, $fg, $fb, $hasFill] = self::parseColor(self::inheritedProperty($el, 'fill') ?? '#000');
-        [$sr, $sg, $sb, $hasStroke] = self::parseColor(self::inheritedProperty($el, 'stroke') ?? null);
-        $sw = (float) (self::inheritedProperty($el, 'stroke-width') ?? 1);
-
-        $segments = 36;
-        $points = [];
-        $userPoints = [];
-        for ($i = 0; $i < $segments; $i++) {
-            $angle = 2 * M_PI * $i / $segments;
-            $sx = $cx + cos($angle) * $rx;
-            $sy = $cy + sin($angle) * $ry;
-            $userPoints[] = [$sx, $sy];
-            $points[] = [$px($sx, $sy), $py($sx, $sy)];
-        }
-        if ($hasFill && ! self::fillGradient($el, $page, self::outline($points), static fn (): array => $userPoints, self::affineXY($px, $py))) {
-            $page->fillPolygon($points, $fr, $fg, $fb);
-        }
-        if ($hasStroke) {
-            $closed = $points;
-            $closed[] = $points[0];
-            $page->strokePolyline($closed, $sw * $scaleX, $sr, $sg, $sb);
-        }
+        self::drawEllipse($el, $page, $cx, $cy, $rx, $ry, $px, $py, $scaleX);
     }
 
     /**
@@ -1381,34 +1360,64 @@ final class SvgRenderer
      */
     private static function renderEllipseAt(float $cx, float $cy, float $rx, float $ry, \SimpleXMLElement $el, Page $page, callable $tx, callable $ty, float $scaleX, float $scaleY): void
     {
-        $segments = 36;
-        $points = [];
-        $userPoints = [];
-        for ($i = 0; $i < $segments; $i++) {
-            $angle = 2 * M_PI * $i / $segments;
-            $userPoints[] = [$cx + cos($angle) * $rx, $cy + sin($angle) * $ry];
-            $points[] = [$tx($cx + cos($angle) * $rx), $ty($cy + sin($angle) * $ry)];
-        }
-        $toPage = self::affineTxTy($tx, $ty);
-        [$fr, $fg, $fb, $hasFill] = self::parseColor(self::inheritedProperty($el, 'fill') ?? '#000');
-        [$sr, $sg, $sb, $hasStroke] = self::parseColor(self::inheritedProperty($el, 'stroke') ?? null);
-        $sw = (float) (self::inheritedProperty($el, 'stroke-width') ?? 1);
+        $px = static fn (float $x, float $y): float => $tx($x);
+        $py = static fn (float $x, float $y): float => $ty($y);
 
-        // Opacity.
         $globalOpacity = self::parseOpacity($el, 'opacity', 1.0);
         $fillOpacity = self::parseOpacity($el, 'fill-opacity', $globalOpacity);
         $strokeOpacity = self::parseOpacity($el, 'stroke-opacity', $globalOpacity);
 
-        $page->withOpacity($fillOpacity, $strokeOpacity, static function () use ($el, $page, $hasFill, $hasStroke, $points, $userPoints, $toPage, $fr, $fg, $fb, $sr, $sg, $sb, $sw, $scaleX): void {
-            if ($hasFill && ! self::fillGradient($el, $page, self::outline($points), static fn (): array => $userPoints, $toPage)) {
-                $page->fillPolygon($points, $fr, $fg, $fb);
-            }
-            if ($hasStroke) {
-                $closed = $points;
-                $closed[] = $points[0];
-                $page->strokePolyline($closed, $sw * $scaleX, $sr, $sg, $sb);
-            }
+        $page->withOpacity($fillOpacity, $strokeOpacity, static function () use ($el, $page, $cx, $cy, $rx, $ry, $px, $py, $scaleX): void {
+            self::drawEllipse($el, $page, $cx, $cy, $rx, $ry, $px, $py, $scaleX);
         });
+    }
+
+    /**
+     * A circle or ellipse as four cubic Béziers, filled and stroked as one
+     * path. The curves are within 0.03% of the true outline, so they stay
+     * round at any size, and the path is a fraction of a polygon's size.
+     * A zero radius draws nothing, as SVG defines.
+     *
+     * @param  callable(float, float): float  $px
+     * @param  callable(float, float): float  $py
+     */
+    private static function drawEllipse(\SimpleXMLElement $el, Page $page, float $cx, float $cy, float $rx, float $ry, callable $px, callable $py, float $scaleX): void
+    {
+        if ($rx <= 0 || $ry <= 0) {
+            return;
+        }
+        [$fr, $fg, $fb, $hasFill] = self::parseColor(self::inheritedProperty($el, 'fill') ?? '#000');
+        [$sr, $sg, $sb, $hasStroke] = self::parseColor(self::inheritedProperty($el, 'stroke') ?? null);
+        $sw = (float) (self::inheritedProperty($el, 'stroke-width') ?? 1);
+
+        // 4/3 (sqrt 2 - 1): the control distance of a quarter-circle Bézier.
+        $kx = $rx * 0.5522847498;
+        $ky = $ry * 0.5522847498;
+        $user = [
+            ['M', $cx + $rx, $cy],
+            ['C', $cx + $rx, $cy + $ky, $cx + $kx, $cy + $ry, $cx, $cy + $ry],
+            ['C', $cx - $kx, $cy + $ry, $cx - $rx, $cy + $ky, $cx - $rx, $cy],
+            ['C', $cx - $rx, $cy - $ky, $cx - $kx, $cy - $ry, $cx, $cy - $ry],
+            ['C', $cx + $kx, $cy - $ry, $cx + $rx, $cy - $ky, $cx + $rx, $cy],
+            'Z',
+        ];
+        $commands = iterator_to_array(self::mapCommands($user, $px, $py), false);
+
+        // The control points lie on the bounding box, so they give it exactly.
+        if ($hasFill && self::fillGradient($el, $page, $commands, static fn (): array => self::commandPoints($user), self::affineXY($px, $py))) {
+            $hasFill = false;
+        }
+        $mode = self::pathMode($el, $hasFill, $hasStroke);
+        if ($mode === null) {
+            return;
+        }
+        $page->emitPath(
+            $commands,
+            $mode,
+            $hasFill ? ['r' => $fr, 'g' => $fg, 'b' => $fb] : null,
+            $hasStroke ? ['r' => $sr, 'g' => $sg, 'b' => $sb] : null,
+            $sw * $scaleX,
+        );
     }
 
     /**

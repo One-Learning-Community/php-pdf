@@ -38,6 +38,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   was ignored: `<g transform="scale(2)"><g transform="translate(2,2)">`, as
   QR code generators write it, lost its translate. Nested transforms
   compose now, and stroke widths follow the combined scale.
+- SVG circles and ellipses are drawn as four cubic Béziers instead of
+  36-sided polygons, so they are round at any size, and filled and
+  stroked as one path. A 25,000-dot scatter plot renders in half the
+  time with less than half the memory, and its PDF is a third of the size
+  (1.8 MB instead of 5.2 MB). A zero radius draws nothing, as SVG defines.
 - SVG path data is parsed and written as it is read. A dense chart or map
   with a million path points peaked at about 500 MB, a PHP array per
   command; it now peaks at about 11 MB, mostly the page's content stream.
