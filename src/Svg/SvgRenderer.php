@@ -771,7 +771,7 @@ final class SvgRenderer
         $sw = (float) ($el['stroke-width'] ?? 1);
 
         if ($closed && $hasFill) {
-            $page->fillPolygon($pts, $fr, $fg, $fb);
+            self::fillPolygonByRule($el, $page, $pts, $fr, $fg, $fb);
         }
         if ($hasStroke) {
             $line = $pts;
@@ -828,13 +828,8 @@ final class SvgRenderer
             }
         }
 
-        if ($hasFill && $hasStroke) {
-            $mode = 'fillstroke';
-        } elseif ($hasFill) {
-            $mode = 'fill';
-        } elseif ($hasStroke) {
-            $mode = 'stroke';
-        } else {
+        $mode = self::pathMode($el, $hasFill, $hasStroke);
+        if ($mode === null) {
             return;
         }
         $page->emitPath(
@@ -941,6 +936,53 @@ final class SvgRenderer
         }
 
         return $units * $size / 1000;
+    }
+
+    /**
+     * `fill-rule="evenodd"` on the element, its inline `style`, a style
+     * sheet rule or an ancestor. SVG's default is nonzero.
+     */
+    private static function isEvenOdd(\SimpleXMLElement $el): bool
+    {
+        return strtolower(trim((string) self::inheritedProperty($el, 'fill-rule'))) === 'evenodd';
+    }
+
+    /**
+     * The emitPath() mode for a path with this fill and stroke, by its
+     * fill rule; null when there is nothing to draw.
+     */
+    private static function pathMode(\SimpleXMLElement $el, bool $hasFill, bool $hasStroke): ?string
+    {
+        if (! $hasFill) {
+            return $hasStroke ? 'stroke' : null;
+        }
+        $mode = $hasStroke ? 'fillstroke' : 'fill';
+
+        return self::isEvenOdd($el) ? $mode.'-evenodd' : $mode;
+    }
+
+    /**
+     * Fills a polygon by its fill rule. A self-intersecting polygon — a
+     * five-point star — has its centre empty under even-odd.
+     *
+     * @param  list<array{0: float, 1: float}>  $points  in PDF coordinates
+     */
+    private static function fillPolygonByRule(\SimpleXMLElement $el, Page $page, array $points, float $r, float $g, float $b): void
+    {
+        if (! self::isEvenOdd($el)) {
+            $page->fillPolygon($points, $r, $g, $b);
+
+            return;
+        }
+        if (count($points) < 3) {
+            return;
+        }
+        $commands = [['M', $points[0][0], $points[0][1]]];
+        for ($i = 1, $n = count($points); $i < $n; $i++) {
+            $commands[] = ['L', $points[$i][0], $points[$i][1]];
+        }
+        $commands[] = 'Z';
+        $page->emitPath($commands, 'fill-evenodd', ['r' => $r, 'g' => $g, 'b' => $b]);
     }
 
     /**
@@ -1189,9 +1231,9 @@ final class SvgRenderer
         $fillOpacity = self::parseOpacity($el, 'fill-opacity', $globalOpacity);
         $strokeOpacity = self::parseOpacity($el, 'stroke-opacity', $globalOpacity);
 
-        $page->withOpacity($fillOpacity, $strokeOpacity, static function () use ($page, $closed, $hasFill, $hasStroke, $points, $fr, $fg, $fb, $sr, $sg, $sb, $sw, $scaleX): void {
+        $page->withOpacity($fillOpacity, $strokeOpacity, static function () use ($el, $page, $closed, $hasFill, $hasStroke, $points, $fr, $fg, $fb, $sr, $sg, $sb, $sw, $scaleX): void {
             if ($closed && $hasFill) {
-                $page->fillPolygon($points, $fr, $fg, $fb);
+                self::fillPolygonByRule($el, $page, $points, $fr, $fg, $fb);
             }
             if ($hasStroke) {
                 $line = $points;
@@ -1247,14 +1289,8 @@ final class SvgRenderer
             return;
         }
 
-        // Determine fill/stroke mode.
-        if ($hasFill && $hasStroke) {
-            $mode = 'fillstroke';
-        } elseif ($hasFill) {
-            $mode = 'fill';
-        } elseif ($hasStroke) {
-            $mode = 'stroke';
-        } else {
+        $mode = self::pathMode($el, $hasFill, $hasStroke);
+        if ($mode === null) {
             return; // Nothing to draw.
         }
 

@@ -12,6 +12,14 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the even-odd rule: a subpath inside another is a hole whichever way round
   it is drawn.
 
+### Fixed
+- SVG ignored `fill-rule`, so every path and polygon filled by the nonzero
+  rule: a hole drawn the same way round as its outline — a ring of two
+  circles in one path, a single-path letter O, nested squares — filled
+  solid, and a five-point star with `fill-rule="evenodd"` had a filled
+  centre. `fill-rule="evenodd"` on the element, in its `style`, in a style
+  sheet or inherited from a group fills with `f*` (`B*` with a stroke).
+
 ## [1.25.0] — 2026-10-19
 
 ### Fixed
