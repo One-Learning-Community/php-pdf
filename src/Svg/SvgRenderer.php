@@ -311,6 +311,7 @@ final class SvgRenderer
                 : null;
             $out[$id] = [
                 'type' => 'linear',
+                'userSpace' => (string) ($g['gradientUnits'] ?? '') === 'userSpaceOnUse',
                 'x1' => $x1, 'y1' => $y1, 'x2' => $x2, 'y2' => $y2,
                 'stops' => $stops,
                 'transform' => $gradTransform,
@@ -333,6 +334,7 @@ final class SvgRenderer
                 : null;
             $out[$id] = [
                 'type' => 'radial',
+                'userSpace' => (string) ($g['gradientUnits'] ?? '') === 'userSpaceOnUse',
                 'cx' => $cx, 'cy' => $cy, 'r' => $r, 'fx' => $fx, 'fy' => $fy,
                 'stops' => $stops,
                 'transform' => $gradTransform,
@@ -704,7 +706,8 @@ final class SvgRenderer
             [$px($x + $w, $y + $h), $py($x + $w, $y + $h)],
             [$px($x, $y + $h), $py($x, $y + $h)],
         ];
-        if ($hasFill) {
+        $user = static fn (): array => [[$x, $y], [$x + $w, $y], [$x + $w, $y + $h], [$x, $y + $h]];
+        if ($hasFill && ! self::fillGradient($el, $page, self::outline($corners), $user, self::affineXY($px, $py))) {
             $page->fillPolygon($corners, $fr, $fg, $fb);
         }
         if ($hasStroke) {
@@ -749,13 +752,15 @@ final class SvgRenderer
 
         $segments = 36;
         $points = [];
+        $userPoints = [];
         for ($i = 0; $i < $segments; $i++) {
             $angle = 2 * M_PI * $i / $segments;
             $sx = $cx + cos($angle) * $rx;
             $sy = $cy + sin($angle) * $ry;
+            $userPoints[] = [$sx, $sy];
             $points[] = [$px($sx, $sy), $py($sx, $sy)];
         }
-        if ($hasFill) {
+        if ($hasFill && ! self::fillGradient($el, $page, self::outline($points), static fn (): array => $userPoints, self::affineXY($px, $py))) {
             $page->fillPolygon($points, $fr, $fg, $fb);
         }
         if ($hasStroke) {
@@ -778,9 +783,11 @@ final class SvgRenderer
         }
         $tokens = array_values(array_filter($tokens, fn ($t) => $t !== ''));
         $pts = [];
+        $userPoints = [];
         for ($i = 0; $i + 1 < count($tokens); $i += 2) {
             $sx = (float) $tokens[$i];
             $sy = (float) $tokens[$i + 1];
+            $userPoints[] = [$sx, $sy];
             $pts[] = [$px($sx, $sy), $py($sx, $sy)];
         }
         if ($pts === []) {
@@ -790,7 +797,7 @@ final class SvgRenderer
         [$sr, $sg, $sb, $hasStroke] = self::parseColor(self::inheritedProperty($el, 'stroke') ?? null);
         $sw = (float) (self::inheritedProperty($el, 'stroke-width') ?? 1);
 
-        if ($closed && $hasFill) {
+        if ($closed && $hasFill && ! self::fillGradient($el, $page, self::outline($pts), static fn (): array => $userPoints, self::affineXY($px, $py))) {
             self::fillPolygonByRule($el, $page, $pts, $fr, $fg, $fb);
         }
         if ($hasStroke) {
@@ -848,6 +855,10 @@ final class SvgRenderer
             }
         }
 
+        // A gradient fill is painted on its own; the stroke, if any, follows.
+        if ($hasFill && self::fillGradient($el, $page, $commands, static fn (): array => self::commandPoints($rawCommands), self::affineXY($px, $py))) {
+            $hasFill = false;
+        }
         $mode = self::pathMode($el, $hasFill, $hasStroke);
         if ($mode === null) {
             return;
@@ -1085,6 +1096,174 @@ final class SvgRenderer
     }
 
     /**
+     * The gradient a shape's fill="url(#id)" names, when it is defined and
+     * has two or more stops; null otherwise.
+     *
+     * @return array<string, mixed>|null
+     */
+    private static function gradientFor(\SimpleXMLElement $el): ?array
+    {
+        $fill = trim((string) self::inheritedProperty($el, 'fill'));
+        if (preg_match('@^url\(\s*[\'"]?#([^)\'"\s]+)[\'"]?\s*\)@', $fill, $m) !== 1) {
+            return null;
+        }
+        $gradient = self::$currentGradients[$m[1]] ?? null;
+
+        return $gradient !== null && count($gradient['stops']) >= 2 ? $gradient : null;
+    }
+
+    /**
+     * Fills a shape with the gradient its fill names, through a shading
+     * pattern whose matrix maps gradient space onto the page: the shape's
+     * user space, its bounding box for objectBoundingBox units, then the
+     * gradientTransform. Returns false when the fill names no gradient, so
+     * the caller paints its flat colour.
+     *
+     * @param  list<array{0: string, 1: float, 2: float, 3?: float, 4?: float, 5?: float, 6?: float}|string>  $commands  the outline on the page
+     * @param  \Closure(): list<array{0: float, 1: float}>  $userPoints  the outline in user units, for the bounding box
+     * @param  array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float}  $toPage  user space → page
+     */
+    private static function fillGradient(\SimpleXMLElement $el, Page $page, array $commands, \Closure $userPoints, array $toPage): bool
+    {
+        $gradient = self::gradientFor($el);
+        if ($gradient === null) {
+            return false;
+        }
+        $matrix = $toPage;
+        if (! ($gradient['userSpace'] ?? false)) {
+            $points = $userPoints();
+            if ($points === []) {
+                return true;
+            }
+            $xs = array_column($points, 0);
+            $ys = array_column($points, 1);
+            $w = max($xs) - min($xs);
+            $h = max($ys) - min($ys);
+            if ($w <= 0 || $h <= 0) {
+                return true; // A bounding box gradient on a flat shape paints nothing, as in SVG.
+            }
+            $matrix = self::multiplyMatrix($matrix, [$w, 0.0, 0.0, $h, min($xs), min($ys)]);
+        }
+        if (is_array($gradient['transform'] ?? null)) {
+            $matrix = self::multiplyMatrix($matrix, $gradient['transform']);
+        }
+        // -0 would print as "-0".
+        $matrix = array_map(static fn (float $v): float => $v == 0.0 ? 0.0 : $v, $matrix);
+
+        $radial = ($gradient['type'] ?? 'linear') === 'radial';
+        $shading = new \Dskripchenko\PhpPdf\Pdf\PdfShading(
+            shadingType: $radial ? \Dskripchenko\PhpPdf\Pdf\PdfShading::TYPE_RADIAL : \Dskripchenko\PhpPdf\Pdf\PdfShading::TYPE_AXIAL,
+            coords: $radial
+                ? [$gradient['fx'], $gradient['fy'], 0.0, $gradient['cx'], $gradient['cy'], $gradient['r']]
+                : [$gradient['x1'], $gradient['y1'], $gradient['x2'], $gradient['y2']],
+            function: self::shadingFunction($gradient['stops']),
+        );
+        $name = $page->registerShadingPattern(new \Dskripchenko\PhpPdf\Pdf\PdfPattern($shading, $matrix));
+        $page->fillPathWithPattern($commands, $name, self::isEvenOdd($el));
+
+        return true;
+    }
+
+    /**
+     * @param  callable(float, float): float  $px
+     * @param  callable(float, float): float  $py
+     * @return array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float}
+     */
+    private static function affineXY(callable $px, callable $py): array
+    {
+        $e = $px(0.0, 0.0);
+        $f = $py(0.0, 0.0);
+
+        return [$px(1.0, 0.0) - $e, $py(1.0, 0.0) - $f, $px(0.0, 1.0) - $e, $py(0.0, 1.0) - $f, $e, $f];
+    }
+
+    /**
+     * @param  callable(float): float  $tx
+     * @param  callable(float): float  $ty
+     * @return array{0: float, 1: float, 2: float, 3: float, 4: float, 5: float}
+     */
+    private static function affineTxTy(callable $tx, callable $ty): array
+    {
+        return [$tx(1.0) - $tx(0.0), 0.0, 0.0, $ty(1.0) - $ty(0.0), $tx(0.0), $ty(0.0)];
+    }
+
+    /**
+     * @param  list<array{0: float, 1: float}>  $points
+     * @return list<array{0: string, 1: float, 2: float}|string>
+     */
+    private static function outline(array $points): array
+    {
+        $commands = [];
+        foreach ($points as $i => [$x, $y]) {
+            $commands[] = [$i === 0 ? 'M' : 'L', $x, $y];
+        }
+        $commands[] = 'Z';
+
+        return $commands;
+    }
+
+    /**
+     * Every point a path names, control points included: enough for a
+     * bounding box that covers the curve.
+     *
+     * @param  list<array{0: string, 1: float, 2: float, 3?: float, 4?: float, 5?: float, 6?: float}|string>  $commands
+     * @return list<array{0: float, 1: float}>
+     */
+    private static function commandPoints(array $commands): array
+    {
+        $points = [];
+        foreach ($commands as $cmd) {
+            if (! is_array($cmd)) {
+                continue;
+            }
+            for ($i = 1; $i + 1 < count($cmd); $i += 2) {
+                $points[] = [(float) $cmd[$i], (float) $cmd[$i + 1]];
+            }
+        }
+
+        return $points;
+    }
+
+    /**
+     * The colour function of a gradient: one Type 2 function for two
+     * stops, a Type 3 stitching of them for more.
+     *
+     * @param  list<array{offset: float, color: array{0: float, 1: float, 2: float}}>  $stops
+     */
+    private static function shadingFunction(array $stops): \Dskripchenko\PhpPdf\Pdf\PdfFunction|\Dskripchenko\PhpPdf\Pdf\PdfStitchingFunction
+    {
+        // 2 stops — single Type 2 function.
+        // >2 stops — Type 3 stitching of multiple Type 2 sub-functions.
+        if (count($stops) === 2) {
+            return new \Dskripchenko\PhpPdf\Pdf\PdfFunction(
+                c0: $stops[0]['color'],
+                c1: $stops[1]['color'],
+            );
+        }
+
+        $subFunctions = [];
+        $bounds = [];
+        $encode = [];
+        for ($i = 0; $i < count($stops) - 1; $i++) {
+            $subFunctions[] = new \Dskripchenko\PhpPdf\Pdf\PdfFunction(
+                c0: $stops[$i]['color'],
+                c1: $stops[$i + 1]['color'],
+            );
+            if ($i < count($stops) - 2) {
+                $bounds[] = $stops[$i + 1]['offset'];
+            }
+            $encode[] = 0;
+            $encode[] = 1;
+        }
+
+        return new \Dskripchenko\PhpPdf\Pdf\PdfStitchingFunction(
+            subFunctions: $subFunctions,
+            bounds: $bounds,
+            encode: $encode,
+        );
+    }
+
+    /**
      * Create + register PDF shading pattern from SVG gradient.
      *
      * @param  array<string, mixed>  $gradient
@@ -1117,34 +1296,7 @@ final class SvgRenderer
             $shadingType = \Dskripchenko\PhpPdf\Pdf\PdfShading::TYPE_AXIAL;
         }
 
-        // 2 stops — single Type 2 function.
-        // >2 stops — Type 3 stitching of multiple Type 2 sub-functions.
-        if (count($stops) === 2) {
-            $function = new \Dskripchenko\PhpPdf\Pdf\PdfFunction(
-                c0: $stops[0]['color'],
-                c1: $stops[1]['color'],
-            );
-        } else {
-            $subFunctions = [];
-            $bounds = [];
-            $encode = [];
-            for ($i = 0; $i < count($stops) - 1; $i++) {
-                $subFunctions[] = new \Dskripchenko\PhpPdf\Pdf\PdfFunction(
-                    c0: $stops[$i]['color'],
-                    c1: $stops[$i + 1]['color'],
-                );
-                if ($i < count($stops) - 2) {
-                    $bounds[] = $stops[$i + 1]['offset'];
-                }
-                $encode[] = 0;
-                $encode[] = 1;
-            }
-            $function = new \Dskripchenko\PhpPdf\Pdf\PdfStitchingFunction(
-                subFunctions: $subFunctions,
-                bounds: $bounds,
-                encode: $encode,
-            );
-        }
+        $function = self::shadingFunction($stops);
         $shading = new \Dskripchenko\PhpPdf\Pdf\PdfShading(
             shadingType: $shadingType,
             coords: $coords,
@@ -1207,10 +1359,13 @@ final class SvgRenderer
     {
         $segments = 36;
         $points = [];
+        $userPoints = [];
         for ($i = 0; $i < $segments; $i++) {
             $angle = 2 * M_PI * $i / $segments;
+            $userPoints[] = [$cx + cos($angle) * $rx, $cy + sin($angle) * $ry];
             $points[] = [$tx($cx + cos($angle) * $rx), $ty($cy + sin($angle) * $ry)];
         }
+        $toPage = self::affineTxTy($tx, $ty);
         [$fr, $fg, $fb, $hasFill] = self::parseColor(self::inheritedProperty($el, 'fill') ?? '#000');
         [$sr, $sg, $sb, $hasStroke] = self::parseColor(self::inheritedProperty($el, 'stroke') ?? null);
         $sw = (float) (self::inheritedProperty($el, 'stroke-width') ?? 1);
@@ -1220,8 +1375,8 @@ final class SvgRenderer
         $fillOpacity = self::parseOpacity($el, 'fill-opacity', $globalOpacity);
         $strokeOpacity = self::parseOpacity($el, 'stroke-opacity', $globalOpacity);
 
-        $page->withOpacity($fillOpacity, $strokeOpacity, static function () use ($page, $hasFill, $hasStroke, $points, $fr, $fg, $fb, $sr, $sg, $sb, $sw, $scaleX): void {
-            if ($hasFill) {
+        $page->withOpacity($fillOpacity, $strokeOpacity, static function () use ($el, $page, $hasFill, $hasStroke, $points, $userPoints, $toPage, $fr, $fg, $fb, $sr, $sg, $sb, $sw, $scaleX): void {
+            if ($hasFill && ! self::fillGradient($el, $page, self::outline($points), static fn (): array => $userPoints, $toPage)) {
                 $page->fillPolygon($points, $fr, $fg, $fb);
             }
             if ($hasStroke) {
@@ -1243,6 +1398,8 @@ final class SvgRenderer
         if ($points === []) {
             return;
         }
+        $userPoints = self::parsePoints($pointsAttr, static fn (float $x): float => $x, static fn (float $y): float => $y);
+        $toPage = self::affineTxTy($tx, $ty);
         [$fr, $fg, $fb, $hasFill] = self::parseColor(self::inheritedProperty($el, 'fill') ?? ($closed ? '#000' : null));
         [$sr, $sg, $sb, $hasStroke] = self::parseColor(self::inheritedProperty($el, 'stroke') ?? null);
         $sw = (float) (self::inheritedProperty($el, 'stroke-width') ?? 1);
@@ -1251,8 +1408,8 @@ final class SvgRenderer
         $fillOpacity = self::parseOpacity($el, 'fill-opacity', $globalOpacity);
         $strokeOpacity = self::parseOpacity($el, 'stroke-opacity', $globalOpacity);
 
-        $page->withOpacity($fillOpacity, $strokeOpacity, static function () use ($el, $page, $closed, $hasFill, $hasStroke, $points, $fr, $fg, $fb, $sr, $sg, $sb, $sw, $scaleX): void {
-            if ($closed && $hasFill) {
+        $page->withOpacity($fillOpacity, $strokeOpacity, static function () use ($el, $page, $closed, $hasFill, $hasStroke, $points, $userPoints, $toPage, $fr, $fg, $fb, $sr, $sg, $sb, $sw, $scaleX): void {
+            if ($closed && $hasFill && ! self::fillGradient($el, $page, self::outline($points), static fn (): array => $userPoints, $toPage)) {
                 self::fillPolygonByRule($el, $page, $points, $fr, $fg, $fb);
             }
             if ($hasStroke) {
@@ -1309,6 +1466,10 @@ final class SvgRenderer
             return;
         }
 
+        $user = static fn (): array => self::commandPoints(self::parsePathD($d, static fn (float $x): float => $x, static fn (float $y): float => $y));
+        if ($hasFill && self::fillGradient($el, $page, $commands, $user, self::affineTxTy($tx, $ty))) {
+            $hasFill = false;
+        }
         $mode = self::pathMode($el, $hasFill, $hasStroke);
         if ($mode === null) {
             return; // Nothing to draw.

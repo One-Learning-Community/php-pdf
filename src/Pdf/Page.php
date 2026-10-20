@@ -990,6 +990,20 @@ final class Page implements AppearanceResources
     }
 
     /**
+     * Fills a path with a shading pattern from registerShadingPattern(), by
+     * the nonzero or (with $evenOdd) the even-odd rule. The pattern's
+     * matrix maps its space onto the page's default coordinates.
+     *
+     * @param  list<array{0: string, 1: float, 2: float, 3?: float, 4?: float, 5?: float, 6?: float}|string>  $commands  as for emitPath()
+     */
+    public function fillPathWithPattern(array $commands, string $patternName, bool $evenOdd = false): self
+    {
+        $this->stream->fillPathWithPattern($commands, $patternName, $evenOdd);
+
+        return $this;
+    }
+
+    /**
      * Emit generic path (with cubic Bezier curves).
      *
      * `$mode` is one of:

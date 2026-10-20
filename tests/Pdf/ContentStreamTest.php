@@ -103,6 +103,18 @@ final class ContentStreamTest extends TestCase
         self::assertStringContainsString("h\nf\nQ\n", (new ContentStream)->emitPath($squares, 'bogus')->toString());
     }
 
+    #[Test]
+    public function fillPathWithPattern_selects_the_pattern_and_fills(): void
+    {
+        $s = (new ContentStream)->fillPathWithPattern(self::twoSquares(), 'P1')->toString();
+        self::assertStringStartsWith("q\n/Pattern cs\n/P1 scn\n0 0 m\n", $s);
+        self::assertStringEndsWith("h\nf\nQ\n", $s);
+
+        $evenOdd = (new ContentStream)->fillPathWithPattern(self::twoSquares(), 'P2', evenOdd: true)->toString();
+        self::assertStringEndsWith("h\nf*\nQ\n", $evenOdd);
+        self::assertTrue((new ContentStream)->fillPathWithPattern([], 'P1')->isEmpty());
+    }
+
     /**
      * A square with a smaller square inside it, both drawn the same way
      * round: under the nonzero rule the inner one fills, under even-odd it

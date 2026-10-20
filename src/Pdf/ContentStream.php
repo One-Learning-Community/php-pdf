@@ -289,6 +289,45 @@ final class ContentStream
                 $this->formatNumber($strokeRgb['b']),
             );
         }
+        $this->appendPathCommands($commands);
+        $op = match ($mode) {
+            'stroke' => 'S',
+            'fillstroke' => 'B',
+            'fill-evenodd' => 'f*',
+            'fillstroke-evenodd' => 'B*',
+            default => 'f',
+        };
+        $this->body .= $op."\n";
+        $this->body .= "Q\n";
+
+        return $this;
+    }
+
+    /**
+     * Fills a path with a shading pattern registered on the page, by the
+     * nonzero or (with $evenOdd) the even-odd rule. The pattern's matrix
+     * maps its space onto the page's default coordinates.
+     *
+     * @param  list<array{0: string, 1: float, 2: float, 3?: float, 4?: float, 5?: float, 6?: float}|string>  $commands  as for emitPath()
+     */
+    public function fillPathWithPattern(array $commands, string $patternName, bool $evenOdd = false): self
+    {
+        if ($commands === []) {
+            return $this;
+        }
+        $this->body .= "q\n/Pattern cs\n";
+        $this->body .= sprintf("/%s scn\n", $patternName);
+        $this->appendPathCommands($commands);
+        $this->body .= ($evenOdd ? 'f*' : 'f')."\nQ\n";
+
+        return $this;
+    }
+
+    /**
+     * @param  list<array{0: string, 1: float, 2: float, 3?: float, 4?: float, 5?: float, 6?: float}|string>  $commands
+     */
+    private function appendPathCommands(array $commands): void
+    {
         foreach ($commands as $cmd) {
             if ($cmd === 'Z') {
                 $this->body .= "h\n";
@@ -315,17 +354,6 @@ final class ContentStream
                 );
             }
         }
-        $op = match ($mode) {
-            'stroke' => 'S',
-            'fillstroke' => 'B',
-            'fill-evenodd' => 'f*',
-            'fillstroke-evenodd' => 'B*',
-            default => 'f',
-        };
-        $this->body .= $op."\n";
-        $this->body .= "Q\n";
-
-        return $this;
     }
 
     /**

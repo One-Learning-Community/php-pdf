@@ -664,6 +664,9 @@ Transformationen (`translate`, `scale`, `rotate`, `skewX`, `skewY`,
 oder an einer Gruppe — füllt Pfade und Polygone nach der Gerade-Ungerade-Regel:
 Ein Loch, das in derselben Richtung wie sein Umriss gezeichnet ist (ein Ring,
 der Buchstabe O), bleibt leer.
+Verläufe füllen jede Form, in beiden `gradientUnits`; `fill`, `stroke` und
+ihre Deckkraft werden von Gruppen geerbt, und verschachtelte Transformationen
+werden verkettet.
 
 `<text>` wird in den Schriften des Dokuments gesetzt — dieselbe
 Familienkette, dieselben Ersatzschriften und Fett-/Kursivschnitte wie ein

@@ -11,6 +11,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `'fill-evenodd'` (`f*`) and `'fillstroke-evenodd'` (`B*`), which fill by
   the even-odd rule: a subpath inside another is a hole whichever way round
   it is drawn.
+- `Page::fillPathWithPattern()` and `ContentStream::fillPathWithPattern()`
+  fill any path with a registered shading pattern.
+- SVG gradients fill paths, polygons, circles, ellipses and transformed
+  rectangles, not only plain rectangles, and honour
+  `gradientUnits="userSpaceOnUse"`. The pattern follows the shape's
+  transforms, its bounding box and `gradientTransform`. Before, those
+  shapes printed black.
 
 ### Fixed
 - SVG ignored `fill-rule`, so every path and polygon filled by the nonzero
