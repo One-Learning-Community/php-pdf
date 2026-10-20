@@ -273,7 +273,15 @@ final class SvgRenderer
         // Collect linearGradient definitions (id → params).
         $gradients = self::parseGradients($xml);
 
-        self::walkElement($xml, $page, $tx, $ty, $scaleX, $scaleY, $gradients);
+        // Shapes at any depth look gradients up here; set once per document
+        // so that walking into a group does not lose them.
+        $previous = self::$currentGradients;
+        self::$currentGradients = $gradients;
+        try {
+            self::walkElement($xml, $page, $tx, $ty, $scaleX, $scaleY);
+        } finally {
+            self::$currentGradients = $previous;
+        }
     }
 
     /**
@@ -444,11 +452,9 @@ final class SvgRenderer
     /**
      * @param  callable(float): float  $tx
      * @param  callable(float): float  $ty
-     * @param  array<string, array<string, mixed>>  $gradients
      */
-    private static function walkElement(\SimpleXMLElement $el, Page $page, callable $tx, callable $ty, float $scaleX, float $scaleY, array $gradients = []): void
+    private static function walkElement(\SimpleXMLElement $el, Page $page, callable $tx, callable $ty, float $scaleX, float $scaleY): void
     {
-        self::$currentGradients = $gradients;
         foreach ($el->children() as $child) {
             // Apply element-level transform (if present).
             $elTx = $tx;
