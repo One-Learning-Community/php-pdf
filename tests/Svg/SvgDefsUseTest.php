@@ -110,6 +110,18 @@ SVG;
     }
 
     #[Test]
+    public function a_group_that_uses_itself_stays_within_the_limit(): void
+    {
+        // Each resolved <use> copies the group with the copies made so far: 2^n without the cap.
+        $page = \Dskripchenko\PhpPdf\Pdf\Document::new()->addPage(customDimensionsPt: [100, 100]);
+        \Dskripchenko\PhpPdf\Svg\SvgRenderer::render('<svg viewBox="0 0 100 100"><g id="a"><rect width="1" height="1" fill="#f00"/>'.str_repeat('<use href="#a"/>', 40).'</g></svg>', $page, 0, 0, 100, 100);
+
+        $rects = substr_count($page->rawContentStream()->toString(), "1 0 0 rg\n");
+        self::assertGreaterThan(0, $rects);
+        self::assertLessThanOrEqual(\Dskripchenko\PhpPdf\Svg\SvgRenderer::MAX_USE_COPIES, $rects);
+    }
+
+    #[Test]
     public function a_small_use_after_one_over_the_limit_is_still_drawn(): void
     {
         $big = '<g id="big">'.str_repeat('<rect width="1" height="1"/>', \Dskripchenko\PhpPdf\Svg\SvgRenderer::MAX_USE_COPIES).'</g>';

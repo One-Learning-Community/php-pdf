@@ -38,8 +38,9 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   compose now, and stroke widths follow the combined scale.
 - `<use>` copies are capped at `SvgRenderer::MAX_USE_COPIES` (50,000)
   elements per document. `<use>` elements that refer to groups of
-  `<use>` elements could make a small file expand into millions of shapes
-  and take minutes to draw. A `<use>` that would pass the cap is left out.
+  `<use>` elements, or a group with `<use>` references to itself, could
+  make a small file expand into millions of shapes and take minutes to
+  draw. A `<use>` that would pass the cap is left out.
 
 ## [1.25.0] — 2026-10-19
 
