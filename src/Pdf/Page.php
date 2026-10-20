@@ -994,9 +994,9 @@ final class Page implements AppearanceResources
      * the nonzero or (with $evenOdd) the even-odd rule. The pattern's
      * matrix maps its space onto the page's default coordinates.
      *
-     * @param  list<array{0: string, 1: float, 2: float, 3?: float, 4?: float, 5?: float, 6?: float}|string>  $commands  as for emitPath()
+     * @param  iterable<array{0: string, 1: float, 2: float, 3?: float, 4?: float, 5?: float, 6?: float}|string>  $commands  as for emitPath()
      */
-    public function fillPathWithPattern(array $commands, string $patternName, bool $evenOdd = false): self
+    public function fillPathWithPattern(iterable $commands, string $patternName, bool $evenOdd = false): self
     {
         $this->stream->fillPathWithPattern($commands, $patternName, $evenOdd);
 
@@ -1011,14 +1011,15 @@ final class Page implements AppearanceResources
      *  - 'fill-evenodd', 'fillstroke-evenodd' — even-odd rule (f*, B*): a
      *    subpath inside another is a hole whichever way round it is drawn,
      *    as SVG `fill-rule="evenodd"` asks for.
-     * An unknown mode fills by the nonzero rule.
+     * An unknown mode fills by the nonzero rule. `$commands` can be a
+     * generator, which is written as it is read.
      *
-     * @param  list<array{0: string, 1: float, 2: float, 3?: float, 4?: float, 5?: float, 6?: float}|string>  $commands
+     * @param  iterable<array{0: string, 1: float, 2: float, 3?: float, 4?: float, 5?: float, 6?: float}|string>  $commands
      * @param  array{r: float, g: float, b: float}|null  $fillRgb
      * @param  array{r: float, g: float, b: float}|null  $strokeRgb
      */
     public function emitPath(
-        array $commands,
+        iterable $commands,
         string $mode = 'fill',
         ?array $fillRgb = null,
         ?array $strokeRgb = null,

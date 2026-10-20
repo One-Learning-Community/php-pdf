@@ -257,18 +257,22 @@ final class ContentStream
      * rule) | 'fill-evenodd' | 'fillstroke-evenodd' (f*, B*, even-odd
      * rule). An unknown mode emits f.
      *
-     * @param  list<array{0: string, 1: float, 2: float, 3?: float, 4?: float, 5?: float, 6?: float}|string>  $commands
+     * The commands can be any iterable: a generator is written as it is
+     * read, so a long path need not be held in memory.
+     *
+     * @param  iterable<array{0: string, 1: float, 2: float, 3?: float, 4?: float, 5?: float, 6?: float}|string>  $commands
      * @param  array{r: float, g: float, b: float}|null  $fillRgb
      * @param  array{r: float, g: float, b: float}|null  $strokeRgb
      */
     public function emitPath(
-        array $commands,
+        iterable $commands,
         string $mode = 'fill',
         ?array $fillRgb = null,
         ?array $strokeRgb = null,
         float $lineWidthPt = 1.0,
     ): self {
-        if ($commands === []) {
+        $commands = self::started($commands);
+        if ($commands === null) {
             return $this;
         }
         $this->body .= "q\n";
@@ -308,11 +312,12 @@ final class ContentStream
      * nonzero or (with $evenOdd) the even-odd rule. The pattern's matrix
      * maps its space onto the page's default coordinates.
      *
-     * @param  list<array{0: string, 1: float, 2: float, 3?: float, 4?: float, 5?: float, 6?: float}|string>  $commands  as for emitPath()
+     * @param  iterable<array{0: string, 1: float, 2: float, 3?: float, 4?: float, 5?: float, 6?: float}|string>  $commands  as for emitPath()
      */
-    public function fillPathWithPattern(array $commands, string $patternName, bool $evenOdd = false): self
+    public function fillPathWithPattern(iterable $commands, string $patternName, bool $evenOdd = false): self
     {
-        if ($commands === []) {
+        $commands = self::started($commands);
+        if ($commands === null) {
             return $this;
         }
         $this->body .= "q\n/Pattern cs\n";
@@ -324,11 +329,27 @@ final class ContentStream
     }
 
     /**
-     * @param  list<array{0: string, 1: float, 2: float, 3?: float, 4?: float, 5?: float, 6?: float}|string>  $commands
+     * The commands as an iterator at its first entry, or null when there is
+     * none, so nothing is written for an empty path.
+     *
+     * @param  iterable<array{0: string, 1: float, 2: float, 3?: float, 4?: float, 5?: float, 6?: float}|string>  $commands
+     * @return \Iterator<array{0: string, 1: float, 2: float, 3?: float, 4?: float, 5?: float, 6?: float}|string>|null
      */
-    private function appendPathCommands(array $commands): void
+    private static function started(iterable $commands): ?\Iterator
     {
-        foreach ($commands as $cmd) {
+        $iterator = is_array($commands) ? new \ArrayIterator($commands) : ($commands instanceof \Iterator ? $commands : new \IteratorIterator($commands));
+        $iterator->rewind();
+
+        return $iterator->valid() ? $iterator : null;
+    }
+
+    /**
+     * @param  \Iterator<array{0: string, 1: float, 2: float, 3?: float, 4?: float, 5?: float, 6?: float}|string>  $commands  already started
+     */
+    private function appendPathCommands(\Iterator $commands): void
+    {
+        for (; $commands->valid(); $commands->next()) {
+            $cmd = $commands->current();
             if ($cmd === 'Z') {
                 $this->body .= "h\n";
 

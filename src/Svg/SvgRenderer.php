@@ -841,38 +841,17 @@ final class SvgRenderer
         [$sr, $sg, $sb, $hasStroke] = self::parseColor(self::inheritedProperty($el, 'stroke') ?? null);
         $sw = (float) (self::inheritedProperty($el, 'stroke-width') ?? 1);
 
-        // Wrap point transformers as (svg-x → pdf-x) / (svg-y → pdf-y)
-        // closures that we'd normally pass to parsePathD. parsePathD expects
-        // single-arg tx/ty, so we pass through identity closures and
-        // post-transform each emitted command:
         $idTx = static fn (float $x): float => $x;
         $idTy = static fn (float $y): float => $y;
-        $rawCommands = self::parsePathD($d, $idTx, $idTy);
-
-        // Transform raw SVG-space commands to PDF coords.
-        $commands = [];
-        foreach ($rawCommands as $cmd) {
-            if ($cmd === 'Z') {
-                $commands[] = 'Z';
-
-                continue;
+        if ($hasFill && self::gradientFor($el) !== null) {
+            // A gradient fill reads the path twice (fill, then stroke).
+            $rawCommands = self::parsePathD($d, $idTx, $idTy);
+            $commands = iterator_to_array(self::mapCommands($rawCommands, $px, $py), false);
+            if (self::fillGradient($el, $page, $commands, static fn (): array => self::commandPoints($rawCommands), self::affineXY($px, $py))) {
+                $hasFill = false;
             }
-            $type = $cmd[0];
-            if ($type === 'M' || $type === 'L') {
-                $commands[] = [$type, $px($cmd[1], $cmd[2]), $py($cmd[1], $cmd[2])];
-            } elseif ($type === 'C') {
-                $commands[] = [
-                    'C',
-                    $px($cmd[1], $cmd[2]), $py($cmd[1], $cmd[2]),
-                    $px($cmd[3], $cmd[4]), $py($cmd[3], $cmd[4]),
-                    $px($cmd[5], $cmd[6]), $py($cmd[5], $cmd[6]),
-                ];
-            }
-        }
-
-        // A gradient fill is painted on its own; the stroke, if any, follows.
-        if ($hasFill && self::fillGradient($el, $page, $commands, static fn (): array => self::commandPoints($rawCommands), self::affineXY($px, $py))) {
-            $hasFill = false;
+        } else {
+            $commands = self::mapCommands(self::pathCommands($d, $idTx, $idTy), $px, $py);
         }
         $mode = self::pathMode($el, $hasFill, $hasStroke);
         if ($mode === null) {
@@ -885,6 +864,36 @@ final class SvgRenderer
             $hasStroke ? ['r' => $sr, 'g' => $sg, 'b' => $sb] : null,
             $sw * $scaleX,
         );
+    }
+
+    /**
+     * Path commands in SVG user units → page coordinates, one at a time.
+     *
+     * @param  iterable<array{0: string, 1: float, 2: float, 3?: float, 4?: float, 5?: float, 6?: float}|string>  $commands
+     * @param  callable(float, float): float  $px
+     * @param  callable(float, float): float  $py
+     * @return \Generator<int, array{0: string, 1: float, 2: float, 3?: float, 4?: float, 5?: float, 6?: float}|string>
+     */
+    private static function mapCommands(iterable $commands, callable $px, callable $py): \Generator
+    {
+        foreach ($commands as $cmd) {
+            if ($cmd === 'Z') {
+                yield 'Z';
+
+                continue;
+            }
+            $type = $cmd[0];
+            if ($type === 'M' || $type === 'L') {
+                yield [$type, $px($cmd[1], $cmd[2]), $py($cmd[1], $cmd[2])];
+            } elseif ($type === 'C') {
+                yield [
+                    'C',
+                    $px($cmd[1], $cmd[2]), $py($cmd[1], $cmd[2]),
+                    $px($cmd[3], $cmd[4]), $py($cmd[3], $cmd[4]),
+                    $px($cmd[5], $cmd[6]), $py($cmd[5], $cmd[6]),
+                ];
+            }
+        }
     }
 
     /**
@@ -1476,14 +1485,19 @@ final class SvgRenderer
         [$sr, $sg, $sb, $hasStroke] = self::parseColor(self::inheritedProperty($el, 'stroke') ?? null);
         $sw = (float) (self::inheritedProperty($el, 'stroke-width') ?? 1);
 
-        $commands = self::parsePathD($d, $tx, $ty);
-        if ($commands === []) {
-            return;
-        }
-
-        $user = static fn (): array => self::commandPoints(self::parsePathD($d, static fn (float $x): float => $x, static fn (float $y): float => $y));
-        if ($hasFill && self::fillGradient($el, $page, $commands, $user, self::affineTxTy($tx, $ty))) {
-            $hasFill = false;
+        // A gradient fill reads the path twice (fill, then stroke); a flat
+        // one streams it into the page as it is parsed.
+        if ($hasFill && self::gradientFor($el) !== null) {
+            $commands = self::parsePathD($d, $tx, $ty);
+            if ($commands === []) {
+                return;
+            }
+            $user = static fn (): array => self::commandPoints(self::parsePathD($d, static fn (float $x): float => $x, static fn (float $y): float => $y));
+            if (self::fillGradient($el, $page, $commands, $user, self::affineTxTy($tx, $ty))) {
+                $hasFill = false;
+            }
+        } else {
+            $commands = self::pathCommands($d, $tx, $ty);
         }
         $mode = self::pathMode($el, $hasFill, $hasStroke);
         if ($mode === null) {
@@ -1508,16 +1522,16 @@ final class SvgRenderer
      *
      * @param  callable(float): float  $tx
      * @param  callable(float): float  $ty
-     * @return list<array{0: string, 1: float, 2: float, 3?: float, 4?: float, 5?: float, 6?: float}|string>
+     * @return \Generator<int, array{0: string, 1: float, 2: float, 3?: float, 4?: float, 5?: float, 6?: float}|string>
      */
-    private static function parsePathD(string $d, callable $tx, callable $ty): array
+    private static function pathCommands(string $d, callable $tx, callable $ty): \Generator
     {
-        // Tokenize: split on each command letter (preserve command letters as separators).
-        $regex = '@([MmLlHhVvCcSsQqTtAaZz])([^MmLlHhVvCcSsQqTtAaZz]*)@';
-        if (! preg_match_all($regex, $d, $matches, PREG_SET_ORDER)) {
-            return [];
-        }
-        $commands = [];
+        // Each command is its letter and the arguments up to the next one,
+        // read in place: a PHP array per command for a path with a million
+        // points would take hundreds of megabytes.
+        $letters = 'MmLlHhVvCcSsQqTtAaZz';
+        $length = strlen($d);
+        $pos = strcspn($d, $letters);
         $cx = 0;
         $cy = 0; // current point (SVG units, NOT transformed)
         $startX = 0;
@@ -1527,9 +1541,11 @@ final class SvgRenderer
         $lastQuadCtrlX = null;
         $lastQuadCtrlY = null;
 
-        foreach ($matches as $m) {
-            $op = $m[1];
-            $args = trim($m[2]);
+        while ($pos < $length) {
+            $op = $d[$pos];
+            $argLength = strcspn($d, $letters, $pos + 1);
+            $args = trim(substr($d, $pos + 1, $argLength));
+            $pos += 1 + $argLength;
             $nums = $args === '' ? [] : preg_split('@[\s,]+|(?<=[0-9.])-@', $args);
             if ($nums === false) {
                 $nums = [];
@@ -1545,14 +1561,14 @@ final class SvgRenderer
                     }
                     $x = $isRel ? $cx + $nums[0] : $nums[0];
                     $y = $isRel ? $cy + $nums[1] : $nums[1];
-                    $commands[] = ['M', $tx($x), $ty($y)];
+                    yield ['M', $tx($x), $ty($y)];
                     $cx = $x; $cy = $y;
                     $startX = $x; $startY = $y;
                     // Subsequent pairs treated as L.
                     for ($i = 2; $i + 1 < count($nums); $i += 2) {
                         $x = $isRel ? $cx + $nums[$i] : $nums[$i];
                         $y = $isRel ? $cy + $nums[$i + 1] : $nums[$i + 1];
-                        $commands[] = ['L', $tx($x), $ty($y)];
+                        yield ['L', $tx($x), $ty($y)];
                         $cx = $x; $cy = $y;
                     }
                     $lastCubicCtrlX = $lastCubicCtrlY = null;
@@ -1563,7 +1579,7 @@ final class SvgRenderer
                     for ($i = 0; $i + 1 < count($nums); $i += 2) {
                         $x = $isRel ? $cx + $nums[$i] : $nums[$i];
                         $y = $isRel ? $cy + $nums[$i + 1] : $nums[$i + 1];
-                        $commands[] = ['L', $tx($x), $ty($y)];
+                        yield ['L', $tx($x), $ty($y)];
                         $cx = $x; $cy = $y;
                     }
                     $lastCubicCtrlX = $lastCubicCtrlY = null;
@@ -1573,7 +1589,7 @@ final class SvgRenderer
                 case 'H':
                     foreach ($nums as $n) {
                         $x = $isRel ? $cx + $n : $n;
-                        $commands[] = ['L', $tx($x), $ty($cy)];
+                        yield ['L', $tx($x), $ty($cy)];
                         $cx = $x;
                     }
                     $lastCubicCtrlX = $lastCubicCtrlY = null;
@@ -1583,7 +1599,7 @@ final class SvgRenderer
                 case 'V':
                     foreach ($nums as $n) {
                         $y = $isRel ? $cy + $n : $n;
-                        $commands[] = ['L', $tx($cx), $ty($y)];
+                        yield ['L', $tx($cx), $ty($y)];
                         $cy = $y;
                     }
                     $lastCubicCtrlX = $lastCubicCtrlY = null;
@@ -1598,7 +1614,7 @@ final class SvgRenderer
                         $y2 = $isRel ? $cy + $nums[$i + 3] : $nums[$i + 3];
                         $x3 = $isRel ? $cx + $nums[$i + 4] : $nums[$i + 4];
                         $y3 = $isRel ? $cy + $nums[$i + 5] : $nums[$i + 5];
-                        $commands[] = ['C', $tx($x1), $ty($y1), $tx($x2), $ty($y2), $tx($x3), $ty($y3)];
+                        yield ['C', $tx($x1), $ty($y1), $tx($x2), $ty($y2), $tx($x3), $ty($y3)];
                         $cx = $x3; $cy = $y3;
                         $lastCubicCtrlX = $x2;
                         $lastCubicCtrlY = $y2;
@@ -1619,7 +1635,7 @@ final class SvgRenderer
                         $y2 = $isRel ? $cy + $nums[$i + 1] : $nums[$i + 1];
                         $x3 = $isRel ? $cx + $nums[$i + 2] : $nums[$i + 2];
                         $y3 = $isRel ? $cy + $nums[$i + 3] : $nums[$i + 3];
-                        $commands[] = ['C', $tx($x1), $ty($y1), $tx($x2), $ty($y2), $tx($x3), $ty($y3)];
+                        yield ['C', $tx($x1), $ty($y1), $tx($x2), $ty($y2), $tx($x3), $ty($y3)];
                         $cx = $x3; $cy = $y3;
                         $lastCubicCtrlX = $x2;
                         $lastCubicCtrlY = $y2;
@@ -1638,7 +1654,7 @@ final class SvgRenderer
                         $c1y = $cy + 2 / 3 * ($qy - $cy);
                         $c2x = $ex + 2 / 3 * ($qx - $ex);
                         $c2y = $ey + 2 / 3 * ($qy - $ey);
-                        $commands[] = ['C', $tx($c1x), $ty($c1y), $tx($c2x), $ty($c2y), $tx($ex), $ty($ey)];
+                        yield ['C', $tx($c1x), $ty($c1y), $tx($c2x), $ty($c2y), $tx($ex), $ty($ey)];
                         $cx = $ex; $cy = $ey;
                         $lastQuadCtrlX = $qx;
                         $lastQuadCtrlY = $qy;
@@ -1660,7 +1676,7 @@ final class SvgRenderer
                         $c1y = $cy + 2 / 3 * ($qy - $cy);
                         $c2x = $ex + 2 / 3 * ($qx - $ex);
                         $c2y = $ey + 2 / 3 * ($qy - $ey);
-                        $commands[] = ['C', $tx($c1x), $ty($c1y), $tx($c2x), $ty($c2y), $tx($ex), $ty($ey)];
+                        yield ['C', $tx($c1x), $ty($c1y), $tx($c2x), $ty($c2y), $tx($ex), $ty($ey)];
                         $cx = $ex; $cy = $ey;
                         $lastQuadCtrlX = $qx;
                         $lastQuadCtrlY = $qy;
@@ -1669,7 +1685,7 @@ final class SvgRenderer
                     break;
 
                 case 'Z':
-                    $commands[] = 'Z';
+                    yield 'Z';
                     $cx = $startX;
                     $cy = $startY;
                     $lastCubicCtrlX = $lastCubicCtrlY = null;
@@ -1689,7 +1705,7 @@ final class SvgRenderer
                         $ey = $isRel ? $cy + $nums[$i + 6] : $nums[$i + 6];
                         $arcCubics = self::arcToCubics($cx, $cy, $arcRx, $arcRy, $xRot, $largeArc, $sweep, $ex, $ey);
                         foreach ($arcCubics as $cu) {
-                            $commands[] = [
+                            yield [
                                 'C',
                                 $tx($cu[0]), $ty($cu[1]),
                                 $tx($cu[2]), $ty($cu[3]),
@@ -1703,9 +1719,20 @@ final class SvgRenderer
                     break;
             }
         }
-
-        return $commands;
     }
+
+    /**
+     * pathCommands() as a list, for callers that read the path twice.
+     *
+     * @param  callable(float): float  $tx
+     * @param  callable(float): float  $ty
+     * @return list<array{0: string, 1: float, 2: float, 3?: float, 4?: float, 5?: float, 6?: float}|string>
+     */
+    private static function parsePathD(string $d, callable $tx, callable $ty): array
+    {
+        return iterator_to_array(self::pathCommands($d, $tx, $ty), false);
+    }
+
 
     /**
      * Convert elliptical arc to a sequence of cubic Beziers.
