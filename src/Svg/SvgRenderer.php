@@ -23,6 +23,13 @@ use Dskripchenko\PhpPdf\Pdf\StandardFont;
 final class SvgRenderer
 {
     /**
+     * The most elements all <use> references in one document may copy.
+     * Copies past it are left out, so nested <use> elements cannot
+     * multiply a small file into millions of shapes.
+     */
+    public const MAX_USE_COPIES = 50_000;
+
+    /**
      * @return array{0: int, 1: int, 2: int}|null
      */
     private static function namedColorRgb(string $name): ?array
@@ -393,6 +400,7 @@ final class SvgRenderer
         }
         // Find all use elements.
         $uses = $root->xpath('//use') ?: [];
+        $copied = 0;
         foreach ($uses as $use) {
             $href = (string) ($use['href'] ?? $use->attributes('xlink', true)?->href ?? '');
             if ($href === '' || ! str_starts_with($href, '#')) {
@@ -407,6 +415,13 @@ final class SvgRenderer
             $newName = $ref->getName();
             $dom = dom_import_simplexml($use);
             $refDom = dom_import_simplexml($ref);
+            // Counted before cloning: an earlier <use> may already have
+            // copied content into the element this one refers to.
+            $size = 1 + $refDom->getElementsByTagName('*')->length;
+            if ($copied + $size > self::MAX_USE_COPIES) {
+                continue;
+            }
+            $copied += $size;
             $clone = $refDom->cloneNode(true);
             // Rename use → ref tag by replacing element.
             $newEl = $dom->ownerDocument->createElement($newName);

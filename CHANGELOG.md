@@ -36,6 +36,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   was ignored: `<g transform="scale(2)"><g transform="translate(2,2)">`, as
   QR code generators write it, lost its translate. Nested transforms
   compose now, and stroke widths follow the combined scale.
+- `<use>` copies are capped at `SvgRenderer::MAX_USE_COPIES` (50,000)
+  elements per document. `<use>` elements that refer to groups of
+  `<use>` elements could make a small file expand into millions of shapes
+  and take minutes to draw. A `<use>` that would pass the cap is left out.
 
 ## [1.25.0] — 2026-10-19
 
