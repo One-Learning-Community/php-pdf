@@ -992,6 +992,13 @@ final class Page implements AppearanceResources
     /**
      * Emit generic path (with cubic Bezier curves).
      *
+     * `$mode` is one of:
+     *  - 'fill', 'stroke', 'fillstroke' — nonzero winding rule (f, S, B);
+     *  - 'fill-evenodd', 'fillstroke-evenodd' — even-odd rule (f*, B*): a
+     *    subpath inside another is a hole whichever way round it is drawn,
+     *    as SVG `fill-rule="evenodd"` asks for.
+     * An unknown mode fills by the nonzero rule.
+     *
      * @param  list<array{0: string, 1: float, 2: float, 3?: float, 4?: float, 5?: float, 6?: float}|string>  $commands
      * @param  array{r: float, g: float, b: float}|null  $fillRgb
      * @param  array{r: float, g: float, b: float}|null  $strokeRgb

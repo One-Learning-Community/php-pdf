@@ -253,7 +253,9 @@ final class ContentStream
      *  - ['C', x1, y1, x2, y2, x3, y3]  cubic Bezier
      *  - 'Z' close
      *
-     * \$mode: 'fill' | 'stroke' | 'fillstroke'.
+     * \$mode: 'fill' | 'stroke' | 'fillstroke' (f, S, B, nonzero winding
+     * rule) | 'fill-evenodd' | 'fillstroke-evenodd' (f*, B*, even-odd
+     * rule). An unknown mode emits f.
      *
      * @param  list<array{0: string, 1: float, 2: float, 3?: float, 4?: float, 5?: float, 6?: float}|string>  $commands
      * @param  array{r: float, g: float, b: float}|null  $fillRgb
@@ -270,14 +272,16 @@ final class ContentStream
             return $this;
         }
         $this->body .= "q\n";
-        if ($fillRgb !== null && ($mode === 'fill' || $mode === 'fillstroke')) {
+        $fills = in_array($mode, ['fill', 'fillstroke', 'fill-evenodd', 'fillstroke-evenodd'], true);
+        $strokes = $mode === 'stroke' || $mode === 'fillstroke' || $mode === 'fillstroke-evenodd';
+        if ($fillRgb !== null && $fills) {
             $this->body .= sprintf("%s %s %s rg\n",
                 $this->formatNumber($fillRgb['r']),
                 $this->formatNumber($fillRgb['g']),
                 $this->formatNumber($fillRgb['b']),
             );
         }
-        if ($strokeRgb !== null && ($mode === 'stroke' || $mode === 'fillstroke')) {
+        if ($strokeRgb !== null && $strokes) {
             $this->body .= sprintf("%s w\n", $this->formatNumber($lineWidthPt));
             $this->body .= sprintf("%s %s %s RG\n",
                 $this->formatNumber($strokeRgb['r']),
@@ -314,6 +318,8 @@ final class ContentStream
         $op = match ($mode) {
             'stroke' => 'S',
             'fillstroke' => 'B',
+            'fill-evenodd' => 'f*',
+            'fillstroke-evenodd' => 'B*',
             default => 'f',
         };
         $this->body .= $op."\n";

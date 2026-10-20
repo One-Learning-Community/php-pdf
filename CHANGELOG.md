@@ -4,6 +4,14 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `Page::emitPath()` and `ContentStream::emitPath()` take the modes
+  `'fill-evenodd'` (`f*`) and `'fillstroke-evenodd'` (`B*`), which fill by
+  the even-odd rule: a subpath inside another is a hole whichever way round
+  it is drawn.
+
 ## [1.25.0] — 2026-10-19
 
 ### Fixed
