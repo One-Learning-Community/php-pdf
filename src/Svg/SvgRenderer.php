@@ -291,6 +291,8 @@ final class SvgRenderer
             self::walkElement($xml, $page, $tx, $ty, $scaleX, $scaleY);
         } finally {
             self::$currentGradients = $previous;
+            self::$chainOf = null;
+            self::$chain = [];
         }
     }
 
@@ -468,6 +470,15 @@ final class SvgRenderer
      * @var array<string, array<string, mixed>>
      */
     private static array $currentGradients = [];
+
+    /**
+     * The element whose ancestors $chain holds, nearest first. Held, so
+     * the object cannot be freed and its identity reused.
+     */
+    private static ?\SimpleXMLElement $chainOf = null;
+
+    /** @var list<\SimpleXMLElement> */
+    private static array $chain = [];
 
     /**
      * @param  callable(float): float  $tx
@@ -1025,9 +1036,14 @@ final class SvgRenderer
      */
     private static function inheritedProperty(\SimpleXMLElement $el, string $name): ?string
     {
-        // xpath() gives document order, root first: the nearest is the last.
-        $chain = array_reverse($el->xpath('ancestor-or-self::*') ?: []);
-        foreach ($chain as $node) {
+        // A shape asks for several properties in a row, through the same
+        // object: find its ancestors once. xpath() gives document order,
+        // root first, so the nearest is the last.
+        if ($el !== self::$chainOf) {
+            self::$chain = array_reverse($el->xpath('ancestor-or-self::*') ?: []);
+            self::$chainOf = $el;
+        }
+        foreach (self::$chain as $node) {
             $style = (string) ($node['style'] ?? '');
             if ($style !== '' && preg_match('/(?:^|;)\s*'.preg_quote($name, '/').'\s*:\s*([^;]+)/i', $style, $m) === 1) {
                 return trim($m[1]);

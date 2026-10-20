@@ -117,6 +117,17 @@ final class SvgGroupsTest extends TestCase
         self::assertStringContainsString("4 w\n", $stream);
     }
 
+    #[Test]
+    public function each_render_resolves_its_own_groups(): void
+    {
+        // Back-to-back renders, the same shape in different groups: nothing carries over.
+        self::assertStringContainsString('1 0 0 rg', self::stream('<g fill="#f00"><rect width="10" height="10"/></g>'));
+        self::assertStringContainsString('0 0 1 rg', self::stream('<g fill="#00f"><rect width="10" height="10"/></g>'));
+        $both = self::stream('<g fill="#f00"><rect width="10" height="10"/></g><g fill="#0f0"><rect width="10" height="10"/></g>');
+        self::assertStringContainsString('1 0 0 rg', $both);
+        self::assertStringContainsString('0 1 0 rg', $both);
+    }
+
     private static function stream(string $body): string
     {
         $page = PdfDocument::new()->addPage(customDimensionsPt: [100, 100]);
