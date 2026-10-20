@@ -25,6 +25,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   were read from each shape's own attribute only, so a group's
   `<g fill="#f00">` was ignored and its shapes printed black. They are
   inherited now, and read from inline `style` too, like the text properties.
+- Inside a transformed group, the `transform` of a nested group or shape
+  was ignored: `<g transform="scale(2)"><g transform="translate(2,2)">`, as
+  QR code generators write it, lost its translate. Nested transforms
+  compose now, and stroke widths follow the combined scale.
 
 ## [1.25.0] — 2026-10-19
 

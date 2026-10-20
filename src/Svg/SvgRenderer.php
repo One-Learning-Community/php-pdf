@@ -565,17 +565,28 @@ final class SvgRenderer
     private static function walkElementXY(\SimpleXMLElement $el, Page $page, callable $px, callable $py, float $scaleX, float $scaleY): void
     {
         foreach ($el->children() as $child) {
+            // A child's own transform applies inside its group's.
+            $cpx = $px;
+            $cpy = $py;
+            $cScale = $scaleX;
+            $matrix = isset($child['transform']) ? self::parseTransform((string) $child['transform']) : null;
+            if ($matrix !== null) {
+                [$a, $b, $c, $d, $e, $f] = $matrix;
+                $cpx = static fn (float $x, float $y): float => $px($a * $x + $c * $y + $e, $b * $x + $d * $y + $f);
+                $cpy = static fn (float $x, float $y): float => $py($a * $x + $c * $y + $e, $b * $x + $d * $y + $f);
+                $cScale = $scaleX * sqrt(max(abs($a * $d - $b * $c), 1e-9));
+            }
             $tag = $child->getName();
             match ($tag) {
-                'rect' => self::renderRectXY($child, $page, $px, $py, $scaleX, $scaleY),
-                'line' => self::renderLineXY($child, $page, $px, $py, $scaleX),
-                'circle' => self::renderEllipseXY($child, $page, $px, $py, $scaleX, true),
-                'ellipse' => self::renderEllipseXY($child, $page, $px, $py, $scaleX, false),
-                'polygon' => self::renderPolygonXY($child, $page, $px, $py, true, $scaleX),
-                'polyline' => self::renderPolygonXY($child, $page, $px, $py, false, $scaleX),
-                'path' => self::renderPathXY($child, $page, $px, $py, $scaleX),
-                'text' => self::renderTextXY($child, $page, $px, $py, $scaleX),
-                'g' => self::walkElementXY($child, $page, $px, $py, $scaleX, $scaleY),
+                'rect' => self::renderRectXY($child, $page, $cpx, $cpy, $cScale, $scaleY),
+                'line' => self::renderLineXY($child, $page, $cpx, $cpy, $cScale),
+                'circle' => self::renderEllipseXY($child, $page, $cpx, $cpy, $cScale, true),
+                'ellipse' => self::renderEllipseXY($child, $page, $cpx, $cpy, $cScale, false),
+                'polygon' => self::renderPolygonXY($child, $page, $cpx, $cpy, true, $cScale),
+                'polyline' => self::renderPolygonXY($child, $page, $cpx, $cpy, false, $cScale),
+                'path' => self::renderPathXY($child, $page, $cpx, $cpy, $cScale),
+                'text' => self::renderTextXY($child, $page, $cpx, $cpy, $cScale),
+                'g' => self::walkElementXY($child, $page, $cpx, $cpy, $cScale, $scaleY),
                 default => null,
             };
         }
