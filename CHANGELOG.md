@@ -21,6 +21,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sheet or inherited from a group fills with `f*` (`B*` with a stroke).
 - A gradient fill on a `<rect>` inside a `<g>` printed black: walking into
   a group dropped the document's gradients.
+- `fill`, `stroke`, `stroke-width`, `fill-opacity` and `stroke-opacity`
+  were read from each shape's own attribute only, so a group's
+  `<g fill="#f00">` was ignored and its shapes printed black. They are
+  inherited now, and read from inline `style` too, like the text properties.
 
 ## [1.25.0] — 2026-10-19
 

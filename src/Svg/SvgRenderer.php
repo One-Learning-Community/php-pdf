@@ -45,11 +45,14 @@ final class SvgRenderer
      */
     private static function parseOpacity(\SimpleXMLElement $el, string $attr, float $multiplier = 1.0): float
     {
-        $val = $el[$attr] ?? null;
+        // fill-opacity and stroke-opacity are inherited; opacity is not.
+        $val = in_array($attr, ['fill-opacity', 'stroke-opacity'], true)
+            ? self::inheritedProperty($el, $attr)
+            : (isset($el[$attr]) ? (string) $el[$attr] : null);
         if ($val === null) {
             return $multiplier;
         }
-        $f = (float) (string) $val;
+        $f = (float) $val;
         if ($f < 0) {
             $f = 0;
         }
@@ -680,9 +683,9 @@ final class SvgRenderer
         $y = (float) ($el['y'] ?? 0);
         $w = (float) ($el['width'] ?? 0);
         $h = (float) ($el['height'] ?? 0);
-        [$fr, $fg, $fb, $hasFill] = self::parseColor(isset($el['fill']) ? (string) $el['fill'] : '#000');
-        [$sr, $sg, $sb, $hasStroke] = self::parseColor(isset($el['stroke']) ? (string) $el['stroke'] : null);
-        $sw = (float) ($el['stroke-width'] ?? 1);
+        [$fr, $fg, $fb, $hasFill] = self::parseColor(self::inheritedProperty($el, 'fill') ?? '#000');
+        [$sr, $sg, $sb, $hasStroke] = self::parseColor(self::inheritedProperty($el, 'stroke') ?? null);
+        $sw = (float) (self::inheritedProperty($el, 'stroke-width') ?? 1);
 
         $corners = [
             [$px($x, $y), $py($x, $y)],
@@ -710,8 +713,8 @@ final class SvgRenderer
         $y1 = (float) ($el['y1'] ?? 0);
         $x2 = (float) ($el['x2'] ?? 0);
         $y2 = (float) ($el['y2'] ?? 0);
-        [$sr, $sg, $sb] = self::parseColor(isset($el['stroke']) ? (string) $el['stroke'] : '#000');
-        $sw = (float) ($el['stroke-width'] ?? 1);
+        [$sr, $sg, $sb] = self::parseColor(self::inheritedProperty($el, 'stroke') ?? '#000');
+        $sw = (float) (self::inheritedProperty($el, 'stroke-width') ?? 1);
         $page->strokeLine($px($x1, $y1), $py($x1, $y1), $px($x2, $y2), $py($x2, $y2), $sw * $scaleX, $sr, $sg, $sb);
     }
 
@@ -729,9 +732,9 @@ final class SvgRenderer
             $rx = (float) ($el['rx'] ?? 0);
             $ry = (float) ($el['ry'] ?? 0);
         }
-        [$fr, $fg, $fb, $hasFill] = self::parseColor(isset($el['fill']) ? (string) $el['fill'] : '#000');
-        [$sr, $sg, $sb, $hasStroke] = self::parseColor(isset($el['stroke']) ? (string) $el['stroke'] : null);
-        $sw = (float) ($el['stroke-width'] ?? 1);
+        [$fr, $fg, $fb, $hasFill] = self::parseColor(self::inheritedProperty($el, 'fill') ?? '#000');
+        [$sr, $sg, $sb, $hasStroke] = self::parseColor(self::inheritedProperty($el, 'stroke') ?? null);
+        $sw = (float) (self::inheritedProperty($el, 'stroke-width') ?? 1);
 
         $segments = 36;
         $points = [];
@@ -772,9 +775,9 @@ final class SvgRenderer
         if ($pts === []) {
             return;
         }
-        [$fr, $fg, $fb, $hasFill] = self::parseColor(isset($el['fill']) ? (string) $el['fill'] : ($closed ? '#000' : null));
-        [$sr, $sg, $sb, $hasStroke] = self::parseColor(isset($el['stroke']) ? (string) $el['stroke'] : null);
-        $sw = (float) ($el['stroke-width'] ?? 1);
+        [$fr, $fg, $fb, $hasFill] = self::parseColor(self::inheritedProperty($el, 'fill') ?? ($closed ? '#000' : null));
+        [$sr, $sg, $sb, $hasStroke] = self::parseColor(self::inheritedProperty($el, 'stroke') ?? null);
+        $sw = (float) (self::inheritedProperty($el, 'stroke-width') ?? 1);
 
         if ($closed && $hasFill) {
             self::fillPolygonByRule($el, $page, $pts, $fr, $fg, $fb);
@@ -801,9 +804,9 @@ final class SvgRenderer
         if ($d === '') {
             return;
         }
-        [$fr, $fg, $fb, $hasFill] = self::parseColor(isset($el['fill']) ? (string) $el['fill'] : '#000');
-        [$sr, $sg, $sb, $hasStroke] = self::parseColor(isset($el['stroke']) ? (string) $el['stroke'] : null);
-        $sw = (float) ($el['stroke-width'] ?? 1);
+        [$fr, $fg, $fb, $hasFill] = self::parseColor(self::inheritedProperty($el, 'fill') ?? '#000');
+        [$sr, $sg, $sb, $hasStroke] = self::parseColor(self::inheritedProperty($el, 'stroke') ?? null);
+        $sw = (float) (self::inheritedProperty($el, 'stroke-width') ?? 1);
 
         // Wrap point transformers as (svg-x → pdf-x) / (svg-y → pdf-y)
         // closures that we'd normally pass to parsePathD. parsePathD expects
@@ -1024,7 +1027,7 @@ final class SvgRenderer
         $h = (float) ($el['height'] ?? 0);
 
         // Detect fill="url(#id)" → use shading pattern.
-        $fillAttr = (string) ($el['fill'] ?? '#000');
+        $fillAttr = (string) (self::inheritedProperty($el, 'fill') ?? '#000');
         $patternName = null;
         if (preg_match('@^url\(#([^)]+)\)$@', trim($fillAttr), $m)) {
             $gradId = $m[1];
@@ -1037,8 +1040,8 @@ final class SvgRenderer
         }
 
         [$fr, $fg, $fb, $hasFill] = self::parseColor($fillAttr);
-        [$sr, $sg, $sb, $hasStroke] = self::parseColor(isset($el['stroke']) ? (string) $el['stroke'] : null);
-        $sw = (float) ($el['stroke-width'] ?? 1);
+        [$sr, $sg, $sb, $hasStroke] = self::parseColor(self::inheritedProperty($el, 'stroke') ?? null);
+        $sw = (float) (self::inheritedProperty($el, 'stroke-width') ?? 1);
 
         $globalOpacity = self::parseOpacity($el, 'opacity', 1.0);
         $fillOpacity = self::parseOpacity($el, 'fill-opacity', $globalOpacity);
@@ -1153,8 +1156,8 @@ final class SvgRenderer
         $y1 = (float) ($el['y1'] ?? 0);
         $x2 = (float) ($el['x2'] ?? 0);
         $y2 = (float) ($el['y2'] ?? 0);
-        [$sr, $sg, $sb] = self::parseColor(isset($el['stroke']) ? (string) $el['stroke'] : '#000');
-        $sw = (float) ($el['stroke-width'] ?? 1);
+        [$sr, $sg, $sb] = self::parseColor(self::inheritedProperty($el, 'stroke') ?? '#000');
+        $sw = (float) (self::inheritedProperty($el, 'stroke-width') ?? 1);
         $page->strokeLine($tx($x1), $ty($y1), $tx($x2), $ty($y2), $sw * $scaleX, $sr, $sg, $sb);
     }
 
@@ -1197,9 +1200,9 @@ final class SvgRenderer
             $angle = 2 * M_PI * $i / $segments;
             $points[] = [$tx($cx + cos($angle) * $rx), $ty($cy + sin($angle) * $ry)];
         }
-        [$fr, $fg, $fb, $hasFill] = self::parseColor(isset($el['fill']) ? (string) $el['fill'] : '#000');
-        [$sr, $sg, $sb, $hasStroke] = self::parseColor(isset($el['stroke']) ? (string) $el['stroke'] : null);
-        $sw = (float) ($el['stroke-width'] ?? 1);
+        [$fr, $fg, $fb, $hasFill] = self::parseColor(self::inheritedProperty($el, 'fill') ?? '#000');
+        [$sr, $sg, $sb, $hasStroke] = self::parseColor(self::inheritedProperty($el, 'stroke') ?? null);
+        $sw = (float) (self::inheritedProperty($el, 'stroke-width') ?? 1);
 
         // Opacity.
         $globalOpacity = self::parseOpacity($el, 'opacity', 1.0);
@@ -1229,9 +1232,9 @@ final class SvgRenderer
         if ($points === []) {
             return;
         }
-        [$fr, $fg, $fb, $hasFill] = self::parseColor(isset($el['fill']) ? (string) $el['fill'] : ($closed ? '#000' : null));
-        [$sr, $sg, $sb, $hasStroke] = self::parseColor(isset($el['stroke']) ? (string) $el['stroke'] : null);
-        $sw = (float) ($el['stroke-width'] ?? 1);
+        [$fr, $fg, $fb, $hasFill] = self::parseColor(self::inheritedProperty($el, 'fill') ?? ($closed ? '#000' : null));
+        [$sr, $sg, $sb, $hasStroke] = self::parseColor(self::inheritedProperty($el, 'stroke') ?? null);
+        $sw = (float) (self::inheritedProperty($el, 'stroke-width') ?? 1);
 
         $globalOpacity = self::parseOpacity($el, 'opacity', 1.0);
         $fillOpacity = self::parseOpacity($el, 'fill-opacity', $globalOpacity);
@@ -1286,9 +1289,9 @@ final class SvgRenderer
         if ($d === '') {
             return;
         }
-        [$fr, $fg, $fb, $hasFill] = self::parseColor(isset($el['fill']) ? (string) $el['fill'] : '#000');
-        [$sr, $sg, $sb, $hasStroke] = self::parseColor(isset($el['stroke']) ? (string) $el['stroke'] : null);
-        $sw = (float) ($el['stroke-width'] ?? 1);
+        [$fr, $fg, $fb, $hasFill] = self::parseColor(self::inheritedProperty($el, 'fill') ?? '#000');
+        [$sr, $sg, $sb, $hasStroke] = self::parseColor(self::inheritedProperty($el, 'stroke') ?? null);
+        $sw = (float) (self::inheritedProperty($el, 'stroke-width') ?? 1);
 
         $commands = self::parsePathD($d, $tx, $ty);
         if ($commands === []) {
