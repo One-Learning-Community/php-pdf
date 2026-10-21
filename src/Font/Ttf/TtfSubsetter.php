@@ -507,12 +507,13 @@ final class TtfSubsetter
         if ($pad > 0) {
             $bytes .= str_repeat("\x00", $pad);
         }
-        $sum = 0;
-        $numDwords = strlen($bytes) / 4;
-        for ($i = 0; $i < $numDwords; $i++) {
-            $sum = ($sum + unpack('N', substr($bytes, $i * 4, 4))[1]) & 0xFFFFFFFF;
+        if ($bytes === '') {
+            return 0;
         }
 
-        return $sum;
+        // One unpack for the whole table. The sum of its dwords fits in a
+        // 64-bit int (each < 2^32, far fewer than 2^31 of them), so it is
+        // masked once at the end rather than at every step.
+        return array_sum(unpack('N*', $bytes)) & 0xFFFFFFFF;
     }
 }

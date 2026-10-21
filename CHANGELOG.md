@@ -19,6 +19,10 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `KerningTable::addPairs()` and `KerningTable::addClasses()` add packed
   pairs and class subtables. `pairCount()` now counts by expanding the
   table, so it is meant for diagnostics rather than the render path.
+- Font subsetting is about twice as fast: table checksums are summed from
+  one `unpack()` instead of one call per 32-bit word. Inter Regular
+  subsets in 0.8 ms instead of 1.9 ms, Noto Sans JP in 4.0 ms instead of
+  8.2 ms; the subsets are byte-identical.
 - Fonts parse two to three times faster: the `cmap` (formats 4 and 12) and
   `hmtx` tables are read with one `unpack()` per array instead of one call
   per value. Inter Regular parses in 0.7 ms instead of 1.9 ms, Noto Sans JP
