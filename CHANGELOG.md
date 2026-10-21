@@ -7,6 +7,18 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Changed
+- Kerning is no longer expanded into glyph pairs. GPOS class-based
+  subtables (PairPos format 2) are kept as classes, and the whole table is
+  held as packed binary strings — for the usual value format, slices of the
+  font itself — searched in place. Fonts with class kerning parsed for tens
+  of milliseconds and held tens of megabytes: Inter Regular took 35 ms and
+  26 MB for its 447,676 pairs, Fira Sans 37 ms and 27 MB. They now take
+  about 1 ms and 0.25 MB; Merriweather's 102,000 explicit pairs take
+  0.7 ms and 0.5 MB instead of 38 ms and 7 MB. Every lookup answers as
+  before: compared pair by pair on 77 fonts.
+- `KerningTable::addPairs()` and `KerningTable::addClasses()` add packed
+  pairs and class subtables. `pairCount()` now counts by expanding the
+  table, so it is meant for diagnostics rather than the render path.
 - Fonts parse two to three times faster: the `cmap` (formats 4 and 12) and
   `hmtx` tables are read with one `unpack()` per array instead of one call
   per value. Inter Regular parses in 0.7 ms instead of 1.9 ms, Noto Sans JP
