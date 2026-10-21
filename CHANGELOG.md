@@ -6,6 +6,11 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+- `PdfFont::$compressionLevel` sets the zlib level for embedded font
+  bodies (default 6, as before). Level 1 compresses a subset two to five
+  times faster and the stream is within a few percent of the level-6 size.
+
 ### Changed
 - Kerning is no longer expanded into glyph pairs. GPOS class-based
   subtables (PairPos format 2) are kept as classes, and the whole table is
