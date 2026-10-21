@@ -4,6 +4,16 @@ All notable changes to `dskripchenko/php-pdf` are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- Fonts parse two to three times faster: the `cmap` (formats 4 and 12) and
+  `hmtx` tables are read with one `unpack()` per array instead of one call
+  per value. Inter Regular parses in 0.7 ms instead of 1.9 ms, Noto Sans JP
+  (17,000 glyphs) in 3.4 ms instead of 9.2 ms. The parsed tables are
+  unchanged: identical on 241 fonts compared, the 8 others rejected with
+  the same errors as before.
+
 ## [1.25.0] — 2026-10-19
 
 ### Fixed

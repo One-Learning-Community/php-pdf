@@ -657,16 +657,22 @@ final class TtfFile
     private function parseHmtx(): void
     {
         $offset = $this->requireTable('hmtx');
-        $this->reader->seek($offset);
         $this->advanceWidths = [];
+        if ($this->numHMetrics === 0) {
+            $this->advanceWidths = $this->numGlyphs > 0 ? array_fill(0, $this->numGlyphs, 0) : [];
 
-        $lastWidth = 0;
-        for ($i = 0; $i < $this->numHMetrics; $i++) {
-            $lastWidth = $this->reader->readUInt16();
-            $this->reader->skip(2); // lsb (signed, not used)
-            $this->advanceWidths[$i] = $lastWidth;
+            return;
+        }
+        // longHorMetric: uint16 advanceWidth, int16 lsb — read in one unpack.
+        $words = unpack('n*', substr($this->bytes, $offset, $this->numHMetrics * 4));
+        if ($words === false || count($words) < $this->numHMetrics * 2) {
+            throw new \OutOfBoundsException('hmtx table is truncated');
+        }
+        for ($i = 0, $w = 1; $i < $this->numHMetrics; $i++, $w += 2) {
+            $this->advanceWidths[$i] = $words[$w];
         }
         // Remaining glyphs — lsb only, width = lastWidth.
+        $lastWidth = $this->advanceWidths[$this->numHMetrics - 1];
         for ($i = $this->numHMetrics; $i < $this->numGlyphs; $i++) {
             $this->advanceWidths[$i] = $lastWidth;
         }
@@ -834,52 +840,51 @@ final class TtfFile
      */
     private function parseCmapFormat4(int $subtableOffset): array
     {
-        $this->reader->seek($subtableOffset + 6);
-        $segCountX2 = $this->reader->readUInt16();
-        $segCount = $segCountX2 / 2;
-        $this->reader->skip(6); // searchRange + entrySelector + rangeShift
-
-        $endCode = [];
-        for ($i = 0; $i < $segCount; $i++) {
-            $endCode[$i] = $this->reader->readUInt16();
+        $segCount = $this->reader->peekUInt16($subtableOffset + 6) >> 1;
+        if ($segCount === 0) {
+            return [];
         }
-        $this->reader->skip(2); // reservedPad
-
-        $startCode = [];
-        for ($i = 0; $i < $segCount; $i++) {
-            $startCode[$i] = $this->reader->readUInt16();
+        // endCode[segCount], reservedPad, startCode[], idDelta[], idRangeOffset[]:
+        // all uint16 words, read in one unpack.
+        $arrays = $subtableOffset + 14;
+        $words = unpack('n*', substr($this->bytes, $arrays, ($segCount * 4 + 1) * 2));
+        if ($words === false || count($words) < $segCount * 4 + 1) {
+            throw new \OutOfBoundsException('cmap format 4 subtable is truncated');
         }
-
-        $idDelta = [];
-        for ($i = 0; $i < $segCount; $i++) {
-            $idDelta[$i] = $this->reader->readInt16();
-        }
-
-        $idRangeOffsetStart = $this->reader->tell();
-        $idRangeOffset = [];
-        for ($i = 0; $i < $segCount; $i++) {
-            $idRangeOffset[$i] = $this->reader->readUInt16();
-        }
+        $startAt = $segCount + 2;            // 1-based index of startCode[0]
+        $deltaAt = $segCount * 2 + 2;        // idDelta[0]
+        $rangeAt = $segCount * 3 + 2;        // idRangeOffset[0]
+        $idRangeOffsetStart = $arrays + ($segCount * 3 + 1) * 2;
 
         $cmap = [];
         for ($i = 0; $i < $segCount; $i++) {
-            $start = $startCode[$i];
-            $end = $endCode[$i];
+            $end = $words[1 + $i];
+            $start = $words[$startAt + $i];
             // Last segment is always 0xFFFF..0xFFFF mapping to 0. Skip.
-            if ($start === 0xFFFF && $end === 0xFFFF) {
+            if (($start === 0xFFFF && $end === 0xFFFF) || $end < $start) {
                 continue;
             }
-            for ($c = $start; $c <= $end; $c++) {
-                if ($idRangeOffset[$i] === 0) {
-                    $glyphId = ($c + $idDelta[$i]) & 0xFFFF;
-                } else {
-                    $glyphIndexPos = $idRangeOffsetStart + $i * 2
-                        + $idRangeOffset[$i]
-                        + ($c - $start) * 2;
-                    $glyphId = $this->reader->peekUInt16($glyphIndexPos);
+            $delta = $words[$deltaAt + $i];
+            $rangeOffset = $words[$rangeAt + $i];
+            if ($rangeOffset === 0) {
+                for ($c = $start; $c <= $end; $c++) {
+                    $glyphId = ($c + $delta) & 0xFFFF;
                     if ($glyphId !== 0) {
-                        $glyphId = ($glyphId + $idDelta[$i]) & 0xFFFF;
+                        $cmap[$c] = $glyphId;
                     }
+                }
+
+                continue;
+            }
+            // glyphIdArray slice for this segment, read in one unpack
+            $from = $idRangeOffsetStart + $i * 2 + $rangeOffset;
+            $count = $end - $start + 1;
+            $slice = substr($this->bytes, $from, $count * 2);
+            $glyphs = strlen($slice) === $count * 2 ? unpack('n*', $slice) : false;
+            for ($c = $start, $k = 1; $c <= $end; $c++, $k++) {
+                $glyphId = $glyphs === false ? $this->reader->peekUInt16($from + ($c - $start) * 2) : $glyphs[$k];
+                if ($glyphId !== 0) {
+                    $glyphId = ($glyphId + $delta) & 0xFFFF;
                 }
                 if ($glyphId !== 0) {
                     $cmap[$c] = $glyphId;
@@ -907,15 +912,19 @@ final class TtfFile
      */
     private function parseCmapFormat12(int $subtableOffset): array
     {
-        $this->reader->seek($subtableOffset + 12);
-        $numGroups = $this->reader->readUInt32();
+        $numGroups = $this->reader->peekUInt32($subtableOffset + 12);
+        if ($numGroups === 0) {
+            return [];
+        }
+        // SequentialMapGroup: uint32 startCharCode, endCharCode, startGlyphID — one unpack.
+        $groups = unpack('N*', substr($this->bytes, $subtableOffset + 16, $numGroups * 12));
+        if ($groups === false || count($groups) < $numGroups * 3) {
+            throw new \OutOfBoundsException('cmap format 12 subtable is truncated');
+        }
 
         $cmap = [];
-        for ($g = 0; $g < $numGroups; $g++) {
-            $start = $this->reader->readUInt32();
-            $end = $this->reader->readUInt32();
-            $startGlyph = $this->reader->readUInt32();
-            for ($c = $start, $glyph = $startGlyph; $c <= $end; $c++, $glyph++) {
+        for ($g = 1, $n = $numGroups * 3; $g <= $n; $g += 3) {
+            for ($c = $groups[$g], $end = $groups[$g + 1], $glyph = $groups[$g + 2]; $c <= $end; $c++, $glyph++) {
                 $cmap[$c] = $glyph;
             }
         }
