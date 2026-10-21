@@ -442,6 +442,11 @@ final class TtfSubsetter
                 ),
                 default => substr($sourceBytes, $info['offset'], $info['length']),
             };
+            if ($tag === 'head' && strlen($bytes) >= 12) {
+                // checkSumAdjustment counts as 0 in the checksums; it is set
+                // once the whole font is assembled.
+                $bytes = substr_replace($bytes, "\0\0\0\0", 8, 4);
+            }
             $newTableData[$tag] = $bytes;
         }
 
@@ -463,7 +468,11 @@ final class TtfSubsetter
         $directory = '';
         $tableData = '';
         $currentOffset = $tableDataOffset;
+        $headOffset = null;
         foreach ($newTableData as $tag => $bytes) {
+            if ($tag === 'head' && strlen($bytes) >= 12) {
+                $headOffset = $currentOffset;
+            }
             $length = strlen($bytes);
             // Checksum: sum of 32-bit big-endian dwords.
             $checksum = $this->tableChecksum($bytes);
@@ -479,7 +488,14 @@ final class TtfSubsetter
             $currentOffset += $length + $pad;
         }
 
-        return $header.$directory.$tableData;
+        $font = $header.$directory.$tableData;
+        if ($headOffset !== null) {
+            // OpenType: the whole font, checkSumAdjustment included, sums to 0xB1B0AFBA.
+            $adjustment = (0xB1B0AFBA - $this->tableChecksum($font)) & 0xFFFFFFFF;
+            $font = substr_replace($font, pack('N', $adjustment), $headOffset + 8, 4);
+        }
+
+        return $font;
     }
 
     /**

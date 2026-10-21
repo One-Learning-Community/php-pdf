@@ -26,6 +26,13 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   unchanged: identical on 241 fonts compared, the 8 others rejected with
   the same errors as before.
 
+### Fixed
+- Embedded font subsets kept the source font's `head.checkSumAdjustment`,
+  and the `head` entry of their table directory was summed with it, so the
+  subset's checksums were wrong: strict validators and font tools flag such
+  a font. The adjustment is zeroed for the table checksums and set so the
+  whole subset sums to `0xB1B0AFBA`, as OpenType requires.
+
 ## [1.25.0] — 2026-10-19
 
 ### Fixed
