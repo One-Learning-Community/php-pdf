@@ -96,6 +96,54 @@ final class KerningTable
     }
 
     /**
+     * The table as plain data, for TtfFile::exportState(): its packed layers.
+     *
+     * @return list<array{0: 'pairs', 1: array<int, string>}|array{0: 'classes', 1: string, 2: string, 3: string, 4: int, 5: string}>
+     */
+    public function exportState(): array
+    {
+        return $this->layers;
+    }
+
+    /**
+     * Restores a table from exportState().
+     *
+     * @param  array<array-key, mixed>  $layers
+     *
+     * @throws \InvalidArgumentException for layers of any other shape
+     */
+    public static function fromState(array $layers): self
+    {
+        $table = new self;
+        foreach ($layers as $layer) {
+            if (! is_array($layer) || ! array_is_list($layer)) {
+                throw new \InvalidArgumentException('Kerning state is damaged.');
+            }
+            if (count($layer) === 2 && $layer[0] === 'pairs' && is_array($layer[1])) {
+                $rows = [];
+                foreach ($layer[1] as $left => $row) {
+                    if (! is_int($left) || ! is_string($row) || strlen($row) % 4 !== 0) {
+                        throw new \InvalidArgumentException('Kerning state is damaged.');
+                    }
+                    $rows[$left] = $row;
+                }
+                $table->layers[] = ['pairs', $rows];
+
+                continue;
+            }
+            if (count($layer) === 6 && $layer[0] === 'classes' && is_string($layer[1]) && is_string($layer[2])
+                && is_string($layer[3]) && is_int($layer[4]) && $layer[4] >= 1 && is_string($layer[5])) {
+                $table->layers[] = ['classes', $layer[1], $layer[2], $layer[3], $layer[4], $layer[5]];
+
+                continue;
+            }
+            throw new \InvalidArgumentException('Kerning state is damaged.');
+        }
+
+        return $table;
+    }
+
+    /**
      * Lookup xAdvance adjustment for pair (left, right). Returns 0 if
      * the pair is not defined (no kerning).
      */

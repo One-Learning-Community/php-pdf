@@ -7,6 +7,14 @@ versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 ### Added
+- `TtfFile::exportState()` and `TtfFile::fromState()` save a parsed font,
+  kerning included, as plain data and restore it without parsing — for a
+  cache across requests. A restore takes 0.07–0.55 ms against 0.4–3.6 ms to
+  parse. The state carries `TtfFile::STATE_FORMAT` and a fingerprint of the
+  font's table directory: `fromState()` refuses, with an
+  `InvalidArgumentException`, a state of another format, of another font
+  file, or a damaged one. `KerningTable::exportState()` and
+  `KerningTable::fromState()` do the same for a kerning table.
 - `PdfFont::$compressionLevel` sets the zlib level for embedded font
   bodies (default 6, as before). Level 1 compresses a subset two to five
   times faster and the stream is within a few percent of the level-6 size.

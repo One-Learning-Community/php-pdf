@@ -149,6 +149,144 @@ final class TtfFile
         self::$cache = [];
     }
 
+    /**
+     * Version of the exportState() layout. Bumped whenever what a state holds,
+     * or how it holds it, changes: fromState() refuses any other version, so a
+     * cache never restores a state written by a php-pdf that laid it out
+     * differently.
+     */
+    public const STATE_FORMAT = 1;
+
+    /** Properties fromState() rebuilds rather than reads from a state. */
+    public const STATE_REBUILT = ['reader', 'bytes', 'cff', 'kerningParsed'];
+
+    /** Properties a state leaves unparsed: they parse on first use, as after `new TtfFile()`. */
+    public const STATE_LAZY = [
+        'ligatures', 'ligaturesParsed', 'singleSubstByFeature', 'fvarParsed',
+        'avar', 'avarParsed', 'hvar', 'hvarParsed', 'mvar', 'mvarParsed',
+        'gvar', 'gvarParsed', 'advanceHeights',
+    ];
+
+    /**
+     * The parsed font as plain data — ints, strings, bools and arrays only — for
+     * a cache across processes: serialize(), var_export() and JSON round-trip
+     * it. Kerning is parsed first, as a render always needs it.
+     *
+     * fromState() with the same font bytes restores the font without parsing.
+     *
+     * @return array<string, mixed>
+     */
+    public function exportState(): array
+    {
+        return [
+            'format' => self::STATE_FORMAT,
+            'font' => self::fingerprint($this->bytes),
+            'tables' => $this->tables,
+            'unitsPerEm' => $this->unitsPerEm,
+            'numGlyphs' => $this->numGlyphs,
+            'bbox' => $this->bbox,
+            'ascent' => $this->ascent,
+            'descent' => $this->descent,
+            'numHMetrics' => $this->numHMetrics,
+            'advanceWidths' => $this->advanceWidths,
+            'cmap' => $this->cmap,
+            'postScriptName' => $this->postScriptName,
+            'italicAngle' => $this->italicAngle,
+            'isFixedPitch' => $this->isFixedPitch,
+            'namesById' => $this->namesById,
+            'kerningTable' => $this->kerningTable()?->exportState(),
+        ];
+    }
+
+    /**
+     * Restores a font from exportState() and the same font's bytes, without
+     * parsing its tables.
+     *
+     * @param  array<array-key, mixed>  $state
+     *
+     * @throws \InvalidArgumentException for a state of another format, of
+     *                                   another font, or damaged — parse the font instead
+     */
+    public static function fromState(array $state, string $bytes): self
+    {
+        if (($state['format'] ?? null) !== self::STATE_FORMAT) {
+            throw new \InvalidArgumentException('Font state is of another format than '.self::STATE_FORMAT.'.');
+        }
+        if (($state['font'] ?? null) !== self::fingerprint($bytes)) {
+            throw new \InvalidArgumentException('Font state is of another font file.');
+        }
+        $kerning = $state['kerningTable'] ?? null;
+        if (! array_key_exists('kerningTable', $state) || ($kerning !== null && ! is_array($kerning))) {
+            throw new \InvalidArgumentException('Font state is damaged: kerningTable.');
+        }
+
+        // The constructor parses; a restored font skips it. Its two readonly
+        // properties are initialized as the constructor would set them.
+        $font = (new \ReflectionClass(self::class))->newInstanceWithoutConstructor();
+        (new \ReflectionProperty(self::class, 'bytes'))->setValue($font, $bytes);
+        (new \ReflectionProperty(self::class, 'reader'))->setValue($font, new BinaryReader($bytes));
+        $font->tables = self::stateArray($state, 'tables');
+        $font->unitsPerEm = self::stateInt($state, 'unitsPerEm');
+        $font->numGlyphs = self::stateInt($state, 'numGlyphs');
+        $font->bbox = self::stateArray($state, 'bbox');
+        $font->ascent = self::stateInt($state, 'ascent');
+        $font->descent = self::stateInt($state, 'descent');
+        $font->numHMetrics = self::stateInt($state, 'numHMetrics');
+        $font->advanceWidths = self::stateArray($state, 'advanceWidths');
+        $font->cmap = self::stateArray($state, 'cmap');
+        $font->postScriptName = self::stateString($state, 'postScriptName');
+        $font->italicAngle = self::stateInt($state, 'italicAngle');
+        $font->isFixedPitch = self::stateBool($state, 'isFixedPitch');
+        $font->namesById = self::stateArray($state, 'namesById');
+        $font->kerningTable = $kerning === null ? null : KerningTable::fromState($kerning);
+        $font->kerningParsed = true;
+        try {
+            $font->parseCff();
+        } catch (\RuntimeException $e) {
+            throw new \InvalidArgumentException('Font state does not fit the font: '.$e->getMessage(), 0, $e);
+        }
+
+        return $font;
+    }
+
+    /**
+     * Identifies a font file cheaply: the hash of its table directory, which
+     * holds every table's checksum, offset and length.
+     */
+    private static function fingerprint(string $bytes): string
+    {
+        $numTables = strlen($bytes) >= 6 ? unpack('n', $bytes, 4)[1] : 0;
+
+        return hash('xxh3', substr($bytes, 0, 12 + 16 * $numTables));
+    }
+
+    /** @param  array<array-key, mixed>  $state */
+    private static function stateInt(array $state, string $key): int
+    {
+        return is_int($state[$key] ?? null) ? $state[$key] : throw new \InvalidArgumentException("Font state is damaged: $key.");
+    }
+
+    /** @param  array<array-key, mixed>  $state */
+    private static function stateString(array $state, string $key): string
+    {
+        return is_string($state[$key] ?? null) ? $state[$key] : throw new \InvalidArgumentException("Font state is damaged: $key.");
+    }
+
+    /** @param  array<array-key, mixed>  $state */
+    private static function stateBool(array $state, string $key): bool
+    {
+        return is_bool($state[$key] ?? null) ? $state[$key] : throw new \InvalidArgumentException("Font state is damaged: $key.");
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $state
+     * @return array<mixed>
+     */
+    private static function stateArray(array $state, string $key): array
+    {
+        return is_array($state[$key] ?? null) ? $state[$key] : throw new \InvalidArgumentException("Font state is damaged: $key.");
+    }
+
     public function rawBytes(): string
     {
         return $this->bytes;
